@@ -1,0 +1,228 @@
+!  Backward reconstruction based on boundary interpolation using Kaiser 
+!  windowed sinc interpolation
+!-----------------------------------------------------------------------
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+program test_ksinc_2d
+  implicit none
+
+  integer :: it, nt, mt, nz, nx, nb, sx, sz, r
+  integer :: xtr,ztr,kt,ierr
+  real  :: dt, dz, dx, amp, fm, vpmax, tmp, idx, idz, dtb
+  real, dimension (:),   allocatable :: wlt,bb,aa,ef,eb, trf, trb
+  real, dimension (:,:), allocatable :: v0, vv, rho,kappa, eta
+  real, dimension (:,:), allocatable :: p, vz, vx
+  real, dimension(:,:,:,:),allocatable::bvzt,bvzb,bvxl,bvxr
+
+  !----------------------------------------------------------------!
+  !variables and parameter for L2-norm
+  !----------------------------------------------------------------!
+  integer :: ii, jj
+  real :: nrm, l2nrm !the computed norm
+  real :: l2err !absolute error between the reference and the computed norm
+  real,parameter::l2ref=5.59640042E-02 !the computed norm is tested against this on
+  !vecteur norme
+  real, dimension (:),   allocatable :: l2nrmvect
+  real :: l2sumvect
+
+  ! Read/Write axes
+  nz=301
+  nx=301
+  dz=5.
+  dx=5.
+  nb=25 ! number of boundary layers
+  nt=1000
+  dt=0.001
+  dtb=4*dt
+  amp=1. !maximum amplitude of ricker wavelet
+  fm=20. !domainant freq for ricker wavelet
+  xtr=100 !grid location of randomly extract a seismic trace
+  ztr=100 !grid location of randomly extract a seismic trace
+  kt=250
+
+
+  idx=1./dx
+  idz=1./dz
+  sx=(nx+1)/2
+  sz=(nz+1)/2
+  r=nint(dtb/dt)
+  if(mod(nt,r)==0) then
+     write(0,*) 'store boundary every r-step: r=', r
+     mt=nt/r !N=nt;M=mt; M=N/r
+  else
+     write(0,*) 'dt for boundary saving is chosen inappropriately.'
+     call exit(0)
+  endif
+
+  allocate(wlt(nt))
+  allocate(bb(nb))
+  allocate(aa(nb))
+  allocate(v0(nz,nx))
+  allocate(vv(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(rho(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(kappa(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(p(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vz(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vx(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(bvzt(mt,-1:1,1:nx,1),stat=ierr)
+  allocate(bvzb(mt,-1+nz:1+nz,1:nx,1),stat=ierr)
+  allocate(bvxl(mt,1:nz,-1:1,1),stat=ierr)
+  allocate(bvxr(mt,1:nz,-1+nx:1+nx,1),stat=ierr)
+  if (ierr /= 0) then
+     write(0,*) 'Error: Allocation failed!'
+     call exit(0)
+  endif
+  allocate(ef(nt))
+  allocate(eb(nt))
+  allocate(trf(nt))
+  allocate(trb(nt))
+  allocate(l2nrmvect(nt))
+
+  !generate ricker wavelet with a delay
+  do it=1,nt  
+     tmp=3.1415926535897932*fm*(it*dt-1.0/fm)
+     tmp=tmp*tmp
+     wlt(it)=amp*(1.0-2.0*tmp)*exp(-tmp)
+  enddo
+  v0=2000.
+  vpmax=maxval(v0)
+  call check_sanity(vpmax,dt,dx,dz)
+  call expand2d(vv, v0, nz, nx, nb)
+  rho=1000.
+  call expand2d(rho, v0, nz, nx, nb)
+  call sponge_coeff(bb,vpmax,dx,dt,nb)
+  kappa=rho*vv*vv
+  p=0.
+  vx=0.
+  vz=0.
+  bvxl=0.;bvxr=0.
+  bvzt=0.;bvzb=0.
+  trf=0.
+  trb=0.
+  ef=0.
+  eb=0.
+
+
+  !forward modeling
+  do it=1,nt
+     call add_sources(p, dt, wlt(it), sz, sx, nz,nx,nb)
+     call step_forward_v(p, vz, vx, rho, dt, idz, idx, nz,nx,nb)
+     call apply_sponge(vz,bb,nz,nx,nb)
+     call apply_sponge(vx,bb,nz,nx,nb)
+     call step_forward_p(p, vz, vx, kappa, dt, idz, idx, nz,nx,nb)
+     call apply_sponge(p,bb,nz,nx,nb)
+     call ksinc_interp(.true.,bvzt,vz(-1:1,1:nx),-1,1,1,nx,1,1,nt,mt,it,4)
+     call ksinc_interp(.true.,bvzb,vz(-1+nz:1+nz,1:nx),-1+nz,1+nz,1,nx,1,1,nt,mt,it,4)
+     call ksinc_interp(.true.,bvxl,vx(1:nz,-1:1),1,nz,-1,1,1,1,nt,mt,it,4)
+     call ksinc_interp(.true.,bvxr,vx(1:nz,-1+nx:1+nx),1,nz,-1+nx,1+nx,1,1,nt,mt,it,4)
+
+     trf(it)=p(ztr,xtr)
+     call compute_energy(ef(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     if(it==kt) then
+        call window2d(v0, p, nz, nx, nb)
+        !open(10,file='forward_kt.bin',access='direct',recl=4*nz*nx,status='replace')
+        !write(10,rec=1) v0
+        !close(10)
+     endif
+  enddo
+  !open(10,file='ef.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) ef
+  !close(10)
+  !open(10,file='trf.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) trf
+  !close(10)
+
+
+  !backward reconstruction
+  do it=nt,1,-1
+     !reconstruct the boundary wavefield by Fourier interpolation
+     call ksinc_interp(.false.,bvzt,vz(-1:1,1:nx),-1,1,1,nx,1,1,nt,mt,it,4)
+     call ksinc_interp(.false.,bvzb,vz(-1+nz:1+nz,1:nx),-1+nz,1+nz,1,nx,1,1,nt,mt,it,4)
+     call ksinc_interp(.false.,bvxl,vx(1:nz,-1:1),1,nz,-1,1,1,1,nt,mt,it,4)
+     call ksinc_interp(.false.,bvxr,vx(1:nz,-1+nx:1+nx),1,nz,-1+nx,1+nx,1,1,nt,mt,it,4)
+
+     trb(it)=p(ztr,xtr)
+     call compute_energy(eb(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     if(it==kt) then
+     	call window2d(v0, p, nz, nx, nb)
+        !open(10,file='reconstructed_kt.bin',access='direct',recl=4*nz*nx,status='replace')
+        !write(10,rec=1) v0
+        !close(10)
+     endif
+
+     call step_forward_p(p, vz, vx, kappa, -dt, idz, idx, nz,nx,nb)
+     call step_forward_v(p, vz, vx, rho, -dt, idz, idx, nz,nx,nb)
+     call add_sources(p, -dt, wlt(it), sz, sx, nz,nx,nb)
+  enddo
+    
+  !l2-norm
+  l2sumvect=0.
+  do it=1,nt
+    nrm = 0.
+    do ii=1,nz
+      do jj=1,nx
+         nrm=nrm+(v0(ii,jj)**2)
+      enddo
+    enddo
+    l2nrmvect(it)=sqrt(nrm)
+    l2sumvect = l2sumvect + l2nrmvect(it)**2
+  enddo
+  l2nrm=sqrt(l2sumvect)
+  l2err=abs(l2nrm-l2ref)/l2ref
+
+  !open(10,file='eb.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) eb
+  !close(10)
+  !open(10,file='trb.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) trb
+  !close(10)
+
+  write(*,*) '----------------------------------------------'
+  if (l2err .gt. 1E-3) then
+    write(*,*) 'CAUTION: l2nrm_ref=   5.59640042E-02'
+    write(*,*) '         l2nrm    = ', l2nrm
+    write(*,*) '         ERR      = ', l2err
+    write(*,*) '--- INTERPOLATION ksinc_2d .........*** Failed'
+  else
+    write(*,*) '--- INTERPOLATION ksinc_2d .........*** Passed'
+  endif
+  write(*,*) '----------------------------------------------'
+
+  deallocate(wlt)
+  deallocate(bb)
+  deallocate(aa)
+  deallocate(ef)
+  deallocate(eb)
+  deallocate(v0)
+  deallocate(vv)
+  deallocate(rho)
+  deallocate(kappa)
+  deallocate(p)
+  deallocate(vz)
+  deallocate(vx)  
+  deallocate(bvzt)
+  deallocate(bvzb)
+  deallocate(bvxl)
+  deallocate(bvxr)
+  deallocate(trf)
+  deallocate(trb)
+  deallocate(l2nrmvect)
+
+  call exit(0)
+end program test_ksinc_2d
+
+

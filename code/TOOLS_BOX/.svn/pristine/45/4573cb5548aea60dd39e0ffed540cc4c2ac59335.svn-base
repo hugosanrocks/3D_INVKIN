@@ -1,0 +1,53 @@
+#OPTION FOR Makefile defined here
+
+FC =  ifort
+CC =  icc
+CXX = icpc
+FL =  ifort
+
+FC =  mpif90
+CC =  mpicc
+CXX = mpicxx
+FL =  mpif90
+
+MPIFC  = mpif90
+MPICC  = mpicc
+MPICXX = mpicxx
+
+#OPTIONS COMPILE
+OPTF   = -C -g -DEBUG -check -assume byterecl -check all -gen_interfaces -traceback   -assume byterecl  -fpe0 -warn all 
+OPTC   = 
+OPTCXX =    -g
+OPTL   =- C -g -DEBUG -check -assume byterecl -check all -gen_interfaces -traceback   -assume byterecl 
+
+OPTF   = -O3 -assume byterecl -xHost -inline
+#OPTF   += -ipo
+OPTC   = -O3
+OPTCXX = -O3
+OPTL   = -O3 -assume byterecl
+
+OPTFF = ${OPTF}
+
+LD_LIB = -lstdc++
+
+# variables for librairies
+
+AR= xiar
+ARFUNCT= cruv
+
+
+# overload some variables for the case of gnu compilers (make GNU=1)
+ifeq ($(GNU),1)
+  FC     = gfortran
+  CC     = gcc
+  CXX    = gcc
+  FL     = gfortran
+  OPTF   = -O3
+  OPTF   =-g -Wall -pedantic -fbounds-check -ffpe-trap=invalid,overflow,zero
+  OPTC   = -O3  
+  OPTCXX = -O3  
+  OPTL   = -O3
+  LD_LIB = -lstdc++
+  AR=ar
+endif
+

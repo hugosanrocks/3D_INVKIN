@@ -1,0 +1,1625 @@
+program test_dd_sg_ac_iso_o4_optim
+
+  use dd_common_mod, only : dd_debug_level
+  use mem_alloc_mod
+  use sgrid_mod
+  use sg_comm_mod
+
+  implicit none
+
+  type(sgrid_type)                     :: grid
+  type(sg_comm_type)                   :: comm
+
+  ! input parameters
+  integer, dimension(3)                :: nglobal, nsub_dom
+  integer, dimension(2,3)              :: npml_glob
+  real,    dimension(3)                :: spatial_step, grid_origin
+  integer                              :: nsrc_comm1, nt
+  real                                 :: dt
+  real                                 :: vp_val, rho_val
+  character(len=100)                   :: vp_file = 'vp', rho_file = 'rho'
+  real                                 :: pml_vmax, pml_Rc,  pml_freq, pml_kmax
+  integer                              :: pml_power
+  real                                 :: ricker_freq 
+  real                                 :: ricker_amp
+
+  ! Stress and velocity fields solution
+  real, dimension(:,:,:),  allocatable :: Vx, Vy, Vz, P, Pglob
+
+  ! Physical parameters
+  real, dimension(:,:,:),  allocatable :: tmp_glob
+  real, dimension(:,:,:),  allocatable :: Vp, rho
+  real, dimension(:,:,:),  allocatable :: buo_Vx, buo_Vy, buo_Vz, kappa
+
+  ! PML memory variables
+  real, dimension(:,:,:),  allocatable :: mem_Vx_x, mem_Vy_y, mem_Vz_z
+  real, dimension(:,:,:),  allocatable :: mem_Px_x, mem_Py_y, mem_Pz_z
+
+  ! PML coefficients
+  real, dimension(:),      allocatable :: az, ax, ay, az_half, ax_half, ay_half
+  real, dimension(:),      allocatable :: bz, bx, by, bz_half, bx_half, by_half
+  real, dimension(:),      allocatable :: kz, kx, ky, kz_half, kx_half, ky_half
+
+  ! Source location
+  integer                              :: nsrc
+  real, dimension(:,:),    allocatable :: src_coor
+  ! source time function defined as a ricker wavelet
+  real, dimension(:),      allocatable :: source
+
+  integer                              :: isrc_glob, isrc_comm1
+  integer                              :: it, ierr, npml_loc
+  logical                              :: free_surface
+  integer                              :: novlp, ntmpblock, nsrc_loc
+  integer, dimension(:,:), allocatable :: src_loc
+  integer, dimension(:),   allocatable :: src_comm1
+  real                                 :: time_end   = 0.
+  real                                 :: time_begin = 0.
+
+  ! 0 = no optim, 1 = split derivatives computations, 2 = cache blocking, 3 = thread blocking
+  integer                              :: optim_type = 0
+  ! length parameters needed by cache blocking optimization
+  integer, parameter                   :: lcbi = 1500, lcbj = 5, lcbk = 5
+  ! parameters needed by the splitting of derivatives computation
+  real, dimension(:),      allocatable :: Dx, Dy, Dz
+  ! bounds of threaded tile-blocks (to increase spatial locality and data reuse)
+  integer, dimension(:,:), allocatable :: block ! (3, nblocks)
+  integer, parameter                   :: ltbi = 1500, ltbj = 5, ltbk = 5 ! threaded block length in each direction
+  integer                              :: nblock ! total number of threaded blocks
+
+
+  dd_debug_level = 0 ! declared in common_mod
+
+  call init_mpi()
+
+  call read_input_parameters()
+
+  call grid%sgrid_constructor()
+  call grid%sgrid_set_parameters(nglobal, nsub_dom, npml_glob, spatial_step, grid_origin)
+
+  call comm%create_mpi_communicators(mpi_comm_world)
+
+  call dispatch_sources_on_comm2(comm, nsrc, nsrc_comm1, src_comm1)
+
+  ! For the self-consistency of the test, create parameter files and source funtion on the fly
+  call build_global_homogeneous_parameter(vp_file,  vp_val,  nglobal)
+  call build_global_homogeneous_parameter(rho_file, rho_val, nglobal)
+  call mpi_barrier(mpi_comm_world,ierr)
+  call build_source_excitation_term(source, nt, dt, spatial_step, ricker_freq, ricker_amp)
+
+  call print_starting_banner()
+
+  ! Init domain decomposition------------------------------
+  call grid%sgrid_set_diag_neighbours(.False.) ! True if communication with diagonal neighbours processors is needed
+  call grid%grid_init()
+  novlp = get_scheme_overlap()
+  call grid%grid_set_overlap(novlp)
+  call grid%grid_set_temporal_blocking_size(ntmpblock)
+  !--------------------------------------------------------
+
+  ! Create MPI types for communications--------------------
+  call comm%create_mpi_types(grid)
+  !--------------------------------------------------------
+
+  ! Defined list of blocks assigned to threads-------------
+!   call define_threading_blocks()
+  !--------------------------------------------------------
+
+  call alloc_wavefields()
+  call grid%sgrid_allocate_global_field(Pglob, "Pglob")
+
+  call cpml_init(grid, dt, pml_vmax, pml_Rc, pml_freq, pml_kmax, pml_power, npml_loc)
+
+  ! Read, allocate and build physical parameters-----------
+  call grid%sgrid_allocate_global_field(tmp_glob, "tmp_glob")
+
+  ! Vp
+  call grid%sgrid_allocate_field(Vp, "Vp")
+  call grid%sgrid_read_global_field(tmp_glob, vp_file)
+  call comm%sg_comm_scatter_global_field(grid, tmp_glob, Vp)
+
+  ! Rho
+  call grid%sgrid_allocate_field(rho, "rho")
+  call grid%sgrid_read_global_field(tmp_glob, rho_file)
+  call comm%sg_comm_scatter_global_field(grid, tmp_glob, rho)
+
+  call grid%sgrid_deallocate_global_field(tmp_glob, "tmp_glob")
+  call build_physical_parameters(grid, comm, vp, rho, buo_Vx, buo_Vy, buo_Vz, kappa)
+  !--------------------------------------------------------
+
+  call find_src(grid, nsrc, src_coor, nsrc_comm1, src_comm1, nsrc_loc, src_loc)
+
+  call cpu_time(time_begin)
+
+  do isrc_comm1 = 1, nsrc_comm1
+
+    ! retrieve global src index
+    isrc_glob = src_comm1(isrc_comm1)
+
+    call reset_wavefields()
+
+    do it = 1, nt
+
+      if (myid_1 == 0 .and. (nt <= 10 .or. (nt > 10 .and. mod(it, nt/10) == 0))) then
+        write(*,*)
+        write(*,*) ' current iteration ', it, '/', nt
+      end if
+
+      ! Communicate velocity-------------------------------
+      call comm%sg_comm_communicate_field(Vx, grid)
+      call comm%sg_comm_communicate_field(Vy, grid)
+      call comm%sg_comm_communicate_field(Vz, grid)
+      !----------------------------------------------------
+
+      if (optim_type == 0) then
+        call compute_stress()
+      else if (optim_type == 1) then
+        call compute_stress_optim_derivatives_splitting()
+      else if (optim_type == 2) then
+        call compute_stress_optim_cache_blocking()
+      else if (optim_type == 3) then
+        call compute_stress_optim_thread_blocking()
+      end if
+      call compute_source_stress(source, it, isrc_glob, nsrc_loc, src_loc)
+
+      ! Communicate stress---------------------------------
+      call comm%sg_comm_communicate_field(P, grid)
+      !----------------------------------------------------
+
+      if (optim_type == 0) then
+        call compute_velocity()
+      else if (optim_type == 1) then
+        call compute_velocity_optim_derivatives_splitting()
+      else if (optim_type == 2) then
+        call compute_velocity_optim_cache_blocking()
+      else if (optim_type == 3) then
+        call compute_velocity() !_optim_thread_blocking() TODO
+      end if
+
+      if ((nt > 10 .and. mod(it, nt/10) == 0) .or. nt <= 10) then
+        ! Gather P field on the master processor for output
+        call comm%sg_comm_gather_global_field(grid, Pglob, P)
+        if (myid_1 == 0) then
+          call fdm_write_vtk_legacy_fmt(grid, isrc_glob, it, Pglob, "Pglob")
+        end if
+      end if
+
+    end do ! it = 1, nt
+
+  end do ! do isrc_comm1 = 1, nsrc
+
+  call cpu_time(time_end)
+  if (myid_1 == 0) then
+    write(*,*)
+    write(*,*) '--------------------------------------------------------------------'
+    write(*,*) ' Total time (seconds) = ', REAL(time_end - time_begin)
+    write(*,*) '--------------------------------------------------------------------'
+  end if
+
+  call print_statistics()
+
+  ! Free memory--------------------------------------------
+  call free_mem()
+  call grid%grid_destructor()
+  call print_mem_alloc_stat()
+  call comm%comm_engine_free_mem()
+  call comm%end_mpi()
+  !--------------------------------------------------------
+
+  call print_successfully_program_ended_banner()
+
+  contains
+
+
+  subroutine read_input_parameters()
+    integer :: isrc
+
+    open(unit=1, FILE='test_dd_sg_ac_iso_o4_optim.config')
+    ! domain and sources distributions on processor
+    read(1,*)   nsub_dom
+    ! grid
+    read(1,*)   nglobal
+    read(1,*)   spatial_step
+    read(1,*)   grid_origin
+    read(1,*)   npml_glob
+    read(1,*)   nt
+    read(1,*)   dt
+    read(1,*)   ntmpblock
+    ! parameters for input physical param
+    read(1,*)   vp_val
+    read(1,*)   rho_val
+    ! parameters for source time function
+    read(1,*)   ricker_freq! frequency of the ricker wavelet
+    read(1,*)   ricker_amp! maximum amplitude of the ricker wavelet
+    ! parameters for cpml
+    read(1,*)   pml_vmax
+    read(1,*)   pml_Rc
+    read(1,*)   pml_freq
+    read(1,*)   pml_kmax
+    read(1,*)   pml_power
+    ! src/rcv
+    read(1,*)  nsrc
+    call alloc_(src_coor, 1, nsrc, 1, 3, "src_coor")
+    do isrc = 1, nsrc
+      read(1,*) src_coor(isrc,:)
+    end do
+    close(unit=1)
+  end subroutine read_input_parameters
+
+
+  subroutine build_global_homogeneous_parameter(filename, value, nglobal)
+    ! This subroutine stores on file an homogeneous parameter value on the global grid
+
+    integer, dimension(3), intent(in) :: nglobal
+    real,                  intent(in) :: value
+    character(len=100),    intent(in) :: filename
+    integer                           :: i, j, k
+
+    if (myid_1 == 0) then
+      write(6,*) '   build_homogeneous_param ', trim(adjustl(filename)), value
+
+      open (unit=11, file=trim(adjustl(filename)), access='direct', form='unformatted', status='unknown', &
+      & recl=product(nglobal)*kind(value))
+      write(unit=11, rec=1) (((value, i=1,nglobal(1)), j=1,nglobal(2)), k=1,nglobal(3))
+      close(unit=11)
+    end if
+  end subroutine build_global_homogeneous_parameter
+
+
+  subroutine dispatch_sources_on_comm2(comm, nsrc, nsrc_comm1, src_comm1)
+    type(sg_comm_type),                 intent(in)  :: comm
+    integer,                            intent(out) :: nsrc_comm1
+    integer,                            intent(in)  :: nsrc
+    integer, dimension(:), allocatable, intent(out) :: src_comm1
+    integer                                         :: color, isrc, jsrc, nsrc_tmp
+
+    ! initialize the nb of sources associated to mpi_comm1
+    nsrc_comm1 = 0
+    color = myid_2 + 1
+
+    nsrc_tmp = ceiling(real(nsrc) / real(ngroup)) 
+    if (nsrc_tmp < 1) then
+      write(*,*) 'nsrc_tmp =', nsrc_tmp
+      stop
+    end if
+    call alloc_(src_comm1, 1, nsrc_tmp, "src_comm1")
+
+    jsrc = 0
+    do isrc = 1, nsrc
+      if (jsrc == ngroup) then
+        jsrc = 1
+      else
+        jsrc = jsrc + 1
+      end if
+
+      ! keep in list global index of source
+      if (color == jsrc) then
+        nsrc_comm1 = nsrc_comm1 + 1
+        src_comm1(nsrc_comm1) = isrc
+      end if
+    end do
+
+  end subroutine dispatch_sources_on_comm2
+
+
+  subroutine find_src(grid, nsrc, src_coor, nsrc_comm1, src_comm1, nsrc_loc, src_loc)
+    type(sgrid_type),                     intent(in)  :: grid
+    integer,                              intent(in)  :: nsrc, nsrc_comm1
+    real, dimension(:,:), allocatable,    intent(in)  :: src_coor
+    integer, dimension(:), allocatable,   intent(in)  :: src_comm1
+    integer,                              intent(out) :: nsrc_loc
+    integer, dimension(:,:), allocatable, intent(out) :: src_loc
+
+    !     Retrieve source positions in the staggered grid
+    !     and build tables according to the nb of sources located in the subdomain
+
+    integer                                        :: isrc, isrc_comm1
+    real                                           :: dist_fs
+    real,    dimension(3)                          :: dist
+    integer, dimension(3)                          :: iglob, iloc
+    integer                                        :: irad = 0
+
+    !------------------------------------------------------------------
+    ! 1st loop on the sources
+    ! to retrieve the nb of sources in subdomain
+    !------------------------------------------------------------------
+
+    nsrc_loc = 0
+
+    do isrc_comm1 = 1, nsrc_comm1 
+
+      ! retrieve global src index
+      isrc = src_comm1(isrc_comm1) 
+
+      ! check if src belongs or intersects the subdomain
+      if (grid%sgrid_is_point_inside_sub_domain(src_coor(isrc,:), 0, iglob, iloc)) then
+        nsrc_loc = nsrc_loc + 1 
+      endif
+
+    end do
+
+    if (nsrc_loc > 0) then
+      write(*,*) myid_1, ' : nsrc_loc ', nsrc_loc
+    end if
+
+    !-----------------------------
+    ! allocate local source table
+    !-----------------------------
+
+    if (nsrc_loc > 0) then
+      call alloc_(src_loc, 1, nsrc_loc, 1, 4, "src_loc")
+    endif
+
+    !------------------------------------------------------------------
+    ! 2nd loop on the sources
+    ! to fill the source table
+    !------------------------------------------------------------------
+
+    nsrc_loc = 0
+
+    do isrc_comm1 = 1, nsrc_comm1 
+
+      ! retrieve global src index
+      isrc = src_comm1(isrc_comm1) 
+
+      ! check if src belongs or intersects the subdomain
+      if (grid%sgrid_is_point_inside_sub_domain(src_coor(isrc,:), 0, iglob, iloc)) then
+
+        nsrc_loc = nsrc_loc + 1 
+  
+        ! fill index and coordinates in the table
+        !=========================================
+
+        src_loc(nsrc_loc, 1)   = isrc     ! source global index
+        src_loc(nsrc_loc, 2:4) = iloc(:)  ! source local indices coordinates
+
+      end if
+
+    end do
+
+  end subroutine find_src
+
+
+  subroutine build_physical_parameters(grid, comm, vp, rho, buo_Vx, buo_Vy, buo_Vz, kappa)
+    real, dimension(:,:,:), allocatable, intent(in out) :: vp, rho
+    real, dimension(:,:,:), allocatable, intent(in out) :: buo_Vx, buo_Vy, buo_Vz, kappa
+    integer                                             :: n1loc, n2loc, n3loc
+    type(sgrid_type),                    intent(in out) :: grid
+    type(sg_comm_type),                  intent(in out) :: comm
+
+    call grid%sgrid_allocate_field(buo_Vx, "buo_Vx")
+    call grid%sgrid_allocate_field(buo_Vy, "buo_Vy")
+    call grid%sgrid_allocate_field(buo_Vz, "buo_Vz")
+    call grid%sgrid_allocate_field(kappa,  "kappa")
+
+    ! interpolation of rho for the nodes located on the staggered grid
+    call grid%sgrid_1d_field_interpol_arith_mean(rho, buo_Vx, buo_Vy, buo_Vz)
+
+    n1loc = grid%nnodes_loc(1)
+    n2loc = grid%nnodes_loc(2)
+    n3loc = grid%nnodes_loc(3)
+
+    ! take inverse to obtain the buoyancy
+    buo_Vx(1:n1loc,1:n2loc,1:n3loc) = 1. / buo_Vx(1:n1loc,1:n2loc,1:n3loc)
+    buo_Vy(1:n1loc,1:n2loc,1:n3loc) = 1. / buo_Vy(1:n1loc,1:n2loc,1:n3loc)
+    buo_Vz(1:n1loc,1:n2loc,1:n3loc) = 1. / buo_Vz(1:n1loc,1:n2loc,1:n3loc)
+
+    call comm%sg_comm_communicate_field(buo_Vx, grid)
+    call comm%sg_comm_communicate_field(buo_Vy, grid)
+    call comm%sg_comm_communicate_field(buo_Vz, grid)
+
+    ! compute kappa (rho * vp^2)
+    kappa = (vp**2) * rho
+
+    call comm%sg_comm_communicate_field(kappa, grid)
+
+  end subroutine build_physical_parameters
+
+  
+  subroutine build_source_excitation_term(source, nt, dt, spatial_step, ricker_freq, ricker_amp)
+    real, dimension(:), allocatable, intent(out) :: source
+    integer,                         intent(in)  :: nt
+    real, dimension(3),              intent(in)  :: spatial_step
+    real,                            intent(in)  :: dt, ricker_freq, ricker_amp
+    integer                                      :: ii
+    real                                         :: t0, a1, ttime
+    real, parameter                              :: pi = acos(-1.)
+
+    ! This subroutine computes a time function of a ricker wavelet
+
+    if (myid_1 == 0) write(6,*) ' frequency of ricker_ricker ', ricker_freq
+
+    ! allocate table
+    call alloc_(source, 1, nt, 'source')
+
+    t0 = 1.5 * sqrt(6.)/(pi * ricker_freq) 
+    ttime = 0.
+
+    do ii = 1 , nt  
+      a1 = (pi * ricker_freq * (ttime - t0))**2
+      source(ii) = ricker_amp * (1. - 2. * a1) * exp(-a1)
+      ttime = ttime + dt
+    end do
+
+    ! write output file in ascii
+    open(unit = 11, file='ricker.ascii', form='formatted', status ='unknown')
+    do ii=1,nt
+      write(11,*) source(ii)
+    enddo
+    close(11)
+
+    ! Normalization
+    source(:) = source(:) / product(spatial_step(:))
+
+    if (myid_1 == 0) write(*,*) ' max amp', maxval(abs(source(:)))
+
+  end subroutine build_source_excitation_term
+
+
+  subroutine compute_source_stress(source, it, isrc_glob, nsrc_loc, src_loc)
+    real,    dimension(:),   allocatable, intent(in) :: source
+    integer,                              intent(in) :: it, isrc_glob
+    integer,                              intent(in) :: nsrc_loc
+    integer, dimension(:,:), allocatable, intent(in) :: src_loc
+    integer                                          :: isrc, izs, ixs, iys
+    ! Apply the source term on the stress components
+
+    ! loop on the source located in the subdomain
+    do isrc = 1, nsrc_loc
+
+      ! check source index
+      if (src_loc(isrc, 1) /= isrc_glob) cycle
+
+      ! retrieve source local coordinates
+      izs = src_loc(isrc, 2)
+      ixs = src_loc(isrc, 3)
+      iys = src_loc(isrc, 4)
+
+      P(izs, ixs, iys) = P(izs, ixs, iys) + source(it) * dt
+
+    end do ! do isrc = 1, nsrc_loc
+
+  end subroutine compute_source_stress
+
+
+  subroutine cpml_init(grid, dt, vmax, Rc, freq, kmax, power, npml_loc)
+    type(sgrid_type),             intent(in) :: grid
+    real,                         intent(in) :: dt, vmax, Rc, freq, kmax
+    integer,                      intent(in) :: power
+    integer,                     intent(out) :: npml_loc ! number of points of the current subdomain present in PML layer
+    integer                                  :: idim, npt, i, j, k, n1, n2, n3
+    integer, dimension(3)                    :: coord_loc, coord_glob, end_left, start_right
+
+    ! compute PML coefficients along Z, X and Y axis
+    idim = 1
+    call cpml_compute_coef_on_axis(idim, grid, dt, vmax, Rc, freq, kmax, power, az, bz, kz, az_half, bz_half, kz_half)
+
+    idim = 2
+    call cpml_compute_coef_on_axis(idim, grid, dt, vmax, Rc, freq, kmax, power, ax, bx, kx, ax_half, bx_half, kx_half)
+
+    idim = 3
+    call cpml_compute_coef_on_axis(idim, grid, dt, vmax, Rc, freq, kmax, power, ay, by, ky, ay_half, by_half, ky_half)
+
+    ! Retrieve the nb of points of the current subdomain that are inside the PML layer
+    n1 = grid%nnodes_loc(1)
+    n2 = grid%nnodes_loc(2)
+    n3 = grid%nnodes_loc(3)
+
+    end_left(:)    = grid%npml_glob(1,:)                   ! number of PML nodes at edges z-, x-, y-
+    start_right(:) = end_left(:) + grid%nmodel_glob(:) + 1 ! index number first PML node at edges z+, x+, y+
+
+    npml_loc = 0
+    do k = 1, n3
+      do j = 1, n2
+        do i = 1, n1
+
+          coord_loc = (/i,j,k/)
+          call grid%sgrid_loc2glob(coord_loc, coord_glob)
+
+          if (      coord_glob(1) <= end_left(1) .or. coord_glob(1) >= start_right(1) &
+              .or.  coord_glob(2) <= end_left(2) .or. coord_glob(2) >= start_right(2) &
+              .or.  coord_glob(3) <= end_left(3) .or. coord_glob(3) >= start_right(3) ) then
+            npml_loc = npml_loc + 1
+          end if
+
+        end do
+      end do
+    end do
+
+  end subroutine cpml_init
+
+
+  subroutine cpml_compute_coef_on_axis(idim, grid, dt, vmax, Rc, freq, kmax, power, a, b, k, a_half, b_half, k_half)
+    integer,                         intent(in)     :: idim
+    type(sgrid_type),                intent(in)     :: grid
+    real,                            intent(in)     :: dt, vmax, Rc, freq, kmax
+    integer,                         intent(in)     :: power
+    real, dimension(:), allocatable, intent(in out) :: a, b, k, a_half, b_half, k_half
+    integer, dimension(3)                           :: coord_loc, coord_glob
+    real                                            :: alpha_max, d0, d0_left, d0_right
+    real                                            :: d_norm, d_norm_half, d, d_half, Lpml_left, Lpml_right
+    integer                                         :: ig_start, ig_first_mdl, ig_last_mdl, nnodes_loc, l, lg
+
+    nnodes_loc   = grid%nnodes_loc(idim)
+
+    call alloc_(b,      1, nnodes_loc, "b")
+    call alloc_(a,      1, nnodes_loc, "a")
+    call alloc_(k,      1, nnodes_loc, "k")
+
+    call alloc_(b_half, 1, nnodes_loc, "b_half")
+    call alloc_(a_half, 1, nnodes_loc, "a_half")
+    call alloc_(k_half, 1, nnodes_loc, "k_half")
+
+    ig_start     = 1 ! by convention
+    ig_first_mdl = ig_start + grid%npml_glob(1,idim)
+    ig_last_mdl  = ig_first_mdl + grid%nmodel_glob(idim) - 1
+
+    Lpml_left    = real(grid%npml_glob(1,idim)) - 0.5 ! left  PML layer size
+    Lpml_right   = real(grid%npml_glob(2,idim)) - 0.5 ! right PML layer size
+
+    d0_left      = 2. * grid%npml_glob(1,idim) * grid%h(idim)
+    d0_right     = 2. * grid%npml_glob(2,idim) * grid%h(idim)
+    if (d0_left  > 0) d0_left  = -(power+1) * vmax * log(Rc) / d0_left
+    if (d0_right > 0) d0_right = -(power+1) * vmax * log(Rc) / d0_right
+
+    alpha_max = acos(-1.)*freq
+
+    !----------------------------------------------------------------
+    ! loop on PML grid points along idim axis to fill the coef tables
+    !----------------------------------------------------------------
+
+    coord_loc = (/1,1,1/)
+
+    do l = 1, nnodes_loc
+
+      coord_loc(idim) = l
+      call grid%sgrid_loc2glob(coord_loc, coord_glob)
+      lg = coord_glob(idim)
+
+      if (lg < ig_first_mdl .or. lg > ig_last_mdl) then ! PML point
+
+        ! Compute ratio between distance from the edge and PML total thickness
+        if (lg < ig_first_mdl) then     ! PML point -
+          d_norm      = (real(ig_first_mdl-lg) - 0.5) / real(Lpml_left) ! # x/L
+          d_norm_half = (real(ig_first_mdl-lg) - 1.0) / real(Lpml_left)
+          d0          = d0_left
+        else if (lg > ig_last_mdl) then ! PML point +
+          d_norm      = (real(lg-ig_last_mdl) - 1.0) / real(Lpml_right)
+          d_norm_half = (real(lg-ig_last_mdl) - 0.5) / real(Lpml_right)
+          d0          = d0_right
+        end if
+
+        ! Compute PML coefficients on the reference grid then on the staggered grid
+        call cpml_compute_coef(d_norm,      d0, power, alpha_max, kmax, dt, b(l),      a(l),      k(l))
+        call cpml_compute_coef(d_norm_half, d0, power, alpha_max, kmax, dt, b_half(l), a_half(l), k_half(l))
+
+      end if
+
+    end do
+
+  end subroutine cpml_compute_coef_on_axis
+
+  
+  subroutine cpml_compute_coef(d_norm, d0, power, alpha_max, kmax, dt, b, a, k)
+    real,    intent(in)  :: d_norm, d0, alpha_max, kmax, dt
+    integer, intent(in)  :: power
+    real,    intent(out) :: a, b, k
+    real                 :: alpha, d
+    d     = d0 * d_norm ** power
+    alpha = alpha_max * (1. - d_norm)
+    k     = 1. + (kmax-1.) * d_norm ** power
+    b     = exp(-(d / k + alpha) * dt)
+    a     = d * (b - 1.) / (k * d + k**2 * alpha)
+  end subroutine cpml_compute_coef
+
+
+  subroutine define_threading_blocks()
+    integer                          :: iblock
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer, dimension(2,3)          :: loc_range
+    integer                          :: ib, jb, kb, R
+    integer                          :: ntbi, ntbj, ntbk
+
+    R = get_scheme_overlap()
+
+    ! Retrieve maximum range (because of temporal blocking optim)
+    call grid%sgrid_get_valid_loc_range(1, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    ! number of threaded blocks in each direction
+    ntbi = ceiling(real((nimax-nimin+1) - 2*R) / real(ltbi))
+    ntbj = ceiling(real((njmax-njmin+1) - 2*R) / real(ltbj))
+    ntbk = ceiling(real((nkmax-nkmin+1) - 2*R) / real(ltbk))
+
+    nblock = ntbi * ntbj * ntbk
+
+    call alloc_(block, 1, 3, 1, nblock, 'block')
+
+    iblock = 0
+    do kb = nkmin+R-1, nkmax-R+1, ltbk
+      do jb = njmin+R-1, njmax-R+1, ltbj
+        do ib = nimin+R-1, nimax-R+1, ltbi
+
+          block(1,iblock) = ib
+          block(2,iblock) = jb
+          block(3,iblock) = kb
+
+          iblock = iblock + 1
+
+        end do
+      end do
+    end do
+
+  end subroutine define_threading_blocks
+
+
+  subroutine alloc_wavefields()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer, dimension(2,3)          :: loc_range
+
+    call grid%sgrid_allocate_field(Vx, "Vx")
+    call grid%sgrid_allocate_field(Vy, "Vy")
+    call grid%sgrid_allocate_field(Vz, "Vz")
+    call grid%sgrid_allocate_field(P,  "P")
+
+    ! PML memory variables
+    call grid%sgrid_allocate_field(mem_Vx_x,  "mem_Vx_x")
+    call grid%sgrid_allocate_field(mem_Vy_y,  "mem_Vy_y")
+    call grid%sgrid_allocate_field(mem_Vz_z,  "mem_Vz_z")
+    call grid%sgrid_allocate_field(mem_Px_x,  "mem_Px_x")
+    call grid%sgrid_allocate_field(mem_Py_y,  "mem_Py_y")
+    call grid%sgrid_allocate_field(mem_Pz_z,  "mem_Pz_z")
+
+    ! Retrieve maximum range (because of temporal blocking optim)
+    call grid%sgrid_get_valid_loc_range(1, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    ! Array of derivatives inside PML
+    call alloc_(Dx, nimin, nimax, "Dx")
+    call alloc_(Dy, nimin, nimax, "Dy")
+    call alloc_(Dz, nimin, nimax, "Dz")
+
+  end subroutine alloc_wavefields
+
+
+  subroutine reset_wavefields()
+
+    Vx = 0. ; Vy = 0. ; Vz = 0. ; P = 0.
+    mem_Vx_x = 0. ; mem_Vy_y = 0. ; mem_Vz_z = 0. ; 
+    mem_Px_x = 0. ; mem_Py_y = 0. ; mem_Pz_z = 0.
+
+  end subroutine reset_wavefields
+
+
+  subroutine free_mem()
+    call dealloc_(Vx,        "Vx")
+    call dealloc_(Vy,        "Vy")
+    call dealloc_(Vz,        "Vz")
+    call dealloc_(P,         "P")
+    call dealloc_(Vp,        "Vp")
+    call dealloc_(rho,       "rho")
+    call dealloc_(buo_Vx,    "buo_Vx")
+    call dealloc_(buo_Vy,    "buo_Vy")
+    call dealloc_(buo_Vz,    "buo_Vz")
+    call dealloc_(kappa,     "kappa")
+    call dealloc_(mem_Vx_x,  "mem_Vx_x")
+    call dealloc_(mem_Vy_y,  "mem_Vy_y")
+    call dealloc_(mem_Vz_z,  "mem_Vz_z")
+    call dealloc_(mem_Px_x,  "mem_Px_x")
+    call dealloc_(mem_Py_y,  "mem_Py_y")
+    call dealloc_(mem_Pz_z,  "mem_Pz_z")
+    call dealloc_(source,    "source")
+    call dealloc_(bz,        "bz")
+    call dealloc_(az,        "az")
+    call dealloc_(kz,        "kz")
+    call dealloc_(bx,        "bx")
+    call dealloc_(ax,        "ax")
+    call dealloc_(kx,        "kx")
+    call dealloc_(by,        "by")
+    call dealloc_(ay,        "ay")
+    call dealloc_(ky,        "ky")
+    call dealloc_(bz_half,   "bz_half")
+    call dealloc_(az_half,   "az_half")
+    call dealloc_(kz_half,   "kz_half")
+    call dealloc_(bx_half,   "bx_half")
+    call dealloc_(ax_half,   "ax_half")
+    call dealloc_(kx_half,   "kx_half")
+    call dealloc_(by_half,   "by_half")
+    call dealloc_(ay_half,   "ay_half")
+    call dealloc_(ky_half,   "ky_half")
+    call dealloc_(src_comm1, "src_comm1")
+    call dealloc_(src_coor,  "src_coor")
+    call dealloc_(src_loc,   "src_loc")
+    call dealloc_(src_comm1, "src_comm1")
+    call dealloc_(Pglob,     "Pglob")
+    call dealloc_(Dx,        "Dx")
+    call dealloc_(Dy,        "Dy")
+    call dealloc_(Dz,        "Dz")
+  end subroutine free_mem
+
+
+  integer function get_scheme_order()
+    get_scheme_order = 4
+  end function get_scheme_order
+
+
+  integer function get_scheme_overlap()
+    get_scheme_overlap = int(get_scheme_order()/2)
+  end function get_scheme_overlap
+
+
+  subroutine compute_stress()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    real                             :: dvx_dx, dvy_dy, dvz_dz
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    if (npml_loc > 0) then
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k, dvx_dx, dvy_dy, dvz_dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            ! compute partial derivatives
+            dvx_dx = A1_h2 * (Vx(i,j,k)-Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k)-Vx(i,j-2,k))
+            dvy_dy = A1_h3 * (Vy(i,j,k)-Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1)-Vy(i,j,k-2))
+            dvz_dz = A1_h1 * (Vz(i,j,k)-Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k)-Vz(i-2,j,k))
+
+            mem_Vx_x(i,j,k) = bx(j) * mem_Vx_x(i,j,k) + ax(j) * dvx_dx
+            mem_Vy_y(i,j,k) = by(k) * mem_Vy_y(i,j,k) + ay(k) * dvy_dy
+            mem_Vz_z(i,j,k) = bz(i) * mem_Vz_z(i,j,k) + az(i) * dvz_dz
+
+            ! update partial derivatives
+            dvx_dx = dvx_dx + mem_Vx_x(i,j,k) 
+            dvy_dy = dvy_dy + mem_Vy_y(i,j,k)
+            dvz_dz = dvz_dz + mem_Vz_z(i,j,k)
+
+            P(i,j,k) = P(i,j,k) + kappa(i,j,k) * (dvx_dx + dvy_dy + dvz_dz) * dt
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            P(i,j,k) = P(i,j,k) &
+            &           + (  A1_h2 * (Vx(i,j,k) - Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k) - Vx(i,j-2,k)) &
+            &              + A1_h3 * (Vy(i,j,k) - Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1) - Vy(i,j,k-2)) &
+            &              + A1_h1 * (Vz(i,j,k) - Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k) - Vz(i-2,j,k)) &
+            &             ) * kappa(i,j,k) * dt
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_stress
+
+
+  subroutine compute_stress_optim_derivatives_splitting()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    if (npml_loc > 0) then
+      
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k, Dx, Dy, Dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+
+          do i = nimin, nimax
+            ! compute partial derivatives
+            Dx(i) = A1_H2 * (Vx(i,j,k)-vx(i,j-1,k)) + A2_H2 * (Vx(i,j+1,k)-vx(i,j-2,k))
+            ! update memory variables
+            mem_vx_x(i,j,k) = bx(j) * mem_vx_x(i,j,k) + ax(j) * Dx(i)
+            ! update partial derivatives
+            Dx(i) = Dx(i) +  mem_vx_x(i,j,k)
+          end do
+
+          do i = nimin, nimax
+            ! compute partial derivatives
+            Dy(i) = A1_H3 * (Vy(i,j,k)-Vy(i,j,k-1)) + A2_H3 * (Vy(i,j,k+1)-Vy(i,j,k-2))
+            ! update memory variables
+            mem_vy_y(i,j,k) = by(k) * mem_vy_y(i,j,k) + ay(k) * Dy(i)
+            ! update partial derivatives
+            Dy(i) = Dy(i) +  mem_vy_y(i,j,k)
+          end do
+
+          do i = nimin, nimax
+            ! compute partial derivatives
+            Dz(i) = A1_H1 * (Vz(i,j,k)-Vz(i-1,j,k)) + A2_H1 * (Vz(i+1,j,k)-Vz(i-2,j,k))
+            ! update memory variables
+            mem_vz_z(i,j,k) = bz(i) * mem_vz_z(i,j,k) + az(i) * Dz(i)
+            ! update partial derivatives
+            Dz(i) = Dz(i) +  mem_vz_z(i,j,k)
+          end do
+
+          do i = nimin, nimax
+            P(i,j,k) = P(i,j,k) + kappa(i,j,k) * (Dx(i) + Dy(i) + Dz(i)) * dt
+          end do
+
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            P(i,j,k) = P(i,j,k) &
+            &           + (  A1_h2 * (Vx(i,j,k) - Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k) - Vx(i,j-2,k)) &
+            &              + A1_h3 * (Vy(i,j,k) - Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1) - Vy(i,j,k-2)) &
+            &              + A1_h1 * (Vz(i,j,k) - Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k) - Vz(i-2,j,k)) &
+            &             ) * kappa(i,j,k) * dt
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_stress_optim_derivatives_splitting
+
+
+  subroutine compute_stress_optim_cache_blocking()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k, ii, jj, kk
+    integer                          :: k1, kEnd, j1, jEnd, i1, iEnd
+    integer                          :: nbi, nbj, nbk
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    nbk = ceiling(real(nkmax - nkmin + 1) / real(lcbk))
+    nbj = ceiling(real(njmax - njmin + 1) / real(lcbj))
+    nbi = ceiling(real(nimax - nimin + 1) / real(lcbi))
+    
+    if (npml_loc > 0) then
+
+      ! Why kk is not declared as private to the thread?
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(jj,ii,k,j,i,k1,kEnd,j1,jEnd,i1,iEnd,Dx,Dy,Dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do kk = 1, nbk
+        do jj = 1, nbj
+          do ii = 1, nbi
+
+            k1   = max(lcbk*(kk-1)+1,nkmin)
+            kEnd = min(lcbk*kk,nkmax)
+            j1   = max(lcbj*(jj-1)+1,njmin)
+            jEnd = min(lcbj*jj,njmax)
+            i1   = max(lcbi*(ii-1)+1,nimin)
+            iEnd = min(lcbi*ii,nimax)
+
+            do k = k1, kEnd
+              do j = j1, jEnd
+
+                do i = i1, iEnd
+                  ! compute partial derivatives
+                  Dx(i) = A1_H2 * (Vx(i,j,k)-Vx(i,j-1,k)) + A2_H2 * (Vx(i,j+1,k)-Vx(i,j-2,k))
+                  ! update memory variables
+                  mem_vx_x(i,j,k) = bx(j) * mem_vx_x(i,j,k) + ax(j) * Dx(i)
+                  ! update partial derivatives
+                  Dx(i) = Dx(i) +  mem_vx_x(i,j,k)
+                end do
+
+                do i = i1, iEnd
+                  ! compute partial derivatives
+                  Dy(i) = A1_H3 * (Vy(i,j,k)-Vy(i,j,k-1)) + A2_H3 * (Vy(i,j,k+1)-Vy(i,j,k-2))
+                  ! update memory variables
+                  mem_vy_y(i,j,k) = by(k) * mem_vy_y(i,j,k) + ay(k) * Dy(i)
+                  ! update partial derivatives
+                  Dy(i) = Dy(i) +  mem_vy_y(i,j,k)
+                end do
+
+                do i = i1, iEnd
+                  ! compute partial derivatives
+                  Dz(i) = A1_H1 * (Vz(i,j,k)-Vz(i-1,j,k)) + A2_H1 * (Vz(i+1,j,k)-Vz(i-2,j,k))
+                  ! update memory variables
+                  mem_vz_z(i,j,k) = bz(i) * mem_vz_z(i,j,k) + az(i) * Dz(i)
+                  ! update partial derivatives
+                  Dz(i) = Dz(i) +  mem_vz_z(i,j,k)
+                enddo
+
+                do i = i1, iEnd
+                  P(i,j,k) = P(i,j,k) + kappa(i,j,k) * (Dx(i) + Dy(i) + Dz(i)) * dt
+                end do
+
+              end do
+            end do
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(k,j,i)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            P(i,j,k) = P(i,j,k) &
+            &           + (  A1_h2 * (Vx(i,j,k) - Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k) - Vx(i,j-2,k)) &
+            &              + A1_h3 * (Vy(i,j,k) - Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1) - Vy(i,j,k-2)) &
+            &              + A1_h1 * (Vz(i,j,k) - Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k) - Vz(i-2,j,k)) &
+            &             ) * kappa(i,j,k) * dt
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_stress_optim_cache_blocking
+
+
+  subroutine compute_stress_optim_thread_blocking()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k, iblock
+    integer                          :: i1, iEnd, j1, jEnd, k1, kEnd
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    real                             :: dvx_dx, dvy_dy, dvz_dz
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    if (npml_loc > 0) then
+      
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(iblock,i,j,k,i1,iEnd,j1,jEnd,k1,kEnd,dvx_dx,dvy_dy,dvz_dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do iblock = 1, nblock
+
+        k1   = block(3,iblock)
+        kEnd = min(k1+ltbi,nkmax)
+        j1   = block(2,iblock)
+        jEnd = min(j1+ltbj,njmax)
+        i1   = block(1,iblock)
+        iEnd = min(i1+ltbi,nimax)
+
+        do k = k1, kEnd
+          do j = j1, jEnd
+            do i = i1, iEnd
+
+              ! compute partial derivatives
+              dvx_dx = A1_h2 * (Vx(i,j,k)-Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k)-Vx(i,j-2,k))
+              dvy_dy = A1_h3 * (Vy(i,j,k)-Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1)-Vy(i,j,k-2))
+              dvz_dz = A1_h1 * (Vz(i,j,k)-Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k)-Vz(i-2,j,k))
+
+              mem_Vx_x(i,j,k) = bx(j) * mem_Vx_x(i,j,k) + ax(j) * dvx_dx
+              mem_Vy_y(i,j,k) = by(k) * mem_Vy_y(i,j,k) + ay(k) * dvy_dy
+              mem_Vz_z(i,j,k) = bz(i) * mem_Vz_z(i,j,k) + az(i) * dvz_dz
+
+              ! update partial derivatives
+              dvx_dx = dvx_dx + mem_Vx_x(i,j,k) 
+              dvy_dy = dvy_dy + mem_Vy_y(i,j,k)
+              dvz_dz = dvz_dz + mem_Vz_z(i,j,k)
+
+              P(i,j,k) = P(i,j,k) + kappa(i,j,k) * (dvx_dx + dvy_dy + dvz_dz) * dt
+
+            end do
+          end do
+        end do
+
+      end do
+      !$OMP END DO
+      !$OMP END PARALLEL 
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(iblock,i,j,k,i1,iEnd,j1,jEnd,k1,kEnd)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do iblock = 1, nblock
+
+        k1   = block(3,iblock)
+        kEnd = min(k1+ltbi,nkmax)
+        j1   = block(2,iblock)
+        jEnd = min(j1+ltbj,njmax)
+        i1   = block(1,iblock)
+        iEnd = min(i1+ltbi,nimax)
+
+        do k = k1, kEnd
+          do j = j1, jEnd
+            do i = i1, iEnd
+
+              P(i,j,k) = P(i,j,k) &
+              &           + (  A1_h2 * (Vx(i,j,k) - Vx(i,j-1,k)) + A2_h2 * (Vx(i,j+1,k) - Vx(i,j-2,k)) &
+              &              + A1_h3 * (Vy(i,j,k) - Vy(i,j,k-1)) + A2_h3 * (Vy(i,j,k+1) - Vy(i,j,k-2)) &
+              &              + A1_h1 * (Vz(i,j,k) - Vz(i-1,j,k)) + A2_h1 * (Vz(i+1,j,k) - Vz(i-2,j,k)) &
+              &             ) * kappa(i,j,k) * dt
+
+            end do
+          end do
+        end do
+
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_stress_optim_thread_blocking
+
+
+  subroutine compute_velocity()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    real                             :: dpx_dx, dpy_dy, dpz_dz
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    if (npml_loc > 0) then
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k, dpx_dx, dpy_dy, dpz_dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            ! compute partial derivatives
+            dpx_dx = A1_h2 * (P(i,j+1,k) - P(i,j,k)) + A2_h2 * (P(i,j+2,k) - P(i,j-1,k))
+            dpy_dy = A1_h3 * (P(i,j,k+1) - P(i,j,k)) + A2_h3 * (P(i,j,k+2) - P(i,j,k-1)) 
+            dpz_dz = A1_h1 * (P(i+1,j,k) - P(i,j,k)) + A2_h1 * (P(i+2,j,k) - P(i-1,j,k))
+
+            ! update memory variables
+            mem_Px_x(i,j,k) = bx_half(j) * mem_Px_x(i,j,k) + ax_half(j) * dpx_dx
+            mem_Py_y(i,j,k) = by_half(k) * mem_Py_y(i,j,k) + ay_half(k) * dpy_dy
+            mem_Pz_z(i,j,k) = bz_half(i) * mem_Pz_z(i,j,k) + az_half(i) * dpz_dz
+
+            ! update partial derivatives
+            dpx_dx = dpx_dx + mem_Px_x(i,j,k)
+            dpy_dy = dpy_dy + mem_Py_y(i,j,k)
+            dpz_dz = dpz_dz + mem_Pz_z(i,j,k)
+
+            ! update grid point
+            Vx(i,j,k) = Vx(i,j,k) + dpx_dx * buo_Vx(i,j,k) * dt 
+            Vy(i,j,k) = Vy(i,j,k) + dpy_dy * buo_Vy(i,j,k) * dt 
+            Vz(i,j,k) = Vz(i,j,k) + dpz_dz * buo_Vz(i,j,k) * dt  
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            Vx(i,j,k) = Vx(i,j,k) + (A1_h2 * (P(i,j+1,k) - P(i,j,k)) + A2_h2 * (P(i,j+2,k) - P(i,j-1,k))) * buo_Vx(i,j,k) * dt 
+            Vy(i,j,k) = Vy(i,j,k) + (A1_h3 * (P(i,j,k+1) - P(i,j,k)) + A2_h3 * (P(i,j,k+2) - P(i,j,k-1))) * buo_Vy(i,j,k) * dt 
+            Vz(i,j,k) = Vz(i,j,k) + (A1_h1 * (P(i+1,j,k) - P(i,j,k)) + A2_h1 * (P(i+2,j,k) - P(i-1,j,k))) * buo_Vz(i,j,k) * dt  
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_velocity
+
+
+  subroutine compute_velocity_optim_derivatives_splitting()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    real                             :: dpx_dx, dpy_dy, dpz_dz
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    if (npml_loc > 0) then
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k, dpx_dx, dpy_dy, dpz_dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+
+          do i = nimin, nimax
+            ! compute partial derivatives
+            dpx_dx = A1_h2 * (P(i,j+1,k)-P(i,j,k)) + A2_h2 * (P(i,j+2,k)-P(i,j-1,k))
+            ! update memory variables
+            mem_Px_x(i,j,k) = bx_half(j) * mem_Px_x(i,j,k) + ax_half(j) * dpx_dx
+            ! update partial derivatives
+            dpx_dx = dpx_dx + mem_Px_x(i,j,k)
+            ! update grid point
+            Vx(i,j,k) = Vx(i,j,k) + dpx_dx * buo_Vx(i,j,k) * dt
+          end do
+
+          do i = nimin, nimax
+            ! compute partial derivatives            
+            dpy_dy = A1_h3 * (P(i,j,k+1)-P(i,j,k)) + A2_h3 * (P(i,j,k+2)-P(i,j,k-1)) 
+            ! update memory variables
+            mem_Py_y(i,j,k) = by_half(k) * mem_Py_y(i,j,k) + ay_half(k) * dpy_dy
+            ! update partial derivatives
+            dpy_dy = dpy_dy + mem_Py_y(i,j,k)
+            ! update grid point
+            Vy(i,j,k) = Vy(i,j,k) + dpy_dy * buo_Vy(i,j,k) * dt
+          end do
+
+          do i = nimin, nimax
+            ! compute partial derivatives            
+            dpz_dz = a1_h1 * (p(i+1,j,k)-p(i,j,k)) + a2_h1 * (p(i+2,j,k)-p(i-1,j,k))
+            ! update memory variables
+            mem_pz_z(i,j,k) = bz_half(i) * mem_pz_z(i,j,k) + az_half(i) * dpz_dz
+            ! update partial derivatives
+            dpz_dz = dpz_dz + mem_pz_z(i,j,k)
+            ! update grid point
+            Vz(i,j,k) = vz(i,j,k) + dpz_dz * buo_vz(i,j,k) * dt
+          end do
+
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            Vx(i,j,k) = Vx(i,j,k) + (A1_h2 * (P(i,j+1,k) - P(i,j,k)) + A2_h2 * (P(i,j+2,k) - P(i,j-1,k))) * buo_Vx(i,j,k) * dt 
+            Vy(i,j,k) = Vy(i,j,k) + (A1_h3 * (P(i,j,k+1) - P(i,j,k)) + A2_h3 * (P(i,j,k+2) - P(i,j,k-1))) * buo_Vy(i,j,k) * dt 
+            Vz(i,j,k) = Vz(i,j,k) + (A1_h1 * (P(i+1,j,k) - P(i,j,k)) + A2_h1 * (P(i+2,j,k) - P(i-1,j,k))) * buo_Vz(i,j,k) * dt  
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_velocity_optim_derivatives_splitting
+
+
+  subroutine compute_velocity_optim_cache_blocking()
+    integer                          :: nkmax, njmax, nimax
+    integer                          :: nkmin, njmin, nimin
+    integer                          :: i, j, k, ii, jj, kk
+    integer                          :: k1, kEnd, j1, jEnd, i1, iEnd
+    integer                          :: nbi, nbj, nbk
+    real, parameter                  :: A1 = 1.125
+    real, parameter                  :: A2 = -1./24.
+    real                             :: A1_h1, A1_h2, A1_h3
+    real                             :: A2_h1, A2_h2, A2_h3
+    real                             :: dpx_dx, dpy_dy, dpz_dz
+    integer, dimension(2,3)          :: loc_range
+
+    A1_h1 = A1 / grid%h(1) ; A1_h2 = A1 / grid%h(2) ; A1_h3 = A1 / grid%h(3)
+    A2_h1 = A2 / grid%h(1) ; A2_h2 = A2 / grid%h(2) ; A2_h3 = A2 / grid%h(3)
+
+    call grid%sgrid_get_valid_loc_range(it, loc_range)
+
+    ! Bounds of the loops inside modelling domain including PML
+    ! + take into account valid range considering temporal blocking
+    nimin = loc_range(1,1)
+    njmin = loc_range(1,2)
+    nkmin = loc_range(1,3)
+    nimax = loc_range(2,1)
+    njmax = loc_range(2,2)
+    nkmax = loc_range(2,3)
+
+    nbk = ceiling(real(nkmax - nkmin + 1) / real(lcbk))
+    nbj = ceiling(real(njmax - njmin + 1) / real(lcbj))
+    nbi = ceiling(real(nimax - nimin + 1) / real(lcbi))
+    
+    if (npml_loc > 0) then
+
+! if (myid_1 == 0) then
+! write(*,*) myid_1, 'nkmin, nkmax =', nkmin, nkmax
+! write(*,*) myid_1, 'njmin, njmax =', njmin, njmax
+! write(*,*) myid_1, 'nimin, nimax =', nimin, nimax
+! write(*,*) myid_1, 'nbk, nbj, nbi =', nbk, nbj, nbi
+! write(*,*) myid_1, 'kk = 1', nbk
+! write(*,*) myid_1, 'jj = 1', nbj
+! write(*,*) myid_1, 'ii = 1', nbi
+! do kk = 1, nbk
+! write(*,*) myid_1, 'kk=',kk, '   => k =', max(lcbk*(kk-1)+1,nkmin), min(lcbk*kk,nkmax)
+! end do
+! do jj = 1, nbj
+! write(*,*) myid_1, 'jj=',jj, '   => j =', max(lcbj*(jj-1)+1,njmin), min(lcbj*jj,njmax)
+! end do
+! do ii = 1, nbi
+! write(*,*) myid_1, 'ii=',ii, '   => i =', max(lcbi*(ii-1)+1,nimin), min(lcbi*ii,nimax)
+! end do
+! end if
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k, dpx_dx, dpy_dy, dpz_dz)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do kk = 1, nbk
+        do jj = 1, nbj
+          do ii = 1, nbi
+
+            k1   = max(lcbk*(kk-1)+1,nkmin)
+            kEnd = min(lcbk*kk,nkmax)
+            j1   = max(lcbj*(jj-1)+1,njmin)
+            jEnd = min(lcbj*jj,njmax)
+            i1   = max(lcbi*(ii-1)+1,nimin)
+            iEnd = min(lcbi*ii,nimax)
+
+            do k = k1, kEnd
+              do j = j1, jEnd
+
+                do i = i1, iEnd
+                  ! compute partial derivatives
+                  dpx_dx = A1_h2 * (P(i,j+1,k)-P(i,j,k)) + A2_h2 * (P(i,j+2,k)-P(i,j-1,k))
+                  ! update memory variables
+                  mem_Px_x(i,j,k) = bx_half(j) * mem_Px_x(i,j,k) + ax_half(j) * dpx_dx
+                  ! update partial derivatives
+                  dpx_dx = dpx_dx + mem_Px_x(i,j,k)
+                  ! update grid point
+                  Vx(i,j,k) = Vx(i,j,k) + dpx_dx * buo_Vx(i,j,k) * dt
+                end do
+
+                do i = i1, iEnd
+                  ! compute partial derivatives            
+                  dpy_dy = A1_h3 * (P(i,j,k+1)-P(i,j,k)) + A2_h3 * (P(i,j,k+2)-P(i,j,k-1)) 
+                  ! update memory variables
+                  mem_Py_y(i,j,k) = by_half(k) * mem_Py_y(i,j,k) + ay_half(k) * dpy_dy
+                  ! update partial derivatives
+                  dpy_dy = dpy_dy + mem_Py_y(i,j,k)
+                  ! update grid point
+                  Vy(i,j,k) = Vy(i,j,k) + dpy_dy * buo_Vy(i,j,k) * dt
+                end do
+
+                do i = i1, iEnd
+                  ! compute partial derivatives            
+                  dpz_dz = a1_h1 * (p(i+1,j,k)-p(i,j,k)) + a2_h1 * (p(i+2,j,k)-p(i-1,j,k))
+                  ! update memory variables
+                  mem_pz_z(i,j,k) = bz_half(i) * mem_pz_z(i,j,k) + az_half(i) * dpz_dz
+                  ! update partial derivatives
+                  dpz_dz = dpz_dz + mem_pz_z(i,j,k)
+                  ! update grid point
+                  Vz(i,j,k) = vz(i,j,k) + dpz_dz * buo_vz(i,j,k) * dt
+                end do
+
+              end do
+            end do
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    else
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = nkmin, nkmax
+        do j = njmin, njmax
+          do i = nimin, nimax
+
+            Vx(i,j,k) = Vx(i,j,k) + (A1_h2 * (P(i,j+1,k) - P(i,j,k)) + A2_h2 * (P(i,j+2,k) - P(i,j-1,k))) * buo_Vx(i,j,k) * dt 
+            Vy(i,j,k) = Vy(i,j,k) + (A1_h3 * (P(i,j,k+1) - P(i,j,k)) + A2_h3 * (P(i,j,k+2) - P(i,j,k-1))) * buo_Vy(i,j,k) * dt 
+            Vz(i,j,k) = Vz(i,j,k) + (A1_h1 * (P(i+1,j,k) - P(i,j,k)) + A2_h1 * (P(i+2,j,k) - P(i-1,j,k))) * buo_Vz(i,j,k) * dt  
+
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end if
+
+  end subroutine compute_velocity_optim_cache_blocking
+
+
+  subroutine print_starting_banner()
+    if (myid_world == 0) then    
+      write(*,*) ''   
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      write(*,*) '                        3D Domain Decomposition Test'
+      write(*,*) '' 
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      call comm%print_info()
+      write(*,*) ' Number of threads :             ', nthreads
+    end if
+    end subroutine print_starting_banner
+
+
+  subroutine print_successfully_program_ended_banner()
+    if (myid_world == 0) then
+      write(*,*) ''
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      write(*,*) '     End of the program                        '
+      write(*,*) ''
+      write(*,*) '======================================================================'
+    end if
+  end subroutine print_successfully_program_ended_banner
+
+
+  subroutine fdm_write_vtk_legacy_fmt(grid, isrc_glob, it, F, fieldname)
+    type(sgrid_type),                    intent(in) :: grid
+    integer,                             intent(in) :: isrc_glob
+    integer,                             intent(in) :: it
+    real, dimension(:,:,:), allocatable, intent(in) :: F
+    character(len=*),                    intent(in) :: fieldname
+    integer                                         :: ierr, ivar, icomp, icomp2
+    integer                                         :: nymax, nxmax, nzmax
+    integer                                         :: fileunit = 11
+    character                                       :: filename*80
+    character                                       :: itstr*6, myidstr*6, isrc_glob_str*6 
+    character                                       :: istr1*8, istr2*8, istr3*8, fstr1*32, fstr2*32, fstr3*32
+    character                                       :: buffer*120, ntotstr*12, lutfmt*20
+    character(len=*),                     parameter :: end_of_line = char(10)
+    integer                                         :: ix, iy, iz
+
+    write(itstr,        '(I6)' ) it
+    write(myidstr,      '(I6)' ) myid_1
+    write(isrc_glob_str,'(I6)' ) isrc_glob
+    write(ntotstr(1:12),'(I12)') product(grid%nnodes_glob)
+
+    filename = 'output' // '_bin'                                 &
+    &                   // '_src' // trim(adjustl(isrc_glob_str)) &
+    &                   // '_it'  // trim(adjustl(itstr))         &
+    &                   // '.vtk'
+
+    open(unit = fileunit, file = trim(filename), status='replace', access='STREAM', convert='big_endian', iostat=ierr)
+    if (ierr /= 0) then
+      write(*,*) " ERROR : could not open file : ", filename, " unit = ", fileunit
+      stop
+    endif
+
+    ! HEADER SECTION
+    buffer = '# vtk DataFile Version 3.0'
+    write(fileunit) trim(buffer//end_of_line)
+    buffer = 'vtk output'
+    write(fileunit) trim(buffer//end_of_line)
+    buffer = 'BINARY'
+    write(fileunit) trim(buffer//end_of_line)
+    buffer = 'DATASET STRUCTURED_POINTS'
+    write(fileunit) trim(buffer//end_of_line)
+
+    ! GRID SECTION (grid dimensions includes PML)
+    write(istr1(1:8),'(i8)') grid%nnodes_glob(1)
+    write(istr2(1:8),'(i8)') grid%nnodes_glob(2)
+    write(istr3(1:8),'(i8)') grid%nnodes_glob(3)
+    buffer = 'DIMENSIONS '//istr1//' '//istr2//' '//istr3
+    write(fileunit) trim(buffer//end_of_line)
+    write(fstr1(1:32),'(f14.7)') grid%bbox_glob(1,1)
+    write(fstr2(1:32),'(f14.7)') grid%bbox_glob(1,2)
+    write(fstr3(1:32),'(f14.7)') grid%bbox_glob(1,3)
+    buffer = 'ORIGIN '//fstr1//' '//fstr2//' '//fstr3
+    write(fileunit) trim(buffer//end_of_line)
+    write(fstr1(1:32),'(f14.7)') grid%h(1)
+    write(fstr2(1:32),'(f14.7)') grid%h(2)
+    write(fstr3(1:32),'(f14.7)') grid%h(3)
+    buffer = 'SPACING '//fstr1//' '//fstr2//' '//fstr3
+    write(fileunit) trim(buffer//end_of_line)
+
+    ! POINT DATA SECTION
+    buffer = 'POINT_DATA '//ntotstr
+    write(fileunit) trim(buffer//end_of_line)
+
+    nxmax = grid%nnodes_glob(1)
+    nymax = grid%nnodes_glob(2)
+    nzmax = grid%nnodes_glob(3)
+
+    ! Write the look-up table associated to the field
+    buffer = 'SCALARS ' // trim(adjustl(fieldname)) // ' float'
+    write(fileunit) trim(buffer//end_of_line)
+    buffer = 'LOOKUP_TABLE default'
+    write(fileunit) trim(buffer//end_of_line)
+    write(fileunit) (((F(ix,iy,iz), ix = 1, nxmax), iy = 1, nymax), iz = 1, nzmax)
+
+    close(fileunit)
+
+  end subroutine fdm_write_vtk_legacy_fmt
+
+
+  subroutine print_statistics()
+    real                                  :: valmin, valmax
+
+    if (myid_1 == 0) then
+      write(*,*) '--------------------------------------------------------'
+      write(*,*) ' Statistics:'
+    end if
+
+    valmin = comm%sg_comm_get_field_glob_min_value(grid, Vx, .true.)
+    valmax = comm%sg_comm_get_field_glob_max_value(grid, Vx, .true.)
+    if (myid_1 == 0) write(*,*) ' Vx     : min = ', valmin, ' max = ', valmax
+
+    valmin = comm%sg_comm_get_field_glob_min_value(grid, Vy, .true.)
+    valmax = comm%sg_comm_get_field_glob_max_value(grid, Vy, .true.)
+    if (myid_1 == 0) write(*,*) ' Vy     : min = ', valmin, ' max = ', valmax
+
+    valmin = comm%sg_comm_get_field_glob_min_value(grid, Vz, .true.)
+    valmax = comm%sg_comm_get_field_glob_max_value(grid, Vz, .true.)
+    if (myid_1 == 0) write(*,*) ' Vz     : min = ', valmin, ' max = ', valmax
+
+    valmin = comm%sg_comm_get_field_glob_min_value(grid, P, .true.)
+    valmax = comm%sg_comm_get_field_glob_max_value(grid, P, .true.)
+    if (myid_1 == 0) write(*,*) ' P      : min = ', valmin, ' max = ', valmax
+    if (myid_1 == 0) write(*,*) '--------------------------------------------------------'
+
+  end subroutine print_statistics
+
+
+end program test_dd_sg_ac_iso_o4_optim

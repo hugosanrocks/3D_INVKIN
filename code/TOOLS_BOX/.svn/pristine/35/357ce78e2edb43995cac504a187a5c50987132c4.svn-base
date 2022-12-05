@@ -1,0 +1,46 @@
+set(TEST_DG_TEST dg_test${suffix})
+# 
+# add_executable(
+#         ${TEST_DG_TEST}
+#         dg_test.f90
+# )
+# 
+# target_link_libraries(
+#         ${TEST_DG_TEST}
+#         ${DOMDECOMP_LIB_NAME}_static
+# )
+set(PROTO_DG_TEST proto_dg${suffix})
+
+add_executable(
+        ${PROTO_DG_TEST}
+        proto_dg.f90
+)
+
+target_link_libraries(
+        ${PROTO_DG_TEST}
+        ${DOMDECOMP_LIB_NAME}_static
+)
+
+include_directories(
+        ${DD_INCLUDE_PATH}
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+# install(
+#         TARGETS ${TEST_DG_TEST}
+#         RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+#         LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+#         ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+#         COMPONENT TEST_DG_TEST
+# )
+
+install(
+        TARGETS ${PROTO_DG_TEST}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT PROTO_DG_TEST
+)
+

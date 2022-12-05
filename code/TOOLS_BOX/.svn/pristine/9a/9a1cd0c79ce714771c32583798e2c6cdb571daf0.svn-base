@@ -1,0 +1,129 @@
+program ug_test_tetra_mesh_partition
+
+  use dd_common_mod
+  use mesh_readers_mod
+  use mesh_writers_mod
+  use tetra_mesh_struct_mod
+  use tetra_mesh_partition_mod
+  use tetra_mesh_graphs_mod
+
+  implicit none
+
+  character(len = 100)                                     :: iFileName, oFileName
+  character(len = 1024)                                    :: exec
+  type(tetra_mesh_struct_type)                              :: mesh       ! global mesh
+  type(tetra_mesh_struct_type), dimension(:),   allocatable :: mesh_part  ! sub_meshes
+  type(tetra_comm_struct_type), dimension(:),   allocatable :: comm_part  ! communication structure of sub_meshes
+  integer,                     dimension(:,:), allocatable :: FtagtoV    ! initial array of tagged faces/elements (provided by mesher)
+  integer,                     dimension(:),   allocatable :: Ftag, Etag ! idem
+  integer                                                  :: nb_args, graph_type, weight, ipart
+  real                                                     :: time_end = 0., time_begin = 0., time0 = 0.
+  character(len=3)                                         :: buffer, str1
+  integer(4)                                               :: iargc ! declare function for xlf compiler
+
+  dd_debug_level   = 0
+  debug_graph      = 0
+
+  ! read parameters: input filename
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 2) then
+    write(6,*) "ERROR : bad number of arguments :", nb_args
+    write(6,*) "command line : ug_test_tetra_mesh_partition[_gnu] meshfilename npart"
+    stop
+  end if
+  call getarg(1, iFileName)
+  call getarg(2, buffer)
+  read(buffer,*) npart
+
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "Start ug_test_tetra_mesh_partition : "
+  write(6,*) "-----------------------------------------"
+  write(*,*) ' meshfilename = ', iFileName
+  write(*,*) ' npart        = ', npart
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+  !print *, selected_int_kind(8), huge(0_4)
+
+  call cpu_time(time_begin)
+  time0 = time_begin
+  !==============================================================================
+  call read_medit_mesh (iFileName, &
+  &                     mesh%nV, mesh%coorV, mesh%nE, mesh%nEdeg, mesh%EtoV, &
+  &                     Etag, mesh%nFtag, mesh%nFdeg, FtagtoV, Ftag)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'read_medit_mesh: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+
+  if (mesh%nEdeg /= 4) then
+    write(*,*) 'Mesh of tetrahedra attempted. Get: ', mesh%nEdeg; call flush(6)
+    stop
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call build_tetra_mesh_graphs(mesh)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_tetra_mesh_graphs: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  graph_type = 1 ! dual
+  graph_type = 0 ! nodal
+  weight     = 0 ! no weight
+  allocate(mesh_part(1:npart), comm_part(1:npart))
+  call cpu_time(time_begin)
+  !==============================================================================
+  call tetra_mesh_partition (mesh, graph_type, weight, npart, mesh_part, comm_part)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'mesh_partition: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+!   oFileName = 'out_part.master'
+!   call write_tetra_master_struct(oFileName, npart, mesh_part)
+
+  do ipart = 1, npart
+    write(str1,'(I3)') ipart
+
+    oFileName = 'out_part_' // trim(adjustl(str1)) // '_medit.mesh'
+    !==============================================================================
+    call write_medit_mesh(oFileName, &
+    & mesh_part(ipart)%nV, mesh_part(ipart)%coorV, &
+    & mesh_part(ipart)%nE, mesh_part(ipart)%nEdeg, mesh_part(ipart)%EtoV, mesh_part(ipart)%Etag, &
+    & mesh_part(ipart)%nF, mesh_part(ipart)%nFdeg, mesh_part(ipart)%FtoV, &
+    & mesh_part(ipart)%nFtag, mesh_part(ipart)%FtagtoF, mesh_part(ipart)%Ftag)
+    !==============================================================================
+
+    oFileName = 'out_part_' // trim(adjustl(str1)) // '.mesh'
+    !==============================================================================
+    call write_tetra_mesh_struct(mesh_part(ipart), oFileName)
+    !==============================================================================
+
+    oFileName = 'out_part_' // trim(adjustl(str1)) // '.comm_struct'
+    !==============================================================================
+    call write_tetra_comm_struct(comm_part(ipart), oFileName)
+    !==============================================================================
+
+    call free_tetra_mesh_struct(mesh_part(ipart))
+    call free_tetra_comm_struct(comm_part(ipart))
+
+  end do
+
+  call free_tetra_mesh_struct(mesh)
+
+  call cpu_time(time_end)
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "ug_test_tetra_mesh_partition successfully ended : "
+  write(*,*) 'Total time (seconds) = ', REAL(time_end - time0)
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+
+end program ug_test_tetra_mesh_partition

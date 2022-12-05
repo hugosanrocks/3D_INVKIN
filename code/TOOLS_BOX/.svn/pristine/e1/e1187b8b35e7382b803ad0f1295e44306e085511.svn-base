@@ -1,0 +1,80 @@
+!
+!!$  Copyright (C) 2015 University Joseph Fourier, Grencle (Pengliang Yang)
+!!$
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+program test_ksinc_1d
+  implicit none
+
+  integer::nt !number of time steps
+  integer::i1min !minimum index of boundary elements for 1-axis 
+  integer::i1max !maximum index of boundary elements for 1-axis 
+  integer::i2min !minimum index of boundary elements for 2-axis 
+  integer::i2max !maximum index of boundary elements for 2-axis 
+  integer::i3min !minimum index of boundary elements for 3-axis 
+  integer::i3max !maximum index of boundary elements for 3-axis 
+  integer::r !decimation ratio for it
+  real,dimension(:,:,:,:),allocatable:: var, var0, var1
+
+  real,parameter::pi=3.14159265359
+  integer::i1,i2,i3,it,mt,l,q
+
+  nt=1000 !number of time steps
+  r=4 !temporal decimation
+  i1min=1 
+  i1max=1
+  i2min=1
+  i2max=1
+  i3min=1
+  i3max=1
+  l=4 !radius of Kaiser window
+  q=7 !q-th order polynomial
+  mt=nt/r
+
+  allocate(var0(nt,i1min:i1max,i2min:i2max,i3min:i3max))
+  allocate(var(mt,i1min:i1max,i2min:i2max,i3min:i3max))
+  allocate(var1(nt,i1min:i1max,i2min:i2max,i3min:i3max))
+
+  do it=1,nt
+     var0(it,1,1,1)=sin(2*pi*0.01*it)
+  enddo
+  var=0. !initialize the allocated variable with zeros
+
+  do it=1,nt
+     !decimation
+     call poly_interp(.true.,var,var0(it,:,:,:),i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q)
+  enddo
+  do it=nt,1,-1
+     !interpolation
+     call poly_interp(.false.,var,var1(it,:,:,:),i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q)
+  enddo
+
+  open(10,file='exact.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) var0
+  close(10)
+  open(10,file='decimated.bin',access='direct',recl=nt,status='replace')
+  write(10,rec=1) var
+  close(10)
+  open(10,file='interpolated.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) var1
+  close(10)
+
+  deallocate(var)
+  deallocate(var0)
+  deallocate(var1)
+end program test_ksinc_1d
+

@@ -1,0 +1,17 @@
+# Before launching the current shell,
+# edit it and choose your compilation level by switching the commented/uncommented last line.
+# Then create a build directory at the same level than the current script,
+# go inside and type
+# my_build_dir > sh ../cmake_gnu.sh
+
+CXX=gcc CXXFLAGS='-O3' CC=gcc CFLAGS='-O3' FC=gfortran FFLAGS='-O3' AR=ar \
+  cmake                                                                   \
+  -DCMAKE_BUILD_TYPE='Release'                                            \
+  -DGNU=1                                                                 \
+  ..
+
+# CXX=gcc CXXFLAGS='-g' CC=gcc CFLAGS='-g' FC=gfortran FFLAGS='-g' AR=ar \
+#   cmake                                                                \
+#   -DCMAKE_BUILD_TYPE='Debug'                                           \
+#   -DGNU=1                                                              \
+#   ..

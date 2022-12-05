@@ -1,0 +1,378 @@
+module sg_points_zone_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use zone_mod
+  use sgrid_mod
+
+  implicit none
+
+  !=========================================================
+  type, extends(points_glob_zone_type), public :: sg_grid_points_glob_zone_type
+
+    ! Mapping between the points defining the global zone and the global grid
+    ! mapping_glob_grid(1:3,1:npt_glob) = (i,j,k) in global grid
+    integer, dimension(:,:), allocatable :: mapping_glob_grid
+
+    contains
+
+    procedure, pass :: sg_grid_points_glob_zone_constructor
+    procedure, pass :: glob_zone_destructor  => sg_grid_points_glob_zone_destructor
+  end type sg_grid_points_glob_zone_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sg_grid_points_glob_zone_type
+
+  !=========================================================
+  type, extends(points_loc_zone_type), public :: sg_grid_points_loc_zone_type
+
+    ! Mapping between the points defining the local zone and the local grid
+    ! mapping_loc_grid(1:3,1:npt_loc) = (i,j,k) in local grid
+    integer, dimension(:,:), allocatable :: mapping_loc_grid
+
+    contains
+
+    procedure, pass :: sg_grid_points_loc_zone_constructor
+    procedure, pass :: loc_zone_destructor  => sg_grid_points_loc_zone_destructor
+  end type sg_grid_points_loc_zone_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sg_grid_points_loc_zone_type
+
+  !=========================================================
+  type, extends(points_glob_zone_type), public :: sg_continuum_points_glob_zone_type
+
+    ! Global coordinates of the points in the grid
+    real, dimension(:,:), allocatable :: coor
+
+    ! Possible support defined as a number of grid points around the continuum points
+    ! It could involve a continuum point to be distributed to several processors
+    integer                           :: irad = 0
+
+    contains
+
+    procedure, pass :: sg_continuum_points_glob_zone_constructor
+    procedure, pass :: glob_zone_destructor  => sg_continuum_points_glob_zone_destructor
+  end type sg_continuum_points_glob_zone_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sg_continuum_points_glob_zone_type
+
+  !=========================================================
+  type, extends(points_loc_zone_type), public :: sg_continuum_points_loc_zone_type
+
+    ! Global coordinates of the points in the grid
+    ! coor(1:3,1:npt_loc) = (x,y,z) in the subdomain
+    real,    dimension(:,:), allocatable :: coor
+
+    ! Indices of the nearest grid point in the subdomain
+    ! iloc(1:3,1:npt_loc) = (i,j,k) in the subdomain
+    integer, dimension(:,:), allocatable :: mapping_loc_grid
+
+    ! Possible support defined as a number of grid points around the continuum points
+    ! It could involve a continuum point to be distributed to several processors
+    integer                              :: irad = 0
+
+    contains
+
+    procedure, pass :: sg_continuum_points_loc_zone_constructor
+    procedure, pass :: sg_continuum_points_loc_zone_constructor_empty
+    procedure, pass :: loc_zone_destructor  => sg_continuum_points_loc_zone_destructor
+  end type sg_continuum_points_loc_zone_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sg_continuum_points_loc_zone_type
+
+  contains
+
+
+    function as_sg_grid_points_glob_zone_type(zone)
+      class(glob_zone_type), target,       intent(in) :: zone
+      type(sg_grid_points_glob_zone_type), pointer    :: as_sg_grid_points_glob_zone_type
+      character(len=*),                    parameter  :: proc_name = 'as_sg_grid_points_glob_zone_type'
+
+      zone_selector: select type(zone)
+      type is (sg_grid_points_glob_zone_type)
+        as_sg_grid_points_glob_zone_type => zone
+      class default
+        write(*,*) myid, ' :', proc_name, " :: ERROR : Wrong grid type. Attempted: sg_grid_points_glob_zone_type"
+        stop
+      end select zone_selector
+
+    end function as_sg_grid_points_glob_zone_type
+
+
+    subroutine sg_grid_points_glob_zone_constructor(this, npt_glob, mapping_glob_grid)
+      class(sg_grid_points_glob_zone_type), intent(in out) :: this
+      integer,                              intent(in)     :: npt_glob
+      integer, dimension(:,:), allocatable, intent(in)     :: mapping_glob_grid 
+      character(len=*),                     parameter      :: proc_name = "sg_grid_points_glob_zone_constructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call points_glob_zone_constructor(this, npt_glob)
+
+      !! BODY ++
+      ! Allocate and copy the array
+      call alloc_(this%mapping_glob_grid, 1, 3, 1, npt_glob, proc_name // "/mapping_glob_grid")
+      this%mapping_glob_grid = mapping_glob_grid
+      !! BODY --
+
+    end subroutine sg_grid_points_glob_zone_constructor
+
+
+    subroutine sg_grid_points_glob_zone_destructor(this)
+      class(sg_grid_points_glob_zone_type), intent(in out) :: this
+      character(len=*),                     parameter      :: proc_name = "sg_grid_points_glob_zone_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+      call dealloc_(this%mapping_glob_grid, proc_name // "/mapping_glob_grid")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call points_glob_zone_destructor(this)
+
+    end subroutine sg_grid_points_glob_zone_destructor
+
+
+    function as_sg_grid_points_loc_zone_type(zone)
+      class(loc_zone_type), target,    intent(in) :: zone
+      type(sg_grid_points_loc_zone_type), pointer :: as_sg_grid_points_loc_zone_type
+      character(len=*),                 parameter :: proc_name = 'as_sg_grid_points_loc_zone_type'
+
+      zone_selector: select type(zone)
+      type is (sg_grid_points_loc_zone_type)
+        as_sg_grid_points_loc_zone_type => zone
+      class default
+        write(*,*) myid, ' :', proc_name, " :: ERROR : Wrong grid type. Attempted: sg_grid_points_loc_zone_type"
+        stop
+      end select zone_selector
+
+    end function as_sg_grid_points_loc_zone_type
+
+
+    subroutine sg_grid_points_loc_zone_constructor(this, npt_loc, pts, mapping_loc_grid)
+      class(sg_grid_points_loc_zone_type),  intent(in out) :: this
+      integer,                              intent(in)     :: npt_loc
+      integer, dimension(:),   allocatable, intent(in)     :: pts 
+      integer, dimension(:,:), allocatable, intent(in)     :: mapping_loc_grid 
+      character(len=*),                     parameter      :: proc_name = "sg_grid_points_loc_zone_constructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call points_loc_zone_constructor(this, npt_loc, pts)
+
+      !! BODY ++
+      if (npt_loc > 0 .and. allocated(mapping_loc_grid)) then
+        ! Allocate and copy the arrays
+        call alloc_(this%mapping_loc_grid, 1, 3, 1, npt_loc, proc_name // "/mapping_loc_grid")
+        this%mapping_loc_grid = mapping_loc_grid
+      end if
+     !! BODY --
+
+    end subroutine sg_grid_points_loc_zone_constructor
+
+
+    subroutine sg_grid_points_loc_zone_destructor(this)
+      class(sg_grid_points_loc_zone_type), intent(in out) :: this
+      character(len=*),                    parameter      :: proc_name = "sg_grid_points_loc_zone_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+      call dealloc_(this%mapping_loc_grid, proc_name // "/mapping_loc_grid")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call points_loc_zone_destructor(this)
+
+    end subroutine sg_grid_points_loc_zone_destructor
+
+
+    function as_sg_continuum_points_glob_zone_type(zone)
+      class(glob_zone_type),            target, intent(in) :: zone
+      type(sg_continuum_points_glob_zone_type), pointer    :: as_sg_continuum_points_glob_zone_type
+      character(len=*),                         parameter  :: proc_name = 'as_sg_continuum_points_glob_zone_type'
+
+      zone_selector: select type(zone)
+      type is (sg_continuum_points_glob_zone_type)
+        as_sg_continuum_points_glob_zone_type => zone
+      class default
+        write(*,*) myid, ' :', proc_name, " :: ERROR : Wrong grid type. Attempted: sg_continuum_points_glob_zone_type"
+        stop
+      end select zone_selector
+
+    end function as_sg_continuum_points_glob_zone_type
+
+
+    subroutine sg_continuum_points_glob_zone_constructor(this, npt_glob, coor, irad)
+      class(sg_continuum_points_glob_zone_type), intent(in out) :: this
+      integer,                                   intent(in)     :: npt_glob
+      real,    dimension(:,:), allocatable,      intent(in)     :: coor 
+      integer,                                   intent(in)     :: irad
+      character(len=*),                          parameter      :: proc_name = "sg_continuum_points_glob_zone_constructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call points_glob_zone_constructor(this, npt_glob)
+
+      !! BODY ++
+      if (npt_glob > 0 .and. allocated(coor)) then
+        ! Allocate and copy the array
+        call alloc_(this%coor, 1, 3, 1, npt_glob, proc_name // "/coor")
+        this%coor = coor
+      end if
+
+      this%irad = irad
+      !! BODY --
+
+    end subroutine sg_continuum_points_glob_zone_constructor
+
+
+    subroutine sg_continuum_points_glob_zone_destructor(this)
+      class(sg_continuum_points_glob_zone_type), intent(in out) :: this
+      character(len=*),                          parameter      :: proc_name = "sg_continuum_points_glob_zone_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+      call dealloc_(this%coor,              proc_name // "/coor")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call points_glob_zone_destructor(this)
+
+    end subroutine sg_continuum_points_glob_zone_destructor
+
+
+    function as_sg_continuum_points_loc_zone_type(zone)
+      class(loc_zone_type),            target, intent(in) :: zone
+      type(sg_continuum_points_loc_zone_type), pointer    :: as_sg_continuum_points_loc_zone_type
+      character(len=*),                        parameter :: proc_name = 'as_sg_continuum_points_loc_zone_type'
+
+      zone_selector: select type(zone)
+      type is (sg_continuum_points_loc_zone_type)
+        as_sg_continuum_points_loc_zone_type => zone
+      class default
+        write(*,*) myid, ' :', proc_name, " :: ERROR : Wrong grid type. Attempted: sg_continuum_points_loc_zone_type"
+        stop
+      end select zone_selector
+
+    end function as_sg_continuum_points_loc_zone_type
+
+
+    subroutine sg_continuum_points_loc_zone_constructor(this, grid, npt_loc, pts, coor, irad)
+      class(sg_continuum_points_loc_zone_type), intent(in out) :: this
+      class(grid_type),                         intent(in)     :: grid
+      integer,                                  intent(in)     :: npt_loc
+      integer, dimension(:),   allocatable,     intent(in)     :: pts 
+      real,    dimension(:,:), allocatable,     intent(in)     :: coor 
+      integer,                                  intent(in)     :: irad
+      character(len=*),                         parameter      :: proc_name = "sg_continuum_points_loc_zone_constructor"
+      integer                                                  :: ipt
+      real,    dimension(3)                                    :: pt_coor
+      integer, dimension(3)                                    :: iglob, iloc
+      type(sgrid_type),                         pointer        :: sgrid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      sgrid => as_sgrid_type(grid)
+
+      ! Propagate object creation on parent class
+      call points_loc_zone_constructor(this, npt_loc, pts)
+
+      !! BODY ++
+      this%irad = irad
+
+      if (npt_loc > 0 .and. allocated(coor)) then
+
+        call alloc_(this%coor, 1, 3, 1, npt_loc, proc_name // "/coor")
+        this%coor = coor
+
+        call alloc_(this%mapping_loc_grid, 1, 3, 1, npt_loc, proc_name // "/mapping_loc_grid")
+
+        do ipt = 1, this%npt_loc
+
+          pt_coor(:) = (/ coor(1, ipt), coor(2, ipt), coor(3, ipt) /)
+
+          ! check if the point belongs to the subdomain
+          if (sgrid%sgrid_is_point_inside_sub_domain(pt_coor, this%irad, iglob, iloc)) then
+            this%mapping_loc_grid(:,ipt) = iloc(:)  ! receiver local indices coordinates
+          else
+            write(*,*) myid, ' : ', proc_name, ' :: ERROR : point :', pt_coor(:), ' does not belong to current subdomain', &
+            & ' bbox min =', sgrid%bbox_loc(1,:), ' bbox max =', sgrid%bbox_loc(2,:), ' irad =', this%irad
+            stop
+          end if
+
+        end do
+
+      end if
+     !! BODY --
+
+    end subroutine sg_continuum_points_loc_zone_constructor
+
+
+    subroutine sg_continuum_points_loc_zone_constructor_empty(this, grid, irad)
+      class(sg_continuum_points_loc_zone_type), intent(in out) :: this
+      class(grid_type),                         intent(in)     :: grid
+      integer,                                  intent(in)     :: irad
+      character(len=*),                         parameter      :: proc_name = "sg_continuum_points_loc_zone_constructor_empty"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call points_loc_zone_constructor_empty(this)
+
+      !! BODY ++
+      this%irad = irad
+     !! BODY --
+
+    end subroutine sg_continuum_points_loc_zone_constructor_empty
+
+
+    subroutine sg_continuum_points_loc_zone_destructor(this)
+      class(sg_continuum_points_loc_zone_type), intent(in out) :: this
+      character(len=*),                         parameter      :: proc_name = "sg_continuum_points_loc_zone_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+      call dealloc_(this%coor,             proc_name // "/coor")
+      call dealloc_(this%mapping_loc_grid, proc_name // "/mapping_loc_grid")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call points_loc_zone_destructor(this)
+
+    end subroutine sg_continuum_points_loc_zone_destructor
+
+
+end module sg_points_zone_mod
+  

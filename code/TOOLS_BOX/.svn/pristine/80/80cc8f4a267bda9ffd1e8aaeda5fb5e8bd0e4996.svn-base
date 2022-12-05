@@ -1,0 +1,370 @@
+module tetra_mesh_struct_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+
+
+  implicit none
+
+
+  type, public ::  dof_connect 
+     integer                                      :: npf
+     integer, dimension(:,:), allocatable         :: my_dof,nei_dof, my_local_dof, nei_local_dof
+     integer, dimension(:),   allocatable         :: id 
+  end type dof_connect
+
+
+  type, public :: tetra_mesh_struct_type
+
+    integer                                                :: nV    = 0, nF    = 0, nE = 0
+    integer                                                :: nFdeg = 3, nEdeg = 4
+    integer                                                :: nFtag = 0, nEtag = 0
+    integer                                                :: Pkmax = 0
+
+    integer,               dimension(:,:),     allocatable :: FtoV, FtoE, EtoV, EtoF, EtoE
+    integer,               dimension(:,:),     allocatable :: EtoFtag, FtagtoV
+    integer,               dimension(:),       allocatable :: FtagtoF, Ftag, wholeEtag, EtagtoE, Etag, PkE
+    real,                  dimension(:,:),     allocatable :: coorV
+
+    integer                                                :: ndof  = 0
+    integer,               dimension(:),       allocatable :: Etodof_adj
+    real(kind=FP),         dimension(:,:),     allocatable :: coordof
+    type(dof_connect),     dimension(:),       allocatable :: dof_dof
+    integer,               dimension(:,:,:,:), allocatable :: dof_dof_array 
+    real(kind=FP),         dimension(:,:),     allocatable :: Jacobian_2D
+    real(kind=FP),         dimension(:),       allocatable :: weight_vol
+    real(kind=FP),         dimension(:),       allocatable :: drdx, drdy, drdz
+    real(kind=FP),         dimension(:),       allocatable :: dsdx, dsdy, dsdz
+    real(kind=FP),         dimension(:),       allocatable :: dtdx, dtdy, dtdz
+    real(kind=FP),         dimension(:,:,:),   allocatable :: normal
+
+  end type tetra_mesh_struct_type
+
+
+  public :: read_tetra_mesh_struct
+  public :: write_tetra_mesh_struct
+  public :: free_tetra_mesh_struct
+  public :: free_dof_connect
+
+contains
+
+  subroutine read_tetra_mesh_struct(mesh, filename)
+    type(tetra_mesh_struct_type), intent(in out) :: mesh
+    character(len=*),             intent(in)     :: filename
+    character(len=*),             parameter      :: proc_name = "read_tetra_mesh_struct"
+    integer                                      :: istat
+    integer                                      :: nEtoF_deg
+    logical                                      :: exist
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, filename
+
+    inquire(file = trim(adjustl(filename)), exist = exist)
+    if (.not. exist) then
+      write(error_message,*) proc_name, " :: ERROR : unexisting file : ", trim(adjustl(filename))
+      call stop_mpi()
+    end if
+
+    open(unit_dd, file = trim(adjustl(filename)), form='unformatted', action='read', iostat = istat)
+    if (istat /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), istat
+      call stop_mpi()
+    end if
+    rewind(unit_dd)
+
+    read(unit_dd) mesh%nV, mesh%nF, mesh%nE
+    read(unit_dd) mesh%nFdeg, mesh%nEdeg
+    read(unit_dd) mesh%nFtag, mesh%nEtag
+    !read(unit_dd) mesh%Pkmax, mesh%ndof
+
+    if (dd_debug_level > 3) then
+      write(*,*) 'nEdeg, nFdeg =', mesh%nEdeg, mesh%nFdeg
+      write(*,*) 'nV, nF, nE   =', mesh%nV, mesh%nF, mesh%nE
+      write(*,*) 'nFtag, nEtag =', mesh%nFtag, mesh%nEtag
+      !write(*,*) 'Pkmax, ndof  =', mesh%Pkmax, mesh%ndof
+    end if
+
+    if (mesh%nEdeg /= 4 .or. mesh%nFdeg /= 3) then
+      write(error_message,*) proc_name, ' :: ERROR : tetrahedra expected'
+      call stop_mpi()
+    end if
+
+    nEtoF_deg = 4
+
+    if (mesh%nE > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read EtoV'
+      call alloc_(mesh%EtoV, 1, mesh%nEdeg, 1, mesh%nE, 'mesh%EtoV')
+      read(unit_dd) mesh%EtoV(1:mesh%nEdeg, 1:mesh%nE)
+
+      if (dd_debug_level > 3) write(*,*) 'read EtoF'
+      call alloc_(mesh%EtoF, 1, nEtoF_deg, 1, mesh%nE, 'mesh%EtoF')
+      read(unit_dd) mesh%EtoF(1:nEtoF_deg, 1:mesh%nE)
+
+      if (dd_debug_level > 3) write(*,*) 'read EtoE'
+      call alloc_(mesh%EtoE, 1, 4, 1, mesh%nE, 'mesh%EtoE')
+      read(unit_dd) mesh%EtoE(1:4, 1:mesh%nE)
+
+      ! wholeEtag not built on partitions
+      !if (dd_debug_level > 3) write(*,*) 'read wholeEtag'
+      !call alloc_(mesh%wholeEtag, mesh%nE, 'mesh%wholeEtag')
+      !read(unit_dd) mesh%wholeEtag(1:mesh%nE)
+
+      if (mesh%nFtag > 0) then
+        if (dd_debug_level > 3) write(*,*) 'read EtoFtag'
+        call alloc_(mesh%EtoFtag, 1, nEtoF_deg, 1, mesh%nE, 'mesh%EtoFtag')
+        read(unit_dd) mesh%EtoFtag(nEtoF_deg, 1:mesh%nE)
+      end if
+
+      if (dd_debug_level > 3) write(*,*) 'read PkE'
+      call alloc_(mesh%PkE, 1, mesh%nE, 'mesh%PkE')
+      read(unit_dd) mesh%PkE(1:mesh%nE)
+
+      if (dd_debug_level > 3) write(*,*) 'read Etodof_adj'
+      call alloc_(mesh%Etodof_adj, 1, mesh%nE+1, 'mesh%Etodof_adj')
+      read(unit_dd) mesh%Etodof_adj(1:mesh%nE+1)
+
+!       if (dd_debug_level > 3) write(*,*) 'read Eloctoglob'
+!       call alloc_(mesh%Eloctoglob%tab, 1, mesh%nE, 'mesh%Eloctoglob%tab')
+!       read(unit_dd) mesh%Eloctoglob%tab(1:mesh%nE)
+!       mesh%Eloctoglob%n = mesh%nE
+    end if
+
+    if (mesh%nF > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read FtoV'
+      call alloc_(mesh%FtoV, 1, mesh%nFdeg, 1, mesh%nF, 'mesh%FtoV')
+      read(unit_dd) mesh%FtoV(1:mesh%nFdeg, 1:mesh%nF)
+
+      ! FtoE not built on partitions
+      if (dd_debug_level > 3) write(*,*) 'read FtoE'
+      call alloc_(mesh%FtoE, 1, 4, 1, mesh%nF, 'mesh%FtoE')
+      read(unit_dd) mesh%FtoE(1:4, 1:mesh%nF)
+    end if
+
+    if (mesh%nFtag > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read FtagtoV'
+      call alloc_(mesh%FtagtoV, 1, mesh%nFdeg, 1, mesh%nFtag, 'mesh%FtagtoV')
+      read(unit_dd) mesh%FtagtoV(1:mesh%nFdeg,1:mesh%nFtag)
+
+      if (dd_debug_level > 3) write(*,*) 'read FtagtoF'
+      call alloc_(mesh%FtagtoF, 1, mesh%nFtag, 'mesh%FtagtoF')
+      read(unit_dd) mesh%FtagtoF(1:mesh%nFtag)
+
+      if (dd_debug_level > 3) write(*,*) 'read Ftag'
+      call alloc_(mesh%Ftag, 1, mesh%nFtag, 'mesh%Ftag')
+      read(unit_dd) mesh%Ftag(1:mesh%nFtag)
+    end if
+
+    if (mesh%nEtag > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read EtagtoE'
+      call alloc_(mesh%EtagtoE, 1, mesh%nEtag, 'mesh%EtagtoE')
+      read(unit_dd) mesh%EtagtoE(1:mesh%nEtag)
+
+      if (dd_debug_level > 3) write(*,*) 'read Etag'
+      call alloc_(mesh%Etag, 1, mesh%nEtag, 'mesh%Etag')
+      read(unit_dd) mesh%Etag(1:mesh%nEtag)
+    end if
+
+    if (mesh%nV > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read coorV'
+      call alloc_(mesh%coorV, 1, 3, 1, mesh%nV, 'mesh%coorV')
+      read(unit_dd) mesh%coorV(1:3, 1:mesh%nV)
+    end if
+
+    ! The other data are not saved (used to build the communication structure or dof data)
+
+    close(unit_dd)
+
+  end subroutine read_tetra_mesh_struct
+
+
+  subroutine write_tetra_mesh_struct(mesh, filename)
+    type(tetra_mesh_struct_type), intent(in) :: mesh
+    character(len=*),             intent(in) :: filename
+    character(len=*),             parameter  :: proc_name = "write_tetra_mesh_struct"
+    integer                                  :: istat
+    integer                                  :: nEtoF_deg
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, filename
+
+    if (mesh%nEdeg /= 4 .or. mesh%nFdeg /= 3) then
+      write(error_message,*) proc_name, ' :: ERROR : tetrahedra'
+      call stop_mpi()
+    end if
+
+    nEtoF_deg = 4
+
+    write(*,*)
+    write(*,*) "Write mesh struct ... ", trim(adjustl(filename))
+
+    open(unit_dd, file = trim(adjustl(filename)), form='unformatted', status = 'replace', action='write', iostat = istat)
+    if (istat /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), istat
+      call stop_mpi()
+    end if
+    rewind(unit_dd)
+
+    write(unit_dd) mesh%nV, mesh%nF, mesh%nE
+    write(unit_dd) mesh%nFdeg, mesh%nEdeg
+    write(unit_dd) mesh%nFtag, mesh%nEtag
+    !write(unit_dd) mesh%Pkmax, mesh%ndof
+
+    if (dd_debug_level > 1) then
+      write(*,*) 'nEdeg, nFdeg =', mesh%nEdeg, mesh%nFdeg
+      write(*,*) 'nV, nF, nE   =', mesh%nV, mesh%nF, mesh%nE
+      write(*,*) 'nFtag, nEtag =', mesh%nFtag, mesh%nEtag
+      !write(*,*) 'Pkmax, ndof  =', mesh%Pkmax, mesh%ndof
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoV'
+      write(unit_dd) mesh%EtoV(1:mesh%nEdeg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoV ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoF)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoF'
+      write(unit_dd) mesh%EtoF(1:nEtoF_deg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoF ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoE)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoE'
+      write(unit_dd) mesh%EtoE(1:4, 1:mesh%nE)
+      write(*,*) 'EtoE ok'
+    end if
+
+    ! wholeEtag not built on partitions
+    !if (mesh%nE > 0 .and. allocated(mesh%wholeEtag)) then
+    !  if (dd_debug_level > 1) write(*,*) 'write wholeEtag'
+    !  write(unit_dd) mesh%wholeEtag(1:mesh%nE)
+    !  write(*,*) 'wholeEtag ok'
+    !end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoFtag)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoFtag'
+      write(unit_dd) mesh%EtoFtag(1:nEtoF_deg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoFtag ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%PkE)) then
+      if (dd_debug_level > 1) write(*,*) 'write PkE'
+      write(unit_dd) mesh%PkE(1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'PkE ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%Etodof_adj)) then
+      if (dd_debug_level > 1) write(*,*) 'write Etodof_adj'
+      write(unit_dd) mesh%Etodof_adj(1:mesh%nE+1)
+      if (dd_debug_level > 1) write(*,*) 'Etodof_adj ok'
+    end if
+
+    if (mesh%nF > 0 .and. allocated(mesh%FtoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtoV'
+      write(unit_dd) mesh%FtoV(1:mesh%nFdeg, 1:mesh%nF)
+      if (dd_debug_level > 1) write(*,*) 'FtoV ok'
+    end if
+
+    ! FtoE not built on partitions
+    !if (mesh%nF > 0 .and. allocated(mesh%FtoE)) then
+    !  if (dd_debug_level > 1) write(*,*) 'write FtoE'
+    !  write(unit_dd) mesh%FtoE(1:nFtoE_deg, 1:mesh%nF)
+    !  if (dd_debug_level > 1) write(*,*) 'FtoE ok'
+    !end if
+
+    if (mesh%nFtag > 0 .and. allocated(mesh%FtagtoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtagtoV'
+      write(unit_dd) mesh%FtagtoV(1:mesh%nFdeg,1:mesh%nFtag)
+      if (dd_debug_level > 1) write(*,*) 'FtagtoV ok'
+    end if
+
+    if (mesh%nFtag > 0 .and. allocated(mesh%FtagtoF)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtagtoF'
+      write(unit_dd) mesh%FtagtoF(1:mesh%nFtag)
+      if (dd_debug_level > 1) write(*,*) 'FtagtoF ok'
+    end if
+
+    if (mesh%nFtag > 0 .and. allocated(mesh%Ftag)) then
+      if (dd_debug_level > 1) write(*,*) 'write Ftag'
+      write(unit_dd) mesh%Ftag(1:mesh%nFtag)
+      if (dd_debug_level > 1) write(*,*) 'Ftag ok'
+    end if
+
+    if (mesh%nEtag > 0 .and. allocated(mesh%EtagtoE)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtagtoE'
+      write(unit_dd) mesh%EtagtoE(1:mesh%nEtag)
+      if (dd_debug_level > 1) write(*,*) 'EtagtoE ok'
+    end if
+
+    if (mesh%nEtag > 0 .and. allocated(mesh%Etag)) then
+      if (dd_debug_level > 1) write(*,*) 'write Etag'
+      write(unit_dd) mesh%Etag(1:mesh%nEtag)
+      if (dd_debug_level > 1) write(*,*) 'Etag ok'
+    end if
+
+    if (mesh%nV > 0 .and. allocated(mesh%coorV)) then
+      if (dd_debug_level > 1) write(*,*) 'write coorV'
+      write(unit_dd) mesh%coorV(1:3, 1:mesh%nV)
+      if (dd_debug_level > 1) write(*,*) 'coorV ok'
+    end if
+
+    ! The other data are not saved (used to build the communication structure or dof data)
+
+    close(unit_dd)
+
+  end subroutine write_tetra_mesh_struct
+
+
+  subroutine free_tetra_mesh_struct(mesh)
+    type(tetra_mesh_struct_type), intent(in out) :: mesh
+    character(len=*),             parameter      :: proc_name = "free_tetra_mesh_struct"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call dealloc_(mesh%FtoV,              'mesh%FtoV')
+    call dealloc_(mesh%FtoE,              'mesh%FtoE')
+    call dealloc_(mesh%EtoV,              'mesh%EtoV')
+    call dealloc_(mesh%EtoF,              'mesh%EtoF')
+    call dealloc_(mesh%EtoE,              'mesh%EtoE')
+    call dealloc_(mesh%FtagtoV,           'mesh%FtagtoV')
+    call dealloc_(mesh%FtagtoF,           'mesh%FtagtoF')
+    call dealloc_(mesh%Ftag,              'mesh%Ftag')
+    call dealloc_(mesh%EtoFtag,           'mesh%EtoFtag')
+    call dealloc_(mesh%wholeEtag,         'mesh%wholeEtag')
+    call dealloc_(mesh%EtagtoE,           'mesh%EtagtoE')
+    call dealloc_(mesh%Etag,              'mesh%Etag')
+    call dealloc_(mesh%PkE,               'mesh%PkE')
+    call dealloc_(mesh%coorV,             'mesh%coorV')
+    call dealloc_(mesh%Etodof_adj,        'mesh%Etodof_adj')
+    call dealloc_(mesh%coordof,           'mesh%coordof')
+    call dealloc_(mesh%dof_dof_array,     'mesh%dof_dof_array')
+    call dealloc_(mesh%Jacobian_2D,       'mesh%Jacobian_2D')
+    call dealloc_(mesh%weight_vol,        'mesh%weight_vol')
+    call dealloc_(mesh%normal,            'mesh%normal')
+    call dealloc_(mesh%drdx,              'mesh%drdx')
+    call dealloc_(mesh%drdy,              'mesh%drdy')
+    call dealloc_(mesh%drdz,              'mesh%drdz')
+    call dealloc_(mesh%dsdx,              'mesh%dsdx')
+    call dealloc_(mesh%dsdy,              'mesh%dsdy')
+    call dealloc_(mesh%dsdz,              'mesh%dsdz')
+    call dealloc_(mesh%dtdx,              'mesh%dtdx')
+    call dealloc_(mesh%dtdy,              'mesh%dtdy')
+    call dealloc_(mesh%dtdz,              'mesh%dtdz')
+
+    call free_dof_connect(mesh%dof_dof)
+
+  end subroutine free_tetra_mesh_struct
+
+
+  subroutine free_dof_connect(dof_dof)
+    type(dof_connect), dimension(:), allocatable, intent(in out) :: dof_dof
+    integer                                                      :: i, n
+    if (allocated(dof_dof)) then
+      n = size(dof_dof)
+      do i = 1, n
+        deallocate(dof_dof(i)%my_dof, dof_dof(i)%nei_dof, dof_dof(i)%my_local_dof, dof_dof(i)%nei_local_dof, dof_dof(i)%id)
+      end do
+      deallocate(dof_dof)
+    end if
+  end subroutine free_dof_connect
+
+
+end module tetra_mesh_struct_mod

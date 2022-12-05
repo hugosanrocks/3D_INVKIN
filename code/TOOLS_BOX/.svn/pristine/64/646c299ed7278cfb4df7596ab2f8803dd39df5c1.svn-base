@@ -1,0 +1,32 @@
+%  size(val_num)
+%  imagesc(val_num);colormap(gray);set(gca,'Ydir','normal')
+%  plot(time_plot(1:NT_PLOT), (RATIO * val_num(1:NT_PLOT, irec)) + irec, '-k','LineWidth', 1)
+%  imagesc(val);colorbar
+%  for i=1:1:81
+%  plot(5*val(:,i)+i)
+%  end
+%  close all
+%  figure; hold on
+%  size(val(i,:))
+
+% Binary file
+close all
+file1 = fopen("P", 'r', 'ieee-le');
+val = fread(file1, [1000,81], 'float32');
+status = fclose(file1);
+figure; hold on
+for i=1:1:81
+plot(val(:,i)+i)
+end
+%  print('-depsc', 'MOD-FDM-TEST1-TIME.eps')
+
+% ASCII file
+%  close all
+%  val=load("P.dat");
+%  figure; hold on
+%  for i=1:1:81
+%  plot(val(:,i)+i)
+%  end
+%  print('-depsc', 'MOD-FDM-TEST1-TIME.eps')
+%  
+%  return;

@@ -1,0 +1,10 @@
+1                 ! N focal mechanisms acroos the fault (followed by a list of N members)
+90. 80. 0. 	  ! strike, dip, rake (rake optional if fixed or not)
+35. 20.           ! length along strike, length along dip (km)
+36 18             ! nodes along strike, nodes along dip
+1. 1.		  ! node distance: along strike, along dip (km)
+1                 ! 1=fix rake, 2=rake unknown
+58. 42.04 13.617  ! hypocenter coordinates
+2                 ! 1=[0,360], 2=[270,90] Option for rake boundaries
+0. 330. 30.       ! Wished rake, up, low limits of rake
+

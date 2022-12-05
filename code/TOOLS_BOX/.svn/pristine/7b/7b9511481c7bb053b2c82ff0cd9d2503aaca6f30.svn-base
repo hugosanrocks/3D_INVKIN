@@ -1,0 +1,25 @@
+#!/bin/bash
+
+n1=1000
+d1=0.01
+
+suaddhead < exact.bin ns=$n1 >exact.su
+suaddhead < interpolated.bin ns=$n1 > interpolated.su
+suop2 exact.su interpolated.su |sustrip > error.bin
+
+#cat exact.bin interpolated.bin error.bin > result
+
+#psgraph < result n=$n1 d1=$d1 nplot=3 linecolor=red,blue,green linewidth=1,1,1 
+#hbox=10 wbox=8  > result.ps
+
+
+psgraph < exact.bin n=$n1 d1=$d1 linecolor=red title=exact d2num=0.5 hbox=2 wbox=8  > exact.eps
+psgraph<interpolated.bin n=$n1 d1=$d1 linecolor=blue title=interpolated d2num=0.5 hbox=2 wbox=8> interpolated.eps
+psgraph < error.bin n=$n1 d1=$d1 linecolor=black hbox=2 wbox=8 title=error d2num=1e-5 > error.eps
+
+psmerge in=exact.eps translate=0,0 in=interpolated.eps translate=0,-3 in=error.eps  translate=0,-6 > result.eps
+epstopdf result.eps
+display result.eps &
+
+
+

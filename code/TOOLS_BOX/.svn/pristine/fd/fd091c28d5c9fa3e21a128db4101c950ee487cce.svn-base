@@ -1,0 +1,17 @@
+# Before launching the current shell,
+# edit it and adapt the following parameters:
+# - set your compilation options,
+# - set the path to metis library
+# Then create a build directory at the same level than the current script,
+# go inside and type
+# my_build_dir > sh ../cmake_gnu.sh
+
+FC='mpif90' \
+cmake \
+-DCMAKE_Fortran_FLAGS='-fopenmp' \
+-DCMAKE_Fortran_FLAGS_DEBUG='-g -Wall -pedantic -fbounds-check -ffpe-trap=invalid,overflow,zero' \
+-DCMAKE_Fortran_FLAGS_RELEASE='-O3' \
+-DMETIS_LIB_DIR='/home/user/training/LinAlg/metis-4.0' \
+-DMETIS_LIB_NAME='metis' \
+..
+

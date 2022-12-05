@@ -1,0 +1,24 @@
+3                    !Optimization strategy (1=STPD,2=CG,3=LBFGS) use only 3
+10                   !Maximum of iterations
+2                    !Option: 2=read weights for traces, 1=option not working
+0. 0. 0. 1.2e-04 0.  !weights of penalty terms
+0. 0. 0. 0.4         !quotas for each penalty term (!=0 on, ==0 off)
+0. 1.6               !lower and upper bounds of slip-rate amplitude
+1 0.01               !depth-dependent option: 1=on, 2=off and coefficient
+
+!Penalty terms:
+five options:
+0. 0. 0. 0. 0.
+0. 0. 0. 1.2e-04 0.
+
+1  2  3  4  5   -->
+                    1 = only rupture time information penalized (not used old)
+                    2 = only fault edge information penalized   (not used old)
+                    3 = Tikhonov term for smoothing             (still working)
+                    4 = Prior model                             (available and used)
+                    5 = nothing
+
+To turn the available penalty terms (3 and 4)
+quotas must be != from zero and weights of the 
+penalty term have to be set so that C_m is a 
+percentage of the initial C_d

@@ -1,0 +1,23 @@
+2 2 2                 !1 1 1                 ! nsub_dom 
+201 401 401           !45 45 45              ! nglobal
+25. 25. 25.           !250. 250. 250.        ! spatial_step
+0. 0. 0.              ! grid_origin
+20 20 20 20 20 20     !2 2 2 2 2 2           ! npml_glob
+1000                  ! nt
+0.002                 ! dt
+0                     ! ntmpblock
+4000.                 ! vp_val 
+2000.                 ! rho_val
+5.                    ! ricker_freq
+3.2e10                ! ricker_amp
+4000.                 ! pml_vmax
+0.0001                ! pml_Rc
+5.                    ! pml_freq
+1.                    ! pml_kmax
+2                     ! pml_power  
+1                     ! nsrc
+4000. 4000. 500.      ! src_coor(:,1)
+3                     ! receiver : plan (1=YZ,2=XZ,3=XY) 
+0. 4000. 2500.        ! receiver : xmin, ymin, zmin
+81 100.               ! receiver : nb points, delta between points for axis 1
+1 0.                  ! receiver : nb points, delta between points for axis 2

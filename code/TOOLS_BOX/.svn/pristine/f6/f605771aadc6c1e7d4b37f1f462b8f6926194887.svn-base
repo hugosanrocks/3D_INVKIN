@@ -1,0 +1,19 @@
+#makefile 
+#LIB_TOOLS_BOX = -L $(TOOLS_BOX_DIR)/OPTIMIZATION/lib/ -lSEISCOPE_OPTIM -L $(TOOLS_BOX_DIR)/SU_IO/lib/ -lSU_IO
+#INC_TOOLS_BOX = -I $(TOOLS_BOX_DIR)/OPTIMIZATION/COMMON/include -I $(TOOLS_BOX_DIR)/SU_IO/include
+
+# for example, my path for checkpointing library is in the following.
+TOOLS_BOX_DIR = /home/yangpe/SEISCOPE_CODES/TOOLS_BOX/trunk
+
+LIB_TOOLS_BOX = -L $(TOOLS_BOX_DIR)/CHECK_POINTING/lib_gnu/  -lcheckpointing_static -lstdc++
+INC_TOOLS_BOX = -I $(TOOLS_BOX_DIR)/CHECK_POINTING/lib_gnu 
+INC= $(INC_TOOLS_BOX) 
+LIB= $(LIB_TOOLS_BOX)
+
+FC = gfortran
+OPTF = 
+
+all:test_revolve_binomial.f90
+	$(FC) -o test $(OPTF) $(INC) test_revolve_binomial.f90  $(LIB) 
+clean:
+	rm test *~

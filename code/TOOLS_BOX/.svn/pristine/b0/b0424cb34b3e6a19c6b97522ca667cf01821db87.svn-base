@@ -1,0 +1,657 @@
+subroutine Time_evol_elastic_leapfrog()
+
+  
+
+  use global_parameters_mod
+  implicit none
+  !DEBUG : call build_init_condition_el
+  ! temporary arrays for optimization purpose
+  call allocate_working_arrays(ndof_local, ndof_local_face)
+  
+  ntime=int(time_simu/delta_t)
+  current_time = 0._fp
+
+  write(*,*)
+  write(*,*) '        Begin Time Loop (Elastic) ' 
+  write(*,*)
+  write(*,*) '  Number steps :', ntime
+  write(*,*) '  Time step    :', delta_t
+  write(*,*)  
+
+  do it= 1, ntime
+     current_time = current_time + delta_t
+ 
+     !! outputs info
+     if (mod(it,100) == 0 ) then
+        write(*,'(10x,i5,1x,a1,1x,i5,1x,a1,f5.2,a2)') it ,'/', ntime,'[',(real(it)/real(ntime))*100.,'%]' 
+        call take_pressure_x_snapshot_el
+        call take_pressure_y_snapshot_el
+     end if
+
+            
+     call write_sismogram_el(ndof_local)
+     call write_stf(Am_stf, Fm_stf, current_time)
+
+     !! elastic kernel
+     call LEAPF_elastic(ndof_local)
+     
+
+  end do
+
+
+end subroutine Time_evol_elastic_leapfrog
+
+!---------------------------------------------------
+subroutine  LEAPF_elastic(np)
+
+  !!
+  !! ORDER 2 LEAPFROG SCHEME
+  !!
+
+  use global_parameters_mod
+  implicit none
+  integer ie, np
+  real(kind=fp) current_time_rk
+
+
+  
+  !! initialisation of rhs vector
+  stress_rhs(:,:,:)=0._fp
+  veloc_rhs(:,:,:)=0._fp
+
+  !! time 
+  current_time_rk = current_time
+  do ie=1,nE
+     call compute_stress_jump(ie, ndof_local_face)
+     call compute_central_flux_stress(ie, ndof_local, ndof_local_face)
+     call compute_stress_derivatives(ie,ndof_local)
+  end do
+  veloc(:,:,:)=veloc(:,:,:) + delta_t*veloc_rhs(:,:,:)
+
+  
+
+  !! time sub-stepping 
+  current_time_rk = current_time +0.5_fp*delta_t
+  do ie=1,nE
+     call compute_velocity_jump(ie, ndof_local_face)
+     call compute_central_flux_velocity(ie, ndof_local, ndof_local_face)
+     call compute_velocity_derivatives(ie,ndof_local)
+  end do
+
+  !! add source 
+  call add_stress_ricker_source(Am_stf, Fm_stf, current_time_rk, np)
+
+  stress(:,:,:) =  stress(:,:,:) +  delta_t*stress_rhs(:,:,:)
+ 
+ 
+  
+
+end subroutine LEAPF_elastic
+     
+
+
+!----------------------------------------------------
+subroutine compute_velocity_jump(ie, npf)
+  use global_parameters_mod
+  implicit none 
+  integer, intent(in)   :: ie, npf 
+  integer   :: indx, ifacref, ie_nghb
+  integer   :: l,idof_local, ne_dof_local
+  integer   :: my_dof_local
+  integer   :: indx_permutted, iface_1 
+  integer   :: renumerotation_faces(4)
+  logical   :: tagged_face
+
+  !! CHANGE NUMEROTATION CONVENTION (it's for debbuging)
+  !! our convention -> Hesthaven's convention
+  renumerotation_faces(1)=3
+  renumerotation_faces(2)=4
+  renumerotation_faces(3)=2 
+  renumerotation_faces(4)=1
+  
+  indx = 0
+
+  ! order of current element
+  k=PkE(ie)
+
+  ! loop on faces 
+  do ifacref = 1, 4
+
+     ! numerotaion used in local matrices 
+     iface_1 = renumerotation_faces(ifacref)
+
+     ! global face numerotation
+     ifac = EtoF(ifacref, ie)
+
+     ! Retrieve the neighbour element index 
+     ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+     ! test for free surface (if here NOT OPTIMAL)
+     tagged_face=.false.
+     if(EtoFtag(ifacref, ie) /=0 ) tagged_face=.true.
+     
+     ! neighbourg element
+     if (ie_nghb > 0) then ! (if here NOT OPTIMAL)
+   
+        do l=1,npf  !! loop over our face
+
+           !! next dof
+           indx =indx + 1
+
+           !! new order to consider in local matrices 
+           indx_permutted = l + npf*(iface_1 - 1) 
+
+           !! retrieve dof numerotation
+           idof_local=ref_dof(k)%Ftodof(l,ifacref) 
+           idof=Etodof_adj(ie) + idof_local - 1    
+
+           !! outward normal
+           nx(indx_permutted)=normal(1,idof, ifacref)
+           ny(indx_permutted)=normal(2,idof, ifacref)
+           nz(indx_permutted)=normal(3,idof, ifacref)
+           
+           !! SURFACE of ifacref
+           Jface(indx_permutted) = 0.5_fp * Jacobian_2D(idof,ifacref) / weight_vol(idof) 
+
+           !! retrieve local dof numerotaion
+           my_dof_local = dof_dof(ie)%my_local_dof(l,ifacref)  
+           ne_dof_local = dof_dof(ie)%nei_local_dof(l,ifacref)
+
+           ! compute stress jump accross interface between elements
+           velocity_jump_el(:,indx_permutted) = -veloc(:,my_dof_local,ie) + veloc(:,ne_dof_local,ie_nghb)
+
+        end do
+        
+     else  ! may be free surface 
+
+        if (tagged_face)  then
+
+           do l=1,npf  !! loop over our face
+
+              !! next dof
+              indx =indx + 1
+
+              !! new order to consider in local matrices
+              indx_permutted = l + npf*(iface_1 - 1) 
+
+              !! retrieve dof numerotation
+              idof_local=ref_dof(k)%Ftodof(l,ifacref) 
+              idof=Etodof_adj(ie) + idof_local - 1 
+
+              !! outward normal
+              nx(indx_permutted)=normal(1,idof, ifacref)
+              ny(indx_permutted)=normal(2,idof, ifacref)
+              nz(indx_permutted)=normal(3,idof, ifacref)
+              
+              !! SURFACE of ifacref
+              Jface(indx_permutted) = 0.5_fp * Jacobian_2D(idof,ifacref) / weight_vol(idof) 
+              !!!!! STRUCTURE
+              my_dof_local = ref_dof(k)%Ftodof(l,ifacref)
+             
+
+              if (EtoFtag(ifacref,ie)==-1) then !! free surface 
+                 
+                 !! stress jump for free surface
+                 velocity_jump_el(:,indx_permutted) = -2._fp*veloc(:,my_dof_local,ie)
+
+              else if (EtoFtag(ifacref,ie)== 1) then ! absorbing flux
+                
+                 velocity_jump_el(:,indx_permutted)   =  -veloc(:,my_dof_local,ie)
+                 
+              end if
+           end do
+
+        end if
+
+     end if
+
+  end do
+
+                 
+
+end subroutine compute_velocity_jump
+
+!-----------------------------------------------------
+!----------------------------------------------------
+subroutine compute_stress_jump(ie, npf)
+  use global_parameters_mod
+  implicit none 
+  integer, intent(in)   :: ie, npf 
+  integer   :: indx, ifacref, ie_nghb
+  integer   :: l,idof_local, ne_dof_local
+  integer   :: my_dof_local
+  integer   :: indx_permutted, iface_1 
+  integer   :: renumerotation_faces(4)
+  logical   :: tagged_face
+
+  !! CHANGE NUMEROTATION CONVENTION (it's for debbuging)
+  !! our convention -> Hesthaven's convention
+  renumerotation_faces(1)=3
+  renumerotation_faces(2)=4
+  renumerotation_faces(3)=2 
+  renumerotation_faces(4)=1
+  
+  indx = 0
+
+  ! order of current element
+  k=PkE(ie)
+
+  ! loop on faces 
+  do ifacref = 1, 4
+
+     ! numerotaion used in local matrices 
+     iface_1 = renumerotation_faces(ifacref)
+
+     ! global face numerotation
+     ifac = EtoF(ifacref, ie)
+
+     ! Retrieve the neighbour element index 
+     ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+     ! test for free surface (if here NOT OPTIMAL)
+     tagged_face=.false.
+     if(EtoFtag(ifacref, ie) /=0 ) tagged_face=.true.
+     
+     ! neighbourg element
+     if (ie_nghb > 0) then ! (if here NOT OPTIMAL)
+   
+        do l=1,npf  !! loop over our face
+
+           !! next dof
+           indx =indx + 1
+
+           !! new order to consider in local matrices 
+           indx_permutted = l + npf*(iface_1 - 1) 
+
+           !! retrieve dof numerotation
+           idof_local=ref_dof(k)%Ftodof(l,ifacref) 
+           idof=Etodof_adj(ie) + idof_local - 1    
+
+           !! outward normal
+           nx(indx_permutted)=normal(1,idof, ifacref)
+           ny(indx_permutted)=normal(2,idof, ifacref)
+           nz(indx_permutted)=normal(3,idof, ifacref)
+           
+           !! SURFACE of ifacref
+           Jface(indx_permutted) = 0.5_fp * Jacobian_2D(idof,ifacref) / weight_vol(idof) 
+
+           !! retrieve local dof numerotaion
+           my_dof_local = dof_dof(ie)%my_local_dof(l,ifacref)  
+           ne_dof_local = dof_dof(ie)%nei_local_dof(l,ifacref)
+
+           ! compute stress jump accross interface between elements
+           stress_jump_el(:,indx_permutted) = -stress(:,my_dof_local,ie) + stress(:,ne_dof_local,ie_nghb)
+
+        end do
+                   
+     else  ! may be free surface 
+
+        if (tagged_face)  then
+
+           do l=1,npf  !! loop over our face
+
+              !! next dof
+              indx =indx + 1
+
+              !! new order to consider in local matrices
+              indx_permutted = l + npf*(iface_1 - 1) 
+
+              !! retrieve dof numerotation
+              idof_local=ref_dof(k)%Ftodof(l,ifacref) 
+              idof=Etodof_adj(ie) + idof_local - 1 
+
+              !! outward normal
+              nx(indx_permutted)=normal(1,idof, ifacref)
+              ny(indx_permutted)=normal(2,idof, ifacref)
+              nz(indx_permutted)=normal(3,idof, ifacref)
+              
+              !! SURFACE of ifacref
+              Jface(indx_permutted) = 0.5_fp * Jacobian_2D(idof,ifacref) / weight_vol(idof) 
+              !!!!! STRUCTURE
+              my_dof_local = ref_dof(k)%Ftodof(l,ifacref)
+             
+
+              if (EtoFtag(ifacref,ie)==-1) then !! free surface 
+                 
+                 !! stress jump for free surface
+                 stress_jump_el(:,indx_permutted) = -2._fp*stress(:,my_dof_local,ie)
+
+              else if (EtoFtag(ifacref,ie)== 1) then ! absorbing flux
+                
+                 stress_jump_el(:,indx_permutted)   =  -stress(:,my_dof_local,ie)
+                 
+              end if
+           end do
+
+        end if
+
+     end if
+
+  end do
+
+                 
+
+end subroutine compute_stress_jump
+
+!-----------------------------------------------------
+
+subroutine compute_velocity_derivatives(ie,np)
+ use global_parameters_mod
+  implicit none
+  integer, intent(in) :: ie, np
+  integer  :: jdof
+  integer  :: npf4
+  real(kind=fp) :: mu, lambda, lambdaP2mu, inv_rho
+  
+  mu =  rho(ie)*vs(ie)*vs(ie)
+  lambdaP2mu = rho(ie)*vp(ie)*vp(ie)
+  lambda = rho(ie)*vp(ie)*vp(ie) - 2._fp * rho(ie)*vs(ie)*vs(ie)
+  inv_rho = 1._fp /rho(ie)
+  
+!!! SPLIT ALL COMPUTATION 
+  wksp(:)=stress_rhs(1,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) + &
+             lambdaP2mu *Dr_x(idof, jdof)* veloc(1,jdof, ie) + &
+             lambda     *Dr_y(idof, jdof)* veloc(2,jdof, ie) + &
+             lambda     *Dr_z(idof, jdof)* veloc(3,jdof, ie)
+     end do
+  end do
+  stress_rhs(1,:, ie)=wksp(:)
+
+
+  wksp(:)=stress_rhs(2,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) + &
+             lambdaP2mu *Dr_y(idof, jdof)* veloc(2,jdof, ie) + &
+             lambda     *Dr_x(idof, jdof)* veloc(1,jdof, ie) + &
+             lambda     *Dr_z(idof, jdof)* veloc(3,jdof, ie)
+     end do
+  end do
+  stress_rhs(2,:, ie)=wksp(:)     
+
+  wksp(:)=stress_rhs(3,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) + &
+             lambdaP2mu *Dr_z(idof, jdof)* veloc(3,jdof, ie) + &
+             lambda     *Dr_x(idof, jdof)* veloc(1,jdof, ie) + &
+             lambda     *Dr_y(idof, jdof)* veloc(2,jdof, ie)
+     end do
+  end do
+  stress_rhs(3,:, ie)=wksp(:)     
+
+  wksp(:)=stress_rhs(4,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) + mu* ( &
+             Dr_y(idof, jdof)* veloc(1,jdof, ie) + &
+             Dr_x(idof, jdof)* veloc(2,jdof, ie))  
+             
+     end do
+  end do
+  stress_rhs(4,:, ie)=wksp(:)     
+
+  wksp(:)=stress_rhs(5,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof)  + mu* ( &
+             Dr_z(idof, jdof)* veloc(1,jdof, ie) + &
+             Dr_x(idof, jdof)* veloc(3,jdof, ie))
+     end do
+  end do
+  stress_rhs(5,:, ie)=wksp(:)     
+
+
+  wksp(:)=stress_rhs(6,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) +  mu* ( &
+             Dr_z(idof, jdof)* veloc(2,jdof, ie) + &
+             Dr_y(idof, jdof)* veloc(3,jdof, ie))
+     end do
+  end do
+  stress_rhs(6,:, ie)=wksp(:) 
+end subroutine compute_velocity_derivatives
+
+!------------------------------------------------------
+
+subroutine compute_stress_derivatives(ie,np)
+  use global_parameters_mod
+  implicit none
+  integer, intent(in) :: ie, np
+  integer  :: jdof
+  integer  :: npf4
+  real(kind=fp) :: mu, lambda, lambdaP2mu, inv_rho
+  
+  mu =  rho(ie)*vs(ie)*vs(ie)
+  lambdaP2mu = rho(ie)*vp(ie)*vp(ie)
+  lambda = rho(ie)*vp(ie)*vp(ie) - 2._fp * rho(ie)*vs(ie)*vs(ie)
+  inv_rho = 1._fp /rho(ie)
+ 
+  wksp(:)=veloc_rhs(1,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) +  inv_rho*(&
+             Dr_x(idof, jdof)*stress(1,jdof, ie) + &
+             Dr_y(idof, jdof)*stress(4,jdof, ie) + &
+             Dr_z(idof, jdof)*stress(5,jdof, ie))
+     end do
+  end do
+  veloc_rhs(1,:, ie)=wksp(:)     
+
+  wksp(:)=veloc_rhs(2,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) +  inv_rho*(&
+             Dr_x(idof, jdof)*stress(4,jdof, ie) + &
+             Dr_y(idof, jdof)*stress(2,jdof, ie) + &
+             Dr_z(idof, jdof)*stress(6,jdof, ie))
+     end do
+  end do
+  veloc_rhs(2,:, ie)=wksp(:)
+
+  wksp(:)=veloc_rhs(3,:, ie)
+  do idof = 1, np
+     do jdof = 1, np
+        wksp(idof) = wksp(idof) +  inv_rho*(&
+             Dr_x(idof, jdof)*stress(5,jdof, ie) + &
+             Dr_y(idof, jdof)*stress(6,jdof, ie) + &
+             Dr_z(idof, jdof)*stress(3,jdof, ie))
+     end do
+  end do
+  veloc_rhs(3,:, ie)=wksp(:)
+
+end subroutine compute_stress_derivatives
+
+!------------------------------------------------------
+!--------------------------------------------------------------------------------
+
+subroutine compute_central_flux_velocity(ie, np, npf)
+
+  ! compute centered flux accross boundary
+
+  use global_parameters_mod
+  implicit none
+  integer, intent(in) :: ie, np, npf
+  integer  :: idof_face
+  integer  :: npf4
+  real(kind=fp) :: mu, lambda, lambdaP2mu, inv_rho, cp_penalty
+  real(kind=fp) :: Factor_scale
+
+
+  ! precompute terms
+  mu =  rho(ie)*vs(ie)*vs(ie)
+  lambdaP2mu = rho(ie)*vp(ie)*vp(ie)
+  lambda = rho(ie)*vp(ie)*vp(ie) - 2._fp * rho(ie)*vs(ie)*vs(ie)
+  inv_rho = 1._fp /rho(ie)
+  cp_penalty = 0._fp !vp(ie)
+  npf4 = 4* npf
+
+!!! BE AWARE stress_rhs and veloc_rhs are set to 0. Not directly but by 
+!!! initializing wksp before each loop for each equation
+!!$  stress_rhs(:,:, ie)=0._fp
+!!$  veloc_rhs(:,:, ie)=0._fp
+!!$  tmp_work_vector(:,:)=0._fp
+  
+
+  ! SPLIT ALL COMPUTATION THANKS TO VTUNE AMPLIFIER ANALYSIS (speed up x 2)
+  wksp(:)=0._fp !1
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( &
+             lambdaP2mu * nx(idof_face) * velocity_jump_el(1,idof_face) + &
+             lambda     * ny(idof_face) * velocity_jump_el(2,idof_face) + &
+             lambda     * nz(idof_face) * velocity_jump_el(3,idof_face) + &
+             cp_penalty * stress_jump_el(1,idof_face))
+      end do
+  end do
+  stress_rhs(1,:, ie)= wksp(:)
+
+  wksp(:)=0._fp !2
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( &
+             lambdaP2mu * ny(idof_face) * velocity_jump_el(2,idof_face) + &
+             lambda     * nx(idof_face) * velocity_jump_el(1,idof_face) + &
+             lambda     * nz(idof_face) * velocity_jump_el(3,idof_face) + &
+             cp_penalty * stress_jump_el(2,idof_face))
+     end do
+  end do
+  stress_rhs(2,:, ie)= wksp(:)
+
+
+  wksp(:)=0._fp !3 
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof)  + Factor_scale *( &
+             lambdaP2mu * nz(idof_face) * velocity_jump_el(3,idof_face) + &
+             lambda     * nx(idof_face) * velocity_jump_el(1,idof_face) + &
+             lambda     * ny(idof_face) * velocity_jump_el(2,idof_face) + &
+             cp_penalty * stress_jump_el(3,idof_face))
+     end do
+  end do
+  stress_rhs(3,:, ie)= wksp(:)
+
+
+  wksp(:)=0._fp !4 
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( &
+             mu* ny(idof_face) * velocity_jump_el(1,idof_face) + &
+             mu* nx(idof_face) * velocity_jump_el(2,idof_face) + &
+             cp_penalty * stress_jump_el(4,idof_face))
+     end do
+  end do
+  stress_rhs(4,:, ie)= wksp(:)
+
+  wksp(:)=0._fp !5
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( &
+             mu* nz(idof_face) * velocity_jump_el(1,idof_face) + &
+             mu* nx(idof_face) * velocity_jump_el(3,idof_face) + &
+             cp_penalty * stress_jump_el(5,idof_face))
+     end do
+  end do
+  stress_rhs(5,:, ie)= wksp(:)
+
+  wksp(:)=0._fp !6
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof)  + Factor_scale *( &
+             mu* nz(idof_face) * velocity_jump_el(2,idof_face) + &
+             mu* ny(idof_face) * velocity_jump_el(3,idof_face) + &
+             cp_penalty * stress_jump_el(6,idof_face))
+     end do
+  end do
+  stress_rhs(6,:, ie)= wksp(:)
+
+
+end subroutine compute_central_flux_velocity
+
+
+!---------------------------------------------------------------------
+
+subroutine compute_central_flux_stress(ie, np, npf)
+
+  ! compute centered flux accross boundary
+
+  use global_parameters_mod
+  implicit none
+  integer, intent(in) :: ie, np, npf
+  integer  :: idof_face
+  integer  :: npf4
+  real(kind=fp) :: mu, lambda, lambdaP2mu, inv_rho, cp_penalty
+  real(kind=fp) :: Factor_scale
+
+
+  ! precompute terms
+  mu =  rho(ie)*vs(ie)*vs(ie)
+  lambdaP2mu = rho(ie)*vp(ie)*vp(ie)
+  lambda = rho(ie)*vp(ie)*vp(ie) - 2._fp * rho(ie)*vs(ie)*vs(ie)
+  inv_rho = 1._fp /rho(ie)
+  cp_penalty = 0._fp !vp(ie)
+  npf4 = 4* npf
+
+!!! BE AWARE stress_rhs and veloc_rhs are set to 0. Not directly but by 
+!!! initializing wksp before each loop for each equation
+!!$  stress_rhs(:,:, ie)=0._fp
+!!$  veloc_rhs(:,:, ie)=0._fp
+!!$  tmp_work_vector(:,:)=0._fp
+  
+
+  ! SPLIT ALL COMPUTATION THANKS TO VTUNE AMPLIFIER ANALYSIS (speed up x 2)
+  wksp(:)=0._fp
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( inv_rho *&
+             (nx(idof_face) * stress_jump_el(1,idof_face) + &
+             ny(idof_face) * stress_jump_el(4,idof_face)  + &
+             nz(idof_face) * stress_jump_el(5,idof_face)) + &
+             cp_penalty *  velocity_jump_el(1,idof_face))
+     end do
+  end do
+  veloc_rhs(1,:, ie)= wksp(:) 
+
+
+  wksp(:)=0._fp
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( inv_rho *&
+             (nx(idof_face) * stress_jump_el(4,idof_face) + &
+             ny(idof_face) * stress_jump_el(2,idof_face)  + &
+             nz(idof_face) * stress_jump_el(6,idof_face)) + &
+             cp_penalty *  velocity_jump_el(2,idof_face))
+     end do
+  end do
+  veloc_rhs(2,:, ie)= wksp(:) 
+
+
+  wksp(:)=0._fp
+  do idof=1,np
+     do  idof_face = 1, npf4
+        Factor_scale =   Lift(idof, idof_face) * Jface(idof_face)
+        wksp(idof) = wksp(idof) + Factor_scale *( inv_rho *&
+             (nx(idof_face) * stress_jump_el(5,idof_face)  + &
+             ny(idof_face) * stress_jump_el(6,idof_face)   + &
+              nz(idof_face) * stress_jump_el(3,idof_face)) + &
+              cp_penalty *  velocity_jump_el(3,idof_face))
+     end do
+  end do
+  veloc_rhs(3,:, ie)= wksp(:) 
+
+end subroutine compute_central_flux_stress
+
+
+!---------------------------------------------------------------------

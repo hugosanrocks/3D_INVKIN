@@ -1,0 +1,65 @@
+!--------------------------------------------------------------------------------------------------------------
+
+subroutine initialise_LSERK()
+  use global_parameters_mod
+  implicit none
+
+  rk4a(1)=  0._fp
+  rk4a(2)= -0.417890474499852_fp
+  rk4a(3)= -1.192151694642677_fp
+  rk4a(4)= -1.697784692471528_fp
+  rk4a(5)= -1.514183444257156_fp
+  
+  rk4b(1)= 0.149659021999229_fp
+  rk4b(2)= 0.379210312999627_fp
+  rk4b(3)= 0.822955029386982_fp
+  rk4b(4)= 0.699450455949122_fp
+  rk4b(5)= 0.153057247968152_fp
+
+  rk4c(1)=  0._fp
+  rk4c(2)=  0.149659021999229_fp
+  rk4c(3)=  0.370400957364205_fp
+  rk4c(4)=  0.622255763134443_fp
+  rk4c(5)=  0.958282130674690_fp
+
+end subroutine initialise_LSERK
+
+!----------------------------------------------------------
+
+subroutine dtscale()
+  use global_parameters_mod
+  implicit none
+  integer :: ie, l,ifacref, idof_local
+  real(kind=FP) maxi_Jface
+
+  maxi_Jface=0._fp
+  do ie=1,nE
+     k = PkE(ie)
+     do ifacref=1,4
+        do l=1,ref_dof(k)%npf
+           idof_local=ref_dof(k)%Ftodof(l,ifacref)
+           idof=Etodof_adj(ie) + idof_local - 1
+           maxi_Jface=max(maxi_Jface, Jacobian_2D(idof,ifacref) / weight_vol(idof))
+           
+        end do
+     end do
+
+  end do
+  !write(*,*) 'Max Jface ', maxi_Jface
+  delta_t = 1._fp / (maxi_Jface * k* k) / maxval(vp)
+
+  !!! hardcoded for test
+!!$  delta_t = 0.001
+  !write(*,*)' time step ', delta_t
+
+end subroutine dtscale
+
+
+subroutine dtscale_leapfrog()
+  use global_parameters_mod
+  implicit none
+
+  !! hard coded time step 
+  delta_t=0.0014228
+  
+end subroutine dtscale_leapfrog

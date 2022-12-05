@@ -1,0 +1,14 @@
+# Before launching the current shell,
+# edit it and choose your compilation level by switching the commented/uncommented last line.
+# Then create a build directory at the same level than the current script,
+# go inside and type
+# my_build_dir > sh ../cmake_intel.sh
+
+CXX=icpc CXXFLAGS='-O3' CC=icc CFLAGS='-O3' FC=ifort FFLAGS='-O3' AR=xiar \
+  cmake                                                                   \
+  ..
+
+# CXX=icpc CXXFLAGS='-g' CC=icc CFLAGS='-g' FC=ifort FFLAGS='-g' AR=xiar \
+#   cmake                                                                \
+#   ..
+

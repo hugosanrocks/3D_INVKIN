@@ -1,0 +1,276 @@
+! Viscoacoustic forward-backward simulation with generalized Maxwell body 
+! (3 mechanisms): standard checkpointing scheme
+!!$========================================================================== 
+!!$ Copyright (C) 2016-2018 Seiscope Consortium
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$---------------------------------------------------------------------------
+!!$  This program is free software; you can redistribute it and/or modify
+!!$  it under the terms of the GNU General Public License as published by
+!!$  the Free Software Foundation; either version 2 of the License, or
+!!$  (at your option) any later version.
+!!$  
+!!$  This program is distributed in the hope that it will be useful,
+!!$  but WITHOUT ANY WARRANTY; without even the implied warranty of
+!!$  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+!!$  GNU General Public License for more details.
+!!$  
+!!$  You should have received a copy of the GNU General Public License
+!!$  along with this program; if not, write to the Free Software
+!!$  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+!!$
+!!$  
+!!$ References: 
+!!$ [1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$ [2] Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$ [3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$========================================================================== 
+program gmbva_cp
+  use gmbva
+  implicit none
+  include "carfs_type.h"
+
+  type(carfs_type)::carfs
+  logical :: verb
+  integer :: it, kt, nt,mt,r, nz, nx, nb, sx, sz,L,K,checkpoint_r,itm1
+  integer :: ierr,nc,xtr,ztr,i,j, itt, cpstart, cpsteps=0
+  real  :: dt, dz, dx, amp, fm, vpmax, tmp, idx, idz,dtb, tolerance,wmin,wmax
+  real, parameter::PI=3.14159265359
+  real, dimension (:),   allocatable :: wlt,bb,ef,eb,trf,trb,wl,w
+  real, dimension (:,:), allocatable :: v0, vv,rho, kappa,p,vz,vx,Q0
+  real, dimension (:,:,:), allocatable :: xil,yl
+  type(checkpoint),dimension(:),allocatable ::cp
+
+  ! Read/Write axes
+  nz=301
+  nx=301
+  dz=4
+  dx=4 
+  nb=25
+  dt=0.001
+  nt=1000
+  kt=500
+  dtb=4*dt
+  tolerance=0.01
+  nc=nint(log(real(nt))/log(2.))
+  L=3; K=2*L-1
+  wmin=2.
+  wmax=20.
+  amp=1.
+  fm=wmax/2.5
+  verb=.true.
+  xtr=100
+  ztr=100
+
+  idx=1./dx
+  idz=1./dz
+  sx=(nx+1)/2
+  sz=(nz+1)/2
+  wmin=2*PI*wmin
+  wmax=2*PI*wmax
+  r=nint(dtb/dt)
+  if(mod(nt,r)==0) then
+     write(0,*) 'store boundary every r-step: r=', r
+     mt=nt/r !N=nt;M=mt; M=N/r
+  else
+     write(0,*) 'dt for boundary saving is chosen inappropriately.'
+     call exit(0)
+  endif
+
+  allocate(wlt(nt))
+  allocate(bb(nb))
+  allocate(v0(nz,nx))
+  allocate(Q0(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vv(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(rho(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(kappa(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(yl(-nb+1:nb+nz,-nb+1:nb+nx,L))
+  allocate(p(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vz(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vx(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(xil(-nb+1:nb+nz,-nb+1:nb+nx,L))
+  allocate(wl(L))
+  allocate(w(K))
+  allocate(ef(nt))
+  allocate(eb(nt))
+  allocate(trf(nt))
+  allocate(trb(nt))
+  allocate(cp(0:nc-1))
+  call checkpoint_init(cp,nc,nt,nz,nx,nb,L)
+
+  !generate ricker wavelet with a delay
+  do it=1,nt
+     tmp=PI*fm*(it*dt-1.0/fm)
+     tmp=tmp*tmp
+     wlt(it)=amp*(1.0-2.0*tmp)*exp(-tmp)
+  enddo
+  v0=2000.
+  vpmax=maxval(v0)
+  call check_sanity(vpmax, dt, dx, dz)
+  call expand2d(vv, v0, nz, nx, nb)
+  rho=1000.
+  call expand2d(rho, rho(1:nz,1:nx), nz, nx, nb)
+  call sponge_coeff(bb,vpmax,dx,dt,nb)
+  kappa=rho*vv*vv
+  p=0.
+  vx=0.
+  vz=0.
+  xil=0.
+  trf=0.
+  trb=0.
+  !specify frequencies in logarithmic equaldistance
+  do i=1,L
+     wl(i)=wmin*(wmax/wmin)**(real(i-1.)/real(L-1.))
+  enddo
+  do i=1,K
+     w(i)=wmin*(wmax/wmin)**(real(i-1.)/real(K-1.))
+  enddo
+  Q0=60.
+  call expand2d(Q0, Q0(1:nz,1:nx), nz, nx, nb)
+  call lsq_valhall2d(verb,Q0(1:nz,1:nx),Yl(1:nz,1:nx,:),wl,w,L,K,nz,nx)
+  do i=1,L
+     call expand2d(Yl(:,:,i), Yl(1:nz,1:nx,i), nz, nx, nb)
+  enddo
+
+  !forward modeling
+  call carfs_init(carfs,verb,nc,nt,tolerance) !no need to input tolerance for standard checkpoint
+  do it=1,nt
+     itm1=it-1
+     if(verb) print *, "forward: it=", it
+
+     call add_sources(p, dt, wlt(it), sz, sx,nz,nx,nb)
+     call step_forward_v(p, vz, vx, rho, dt, idz, idx,nz,nx,nb)
+     call apply_sponge(vz,bb,nz,nx,nb) 
+     call apply_sponge(vx,bb,nz,nx,nb) 
+     call step_forward_p(p,vz,vx,kappa,xil,yl,wl,dt,idz,idx,nz,nx,nb,L)
+     call apply_sponge(p,bb,nz,nx,nb) 
+     do i=1,L
+        call apply_sponge(xil(:,:,i),bb,nz,nx,nb) 
+     enddo
+     cpsteps=cpsteps+1
+     call compute_energy(ef(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     call carfs_is_checkpoint(carfs,itm1,'forward')
+     !record snapshots to restart reverse propagation
+     if(carfs%icheckpoint) then
+        cp(carfs%icc)%p=p
+        cp(carfs%icc)%vz=vz
+        cp(carfs%icc)%vx=vx       
+        cp(carfs%icc)%xil=xil
+     endif
+
+     !record a random trace for reconstruction checking
+     trf(it)=p(ztr,xtr)
+     if (itm1==kt)then
+     	call window2d(v0, p, nz, nx, nb)
+        open(10,file='forward.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+  enddo
+  ! store forward energy history
+  open(10,file='ef.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) ef
+  close(10)
+  !store the trace recorded in forward simulation
+  open(10,file='trf.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trf
+  close(10)
+
+  !backward reconstruction
+  trb(nt)=trf(nt)
+  eb(nt)=ef(nt)
+  do it=nt-1,1,-1     
+     itm1=it-1
+     if(verb) print *,"backward: itm1=",it
+
+     call carfs_is_checkpoint(carfs,itm1,'backward')
+
+     !after searching cpit(ic) is the closest checkpoint location 
+     !prior or equal to current time level-itm1: itm1>=cpit(ic)
+     p=cp(carfs%icc)%p
+     vz=cp(carfs%icc)%vz
+     vx=cp(carfs%icc)%vx
+     xil=cp(carfs%icc)%xil
+
+     call carfs_restart(carfs,itm1)
+     do itt=carfs%itstart,itm1
+        call add_sources(p, dt, wlt(itt+1), sz, sx,nz,nx,nb)
+        call step_forward_v(p, vz, vx, rho, dt, idz, idx,nz,nx,nb)
+        call apply_sponge(vz,bb,nz,nx,nb) 
+        call apply_sponge(vx,bb,nz,nx,nb) 
+        call step_forward_p(p,vz,vx,kappa,xil,yl,wl,dt,idz,idx,nz,nx,nb,L)
+        call apply_sponge(p,bb,nz,nx,nb) 
+        do i=1,L
+           call apply_sponge(xil(:,:,i),bb,nz,nx,nb) 
+        enddo
+
+        call carfs_is_checkpoint(carfs,itt,'forward')
+        do while(carfs%icc<carfs%nc.and.carfs%icheckpoint) 
+           cp(carfs%icc)%p=p
+           cp(carfs%icc)%vz=vz
+           cp(carfs%icc)%vx=vx
+           cp(carfs%icc)%xil=xil
+           call carfs_is_checkpoint(carfs,itt,'forward')
+        enddo
+        cpsteps=cpsteps+1
+     enddo
+     !the checkpoint computed wavefield is free of error
+     !thus, the energy is the same as forward simulation
+     call compute_energy(eb(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     !record a random trace for checking the reconstruction
+     trb(it)=p(ztr,xtr)
+     if(itm1==kt)then
+        call window2d(v0, p, nz, nx, nb)
+        open(10,file='reconstructed.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+  enddo
+  call carfs_close(carfs)
+  !store backward energy history
+  open(10,file='eb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) eb
+  close(10)
+  !store the trace recorded in backward simulation
+  open(10,file='trb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trb
+  close(10)
+
+  write(0,*) "Number of forward timestepping in checkpointing:",cpsteps
+  write(0,*) "Recomputation ratio/Slowdown factor:",real(cpsteps)/real(nt)
+
+  deallocate(wlt)
+  deallocate(bb)
+  deallocate(ef)
+  deallocate(eb)
+  deallocate(v0)
+  deallocate(Q0)
+  deallocate(vv)
+  deallocate(rho)
+  deallocate(kappa)
+  deallocate(yl)
+  deallocate(p)
+  deallocate(vz)
+  deallocate(vx)  
+  deallocate(xil)
+  deallocate(wl)
+  deallocate(w)
+  deallocate(trf)
+  deallocate(trb)
+  call checkpoint_free(cp,nc)
+
+  call exit(0)
+end program gmbva_cp
+

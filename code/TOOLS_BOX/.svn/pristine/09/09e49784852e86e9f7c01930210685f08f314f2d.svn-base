@@ -1,0 +1,15 @@
+include ../Makefile.config
+
+SOURCES = dft_interp.f90 ksinc_interp.f90 poly_interp.f90 
+OBJECTS = $(SOURCES:.f90=.o) 
+INCLUDE = -I ../include
+
+lib : $(OBJECTS) 
+	$(AR) $(ARFUNCT) ../lib/libSEISCOPE_INTERP.a $(OBJECTS)
+
+%.o : %.f90
+	$(FC) $(FLAGS) $(INCLUDE) -c -o $@ $<
+
+clean :	
+	rm -rf *.o  *~ *backup *.mod *genmod* 
+

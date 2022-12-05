@@ -1,0 +1,66 @@
+module mem_util_f_mod
+
+  use dd_common_mod
+  use iso_C_binding, only : C_char, C_null_char, C_loc
+
+  implicit none
+
+  interface
+     integer(C_int) function mem_current() bind(c)
+       use iso_C_binding, only : C_int
+     end function mem_current
+  end interface
+
+  integer, private, save :: mem_base = 0
+
+
+  contains
+
+
+  subroutine mem_reset()
+    mem_base = mem_current()
+  end subroutine mem_reset
+
+
+  integer function mem_delta()
+    mem_delta = mem_current() - mem_base
+  end function mem_delta
+
+
+  subroutine mem_dump()
+    integer :: kb
+    kb = mem_current()
+    write(*,*) myid_world, ' : Memory usage (Kb) :', kb, ' delta :', kb - mem_base
+  end subroutine mem_dump
+
+
+  subroutine mem_global_dump(tag)
+    character(len=*), intent(in) :: tag
+    integer                      :: kb, mpierr, iproc, kbmax = -1
+    character(len=7)             :: maxflag
+    if (mem_debug_level > 1) then
+      kb = mem_current()
+      if (myid_world == 0) then
+        write(*,*) 'Memory Usage at : ', trim(adjustl(tag))
+      end if
+      call mpi_allreduce(kb, kbmax, 1, MPI_INTEGER, MPI_MAX, MPI_COMM_WORLD, mpierr)
+      do iproc = 0, nproc_world
+        call mpi_barrier(MPI_COMM_WORLD, mpierr)
+        if (myid_world == iproc) then
+          maxflag = ''
+          if (kb == kbmax) maxflag = ' => MAX'
+          write(*,*) myid_world, ' : Memory usage (Gb)', kb * convert_kb2gb, &
+          &          ' delta ', (kb - mem_base) * convert_kb2gb, maxflag
+          call flush(6)
+        end if
+      end do
+    else if (myid_0 == 0) then
+      kb = mem_current()
+      write(*,*) 'Memory usage on master (Gb) : ', kb * convert_kb2gb, &
+      &          ' delta :', (kb - mem_base) * convert_kb2gb
+      call flush(6)
+    end if
+  end subroutine mem_global_dump
+
+
+end module mem_util_f_mod

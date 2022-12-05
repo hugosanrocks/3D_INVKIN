@@ -1,0 +1,12 @@
+This example is devoted to linking the checkpointing library with other 
+softwares build externally with makefile. 
+
+The user may modify the following parameters in other software package,
+either by reading from parameter files, or from command line feeding.
+  integer(c_int) :: info = 3, snaps = 5, steps = 15 ! needs to be specified
+
+To compile: 	make
+To run: 		./test
+To clean: 		make clean
+
+:-) Thanks to the help from Laure!! Pengliang Yang, 26/11/2015

@@ -1,0 +1,115 @@
+# Build domain decomposition library
+
+# file(
+#   GLOB_RECURSE
+#   SOURCES
+#   *
+# )
+
+set(COMMON_SOURCES 
+  COMMON/dd_common.f90
+  COMMON/mem_alloc.f90
+  COMMON/zone.f90
+  COMMON/grid.f90
+  COMMON/comm_engine.f90
+)
+
+set(SGRID_SOURCES 
+  SGRID/sg_points_zone.f90
+  SGRID/sgrid.f90
+  SGRID/sg_comm.f90
+)
+
+set(UGRID_UTILS_SOURCES 
+  UGRID/UTILS/mesh_partition_struct.f90
+  UGRID/UTILS/mesh_partition.f90
+  UGRID/UTILS/mesh_readers.f90
+  UGRID/UTILS/mesh_writers.f90
+  UGRID/UTILS/mesh_utils.f90
+)
+
+set(UGRID_HEXA_SEM_SOURCES 
+  UGRID/HEXA_SEM/hexa_mesh_struct.f90
+  UGRID/HEXA_SEM/hexa_mesh_graphs.f90
+  UGRID/HEXA_SEM/hexa_mesh_partition.f90
+  UGRID/HEXA_SEM/hexa_mesh.f90
+  UGRID/HEXA_SEM/hexa_ref_dof.f90
+  UGRID/HEXA_SEM/hexa_glob_dof.f90
+  UGRID/HEXA_SEM/hexa_comm_struct.f90
+  UGRID/HEXA_SEM/hexa_comm.f90
+)
+
+set(UGRID_TETRA_DGM_SOURCES 
+  UGRID/ug_comm.f90
+  UGRID/gll_library.f90
+  UGRID/ugrid.f90
+  UGRID/lu.f90
+  UGRID/tetra_mesh_graphs.f90
+  UGRID/ref_dof.f90
+  UGRID/mat_csr.f90
+  UGRID/glob_dof.f90
+  UGRID/basis_function_on_tetra.f90
+  UGRID/acoustic_dg_kernel.f90
+  UGRID/input_dg.f90
+  UGRID/output_dg.f90
+  UGRID/preprocessing_dg.f90
+  UGRID/source_function_dg.f90
+  UGRID/time_stepping_dg.f90
+  UGRID/global_parameters_mod.f90
+  UGRID/elastic_dg_kernel.f90
+  UGRID/elastic_dg_leapfrog_kernel.f90
+)
+
+add_library(
+  ${DOMDECOMP_LIB_NAME}_static
+  STATIC
+  ${COMMON_SOURCES}
+  ${SGRID_SOURCES}
+  ${UGRID_UTILS_SOURCES}
+  ${UGRID_TETRA_DGM_SOURCES}
+  ${UGRID_HEXA_SEM_SOURCES}
+)
+
+# add_library(
+#   ${DOMDECOMP_LIB_NAME}_shared
+#   SHARED
+#   ${COMMON_SOURCES}
+#   ${SGRID_SOURCES}
+#   ${UGRID_UTILS_SOURCES}
+#   ${UGRID_TETRA_DGM_SOURCES}
+#   ${UGRID_HEXA_SEM_SOURCES}
+# )
+
+# Install
+
+install(
+  TARGETS ${DOMDECOMP_LIB_NAME}_static 
+#           ${DOMDECOMP_LIB_NAME}_shared
+  RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin${suffix}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+  COMPONENT DomDecompLib
+)
+
+set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/src)
+
+# For the complete directory
+#install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/ DESTINATION ${PROJECT_SOURCE_DIR}/include)
+
+# For selected fortran modules
+install(FILES
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/dd_common_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/mem_alloc_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/grid_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/zone_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/comm_engine_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/sgrid_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/sg_points_zone_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/sg_comm_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/ug_comm_mod.mod
+  ${CMAKE_Fortran_MODULE_DIRECTORY}/ugrid_mod.mod
+DESTINATION 
+  ${PROJECT_SOURCE_DIR}/lib${suffix}
+COMPONENT
+  DomDecompFortranModules
+)

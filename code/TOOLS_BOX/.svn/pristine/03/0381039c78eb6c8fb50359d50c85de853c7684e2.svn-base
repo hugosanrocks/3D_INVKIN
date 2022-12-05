@@ -1,0 +1,1042 @@
+module mem_alloc_mod
+
+  use dd_common_mod
+  use mpi
+  use omp_lib
+
+  implicit none
+
+  interface alloc_
+    module procedure alloc_sp_array_dim7
+    module procedure alloc_sp_array_dim6
+    module procedure alloc_sp_array_dim5
+    module procedure alloc_sp_array_dim4
+    module procedure alloc_sp_array_dim3
+    module procedure alloc_sp_array_dim2
+    module procedure alloc_sp_array_dim1
+    module procedure alloc_dp_array_dim7
+    module procedure alloc_dp_array_dim6
+    module procedure alloc_dp_array_dim5
+    module procedure alloc_dp_array_dim4
+    module procedure alloc_dp_array_dim3
+    module procedure alloc_dp_array_dim2
+    module procedure alloc_dp_array_dim1
+    module procedure alloc_i_array_dim4
+    module procedure alloc_i_array_dim3
+    module procedure alloc_i_array_dim2
+    module procedure alloc_i_array_dim1
+    module procedure alloc_cplx_array_dim3
+    module procedure alloc_cplx_array_dim2
+    module procedure alloc_cplx_array_dim1
+  end interface alloc_
+
+  interface dealloc_
+    module procedure dealloc_sp_array_dim7
+    module procedure dealloc_sp_array_dim6
+    module procedure dealloc_sp_array_dim5
+    module procedure dealloc_sp_array_dim4
+    module procedure dealloc_sp_array_dim3
+    module procedure dealloc_sp_array_dim2
+    module procedure dealloc_sp_array_dim1
+    module procedure dealloc_dp_array_dim7
+    module procedure dealloc_dp_array_dim6
+    module procedure dealloc_dp_array_dim5
+    module procedure dealloc_dp_array_dim4
+    module procedure dealloc_dp_array_dim3
+    module procedure dealloc_dp_array_dim2
+    module procedure dealloc_dp_array_dim1
+    module procedure dealloc_i_array_dim4
+    module procedure dealloc_i_array_dim3
+    module procedure dealloc_i_array_dim2
+    module procedure dealloc_i_array_dim1
+    module procedure dealloc_cplx_array_dim3
+    module procedure dealloc_cplx_array_dim2
+    module procedure dealloc_cplx_array_dim1
+  end interface dealloc_
+
+  public :: print_mem_alloc_stat
+  public :: print_mem_alloc_error
+
+  integer,                private, parameter :: long_int        = 8 ! selected_int_kind(12)
+
+  integer(kind=long_int), private, save      :: mem             = 0
+  integer(kind=long_int), private, save      :: maxmem          = 0
+  integer,                private, save      :: counter         = 0
+
+  character(len=100),     private, parameter :: fmt_alloc       = "('alloc_   : ',A,T75,' size = ',I16,' memtot = ',I16)"
+  character(len=100),     private, parameter :: fmt_dealloc     = "('dealloc_ : ',A,T75,' size = ',I16)"
+
+  integer,                public,  parameter :: mem_debug_level = 0
+
+  contains
+
+  subroutine alloc_sp_array_dim7(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, &
+  & ldim4, udim4, ldim5, udim5, ldim6, udim6, ldim7, udim7, array_id)
+    real, dimension(:,:,:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    integer,          intent(in) :: ldim4, udim4, ldim5, udim5, ldim6, udim6, ldim7, udim7
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (     udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0 &
+    &   .or. udim5-ldim5 < 0 .or. udim6-ldim6 < 0 .or. udim7-ldim7 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5, ldim6:udim6, ldim7:udim7), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(udim6-ldim6+1, kind=long_int) &
+      &           * int(udim7-ldim7+1, kind=long_int) * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0.
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim7
+
+  subroutine alloc_sp_array_dim6(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, &
+  & ldim4, udim4, ldim5, udim5, ldim6, udim6, array_id)
+    real, dimension(:,:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    integer,          intent(in) :: ldim4, udim4, ldim5, udim5, ldim6, udim6
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (     udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 &
+    &   .or. udim4-ldim4 < 0 .or. udim5-ldim5 < 0 .or. udim6-ldim6 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5, ldim6:udim6), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(udim6-ldim6+1, kind=long_int) &
+      &           * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0.
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim6
+
+  subroutine alloc_sp_array_dim5(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, ldim5, udim5, array_id)
+    real, dimension(:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, ldim5, udim5
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0 .or. udim5-ldim5 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0.
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim5
+
+  subroutine alloc_sp_array_dim4(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, array_id)
+    real, dimension(:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    integer                      :: i, j, k, l
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+
+    ! First touch to data array: distribute on memory
+    ! Here we suppose that the 3 first dimensions of the array are linked to the FD domain decomposition
+
+    do l = ldim4, udim4
+
+      !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+      !$OMP DO SCHEDULE(DYNAMIC)
+
+      do k = ldim3, udim3
+        do j = ldim2, udim2
+          do i = ldim1, udim1
+            array(i,j,k,l) = 0.
+          end do
+        end do
+      end do
+
+      !$OMP END DO
+      !$OMP END PARALLEL
+
+    end do
+    
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim4
+
+  subroutine alloc_sp_array_dim3(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, array_id)
+    real, dimension(:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    integer                      :: i, j, k
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+
+    ! First touch to data array: distribute on memory
+
+    !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(i, j, k)
+    !$OMP DO SCHEDULE(DYNAMIC)
+
+    do k = ldim3, udim3
+      do j = ldim2, udim2
+        do i = ldim1, udim1
+          array(i,j,k) = 0.
+        end do
+      end do
+    end do
+
+    !$OMP END DO
+    !$OMP END PARALLEL
+
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim3
+
+  subroutine alloc_sp_array_dim2(array, ldim1, udim1, ldim2, udim2, array_id)
+    real, dimension(:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array = 0.
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem = mem + add_size
+    maxmem = maxmem + add_size
+    counter = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim2
+
+  subroutine alloc_sp_array_dim1(array, ldim1, udim1, array_id)
+    real, dimension(:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(kind(1.), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0.
+    add_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_sp_array_dim1
+
+
+  subroutine alloc_dp_array_dim7(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, &
+  & ldim4, udim4, ldim5, udim5, ldim6, udim6, ldim7, udim7, array_id)
+    real(kind=8), dimension(:,:,:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    integer,          intent(in) :: ldim4, udim4, ldim5, udim5, ldim6, udim6, ldim7, udim7
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (     udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0 &
+    &   .or. udim5-ldim5 < 0 .or. udim6-ldim6 < 0 .or. udim7-ldim7 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5, ldim6:udim6, ldim7:udim7), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(udim6-ldim6+1, kind=long_int) &
+      &           * int(udim7-ldim7+1, kind=long_int) * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim7
+
+  subroutine alloc_dp_array_dim6(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, &
+  & ldim4, udim4, ldim5, udim5, ldim6, udim6, array_id)
+    real(kind=8), dimension(:,:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    integer,          intent(in) :: ldim4, udim4, ldim5, udim5, ldim6, udim6
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (     udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 &
+    &   .or. udim4-ldim4 < 0 .or. udim5-ldim5 < 0 .or. udim6-ldim6 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5, ldim6:udim6), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(udim6-ldim6+1, kind=long_int) &
+      &           * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim6
+
+  subroutine alloc_dp_array_dim5(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, ldim5, udim5, array_id)
+    real(kind=8), dimension(:,:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, ldim5, udim5
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0 .or. udim5-ldim5 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4, ldim5:udim5), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(udim5-ldim5+1, kind=long_int) * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim5
+
+  subroutine alloc_dp_array_dim4(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, array_id)
+    real(kind=8), dimension(:,:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim4
+
+  subroutine alloc_dp_array_dim3(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, array_id)
+    real(kind=8), dimension(:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim3
+
+  subroutine alloc_dp_array_dim2(array, ldim1, udim1, ldim2, udim2, array_id)
+    real(kind=8), dimension(:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim2
+
+  subroutine alloc_dp_array_dim1(array, ldim1, udim1, array_id)
+    real(kind=8), dimension(:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(kind(1._8), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0._8
+    add_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_dp_array_dim1
+
+  subroutine alloc_i_array_dim4(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4, array_id)
+    integer, dimension(:,:,:,:), allocatable, intent(inout) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3, ldim4, udim4
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0 .or. udim4-ldim4 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3, ldim4:udim4), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(udim4-ldim4+1, kind=long_int) * int(kind(1), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0
+    add_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_i_array_dim4
+
+  subroutine alloc_i_array_dim3(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, array_id)
+    integer, dimension(:,:,:), allocatable, intent(inout) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(kind(1), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0
+    add_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_i_array_dim3
+
+  subroutine alloc_i_array_dim2(array, ldim1, udim1, ldim2, udim2, array_id)
+    integer, dimension(:,:), allocatable, intent(in out) :: array
+    integer,          intent(in)  :: ldim1, udim1, ldim2, udim2
+    character(len=*), intent(in)  :: array_id
+    integer                       :: ierr = 0
+    integer(kind=long_int)        :: wanted_size = 0, add_size = 0
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(kind(1), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0
+    add_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_i_array_dim2
+
+  subroutine alloc_i_array_dim1(array, ldim1, udim1, array_id)
+    integer, dimension(:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(kind(1), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = 0
+    add_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_i_array_dim1
+
+  subroutine alloc_cplx_array_dim3(array, ldim1, udim1, ldim2, udim2, ldim3, udim3, array_id)
+    complex, dimension(:,:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2, ldim3, udim3
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0 .or. udim3-ldim3 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2, ldim3:udim3), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(udim3-ldim3+1, kind=long_int) &
+      &           * int(kind(cmplx(0., 0.)), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = cmplx(0., 0.)
+    add_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_cplx_array_dim3
+
+  subroutine alloc_cplx_array_dim2(array, ldim1, udim1, ldim2, udim2, array_id)
+    complex, dimension(:,:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1, ldim2, udim2
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0 .or. udim2-ldim2 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1, ldim2:udim2), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(udim2-ldim2+1, kind=long_int) * int(kind(cmplx(0., 0.)), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = cmplx(0., 0.)
+    add_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_cplx_array_dim2
+
+  subroutine alloc_cplx_array_dim1(array, ldim1, udim1, array_id)
+    complex, dimension(:), allocatable, intent(in out) :: array
+    integer,          intent(in) :: ldim1, udim1
+    character(len=*), intent(in) :: array_id
+    integer                      :: ierr
+    integer(kind=long_int)       :: wanted_size, add_size
+    if (allocated(array)) call dealloc_(array, array_id)
+    if (udim1-ldim1 < 0) then
+      write(*,*) myid_1, ' :: ERROR : on arrays allocation : ', array_id, '. A dimension is null'
+      stop
+    end if
+    allocate(array(ldim1:udim1), stat = ierr)
+    if (ierr /= 0) then
+      wanted_size = int(udim1-ldim1+1, kind=long_int) * int(kind(cmplx(0., 0.)), kind=long_int)
+      call print_mem_alloc_error(array_id, wanted_size, ierr)
+      stop
+    end if
+    array    = cmplx(0., 0.)
+    add_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+    mem      = mem + add_size
+    maxmem   = maxmem + add_size
+    counter  = counter + 1
+    if (mem_debug_level > 0) write(1000+myid_world,fmt_alloc) array_id, add_size, mem
+  end subroutine alloc_cplx_array_dim1
+
+  subroutine dealloc_sp_array_dim7(array, array_id)
+    real, dimension(:,:,:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                            intent(in)     :: array_id
+    integer(kind=long_int)                                      :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim7
+
+  subroutine dealloc_sp_array_dim6(array, array_id)
+    real, dimension(:,:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                          intent(in)     :: array_id
+    integer(kind=long_int)                                    :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim6
+
+  subroutine dealloc_sp_array_dim5(array, array_id)
+    real, dimension(:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                        intent(in)     :: array_id
+    integer(kind=long_int)                                  :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim5
+
+  subroutine dealloc_sp_array_dim4(array, array_id)
+    real, dimension(:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                      intent(in)     :: array_id
+    integer(kind=long_int)                                :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim4
+
+  subroutine dealloc_sp_array_dim3(array, array_id)
+    real, dimension(:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                    intent(in)     :: array_id
+    integer(kind=long_int)                              :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim3
+
+  subroutine dealloc_sp_array_dim2(array, array_id)
+    real, dimension(:,:), allocatable, intent(in out) :: array
+    character(len=*),                  intent(in)     :: array_id
+    integer(kind=long_int)                            :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim2
+
+  subroutine dealloc_sp_array_dim1(array, array_id)
+    real, dimension(:), allocatable, intent(in out) :: array
+    character(len=*),                intent(in)     :: array_id
+    integer(kind=long_int)                          :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1.), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_sp_array_dim1
+
+  subroutine dealloc_dp_array_dim7(array, array_id)
+    real(kind=8), dimension(:,:,:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                                    intent(in)     :: array_id
+    integer(kind=long_int)                                              :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim7
+
+  subroutine dealloc_dp_array_dim6(array, array_id)
+    real(kind=8), dimension(:,:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                                  intent(in)     :: array_id
+    integer(kind=long_int)                                            :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim6
+
+  subroutine dealloc_dp_array_dim5(array, array_id)
+    real(kind=8), dimension(:,:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                                intent(in)     :: array_id
+    integer(kind=long_int)                                          :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim5
+
+  subroutine dealloc_dp_array_dim4(array, array_id)
+    real(kind=8), dimension(:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                              intent(in)     :: array_id
+    integer(kind=long_int)                                        :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim4
+
+  subroutine dealloc_dp_array_dim3(array, array_id)
+    real(kind=8), dimension(:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                            intent(in)     :: array_id
+    integer(kind=long_int)                                      :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim3
+
+  subroutine dealloc_dp_array_dim2(array, array_id)
+    real(kind=8), dimension(:,:), allocatable, intent(in out) :: array
+    character(len=*),                          intent(in)     :: array_id
+    integer(kind=long_int)                                    :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim2
+
+  subroutine dealloc_dp_array_dim1(array, array_id)
+    real(kind=8), dimension(:), allocatable, intent(in out) :: array
+    character(len=*),                        intent(in)     :: array_id
+    integer(kind=long_int)                                  :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1._8), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_dp_array_dim1
+
+  subroutine dealloc_i_array_dim4(array, array_id)
+    integer, dimension(:,:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                         intent(in)     :: array_id
+    integer(kind=long_int)                                   :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_i_array_dim4
+
+  subroutine dealloc_i_array_dim3(array, array_id)
+    integer, dimension(:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                       intent(in)     :: array_id
+    integer(kind=long_int)                                 :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_i_array_dim3
+
+  subroutine dealloc_i_array_dim2(array, array_id)
+    integer, dimension(:,:), allocatable, intent(in out) :: array
+    character(len=*),                     intent(in)     :: array_id
+    integer(kind=long_int)                               :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_i_array_dim2
+
+  subroutine dealloc_i_array_dim1(array, array_id)
+    integer, dimension(:), allocatable, intent(in out) :: array
+    character(len=*),                   intent(in)     :: array_id
+    integer(kind=long_int)                             :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(1), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_i_array_dim1
+
+  subroutine dealloc_cplx_array_dim3(array, array_id)
+    complex, dimension(:,:,:), allocatable, intent(in out) :: array
+    character(len=*),                       intent(in)     :: array_id
+    integer(kind=long_int)                                 :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_cplx_array_dim3
+
+  subroutine dealloc_cplx_array_dim2(array, array_id)
+    complex, dimension(:,:), allocatable, intent(in out) :: array
+    character(len=*),                     intent(in)     :: array_id
+    integer(kind=long_int)                               :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_cplx_array_dim2
+
+  subroutine dealloc_cplx_array_dim1(array, array_id)
+    complex, dimension(:), allocatable, intent(in out) :: array
+    character(len=*),                   intent(in)     :: array_id
+    integer(kind=long_int)                             :: del_size
+    if (allocated(array)) then
+      del_size = int(kind(cmplx(0.,0.)), kind=long_int) * size(array, kind=long_int)
+      mem      = mem - del_size
+      counter  = counter - 1
+      deallocate(array)
+      if (mem_debug_level > 0) write(1000 + myid_world,fmt_dealloc) array_id, del_size
+    end if
+  end subroutine dealloc_cplx_array_dim1
+
+  subroutine print_mem_alloc_error(array_id, wanted_size, ierr)
+    character(len=*),       intent(in) :: array_id
+    integer,                intent(in) :: ierr
+    integer(kind=long_int), intent(in) :: wanted_size
+    write(*,'(I6,2A,I4,/,2(A,I16,A))') myid_1, ' :: ERROR : on arrays allocation : ', array_id, ierr, &
+    &                                        '. Allocated memory :',      mem, ' bytes', &
+    &                                        '. Wanted memory :', wanted_size, ' bytes'
+  end subroutine print_mem_alloc_error
+
+  subroutine print_mem_alloc_stat()
+    integer(kind=long_int) :: min_cur_mem = 0, max_cur_mem = 0, min_remaining_mem = 0, max_remaining_mem = 0
+    integer                :: mpierr
+
+    if (mem_debug_level > 0) then
+      call mpi_reduce(mem,  min_remaining_mem, 1, MPI_INTEGER8, MPI_MIN, 0, mpi_comm_0, mpierr)
+      call mpi_reduce(mem,  max_remaining_mem, 1, MPI_INTEGER8, MPI_MAX, 0, mpi_comm_0, mpierr)
+    end if
+    call mpi_reduce(maxmem, min_cur_mem,       1, MPI_INTEGER8, MPI_MIN, 0, mpi_comm_0, mpierr)
+    call mpi_reduce(maxmem, max_cur_mem,       1, MPI_INTEGER8, MPI_MAX, 0, mpi_comm_0, mpierr)
+
+    if (myid_0 == 0) then
+
+      write(*,*)
+
+      if      (min_cur_mem * convert_b2gb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Minimun allocated memory           (all proc) : ', min_cur_mem       * convert_b2gb, ' Gb'
+      else if (min_cur_mem * convert_b2mb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Minimun allocated memory           (all proc) : ', min_cur_mem       * convert_b2mb, ' Mb'
+      else if (min_cur_mem * convert_b2kb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Minimun allocated memory           (all proc) : ', min_cur_mem       * convert_b2kb, ' Kb'
+      else
+      write(*,'(X,A,I3.3,A)') 'Minimun allocated memory           (all proc) : ', min_cur_mem,                    '    b'
+      end if
+
+      if      (max_cur_mem * convert_b2gb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Maximun allocated memory           (all proc) : ', max_cur_mem       * convert_b2gb, ' Gb'
+      else if (max_cur_mem * convert_b2mb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Maximun allocated memory           (all proc) : ', max_cur_mem       * convert_b2mb, ' Mb'
+      else if (max_cur_mem * convert_b2kb > 1.) then
+      write(*,'(X,A,F5.1,A)') 'Maximun allocated memory           (all proc) : ', max_cur_mem       * convert_b2kb, ' Kb'
+      else
+      write(*,'(X,A,I3.3,A)') 'Maximun allocated memory           (all proc) : ', max_cur_mem,                    '    b'
+      end if
+
+      if (mem_debug_level > 0) then
+
+        if      (min_remaining_mem * convert_b2gb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Minimum remaining allocated memory (all proc) : ', min_remaining_mem * convert_b2gb, ' Gb'
+        else if (min_remaining_mem * convert_b2mb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Minimum remaining allocated memory (all proc) : ', min_remaining_mem * convert_b2mb, ' Mb'
+        else if (min_remaining_mem * convert_b2kb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Minimum remaining allocated memory (all proc) : ', min_remaining_mem * convert_b2kb, ' Kb'
+        else
+        write(*,'(X,A,I3.3,A)') 'Minimum remaining allocated memory (all proc) : ', min_remaining_mem,              '    b'
+        end if
+
+        if      (max_remaining_mem * convert_b2gb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Maximum remaining allocated memory (all proc) : ', max_remaining_mem * convert_b2gb, ' Gb'
+        else if (max_remaining_mem * convert_b2mb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Maximum remaining allocated memory (all proc) : ', max_remaining_mem * convert_b2mb, ' Mb'
+        else if (max_remaining_mem * convert_b2kb > 1.) then
+        write(*,'(X,A,F5.1,A)') 'Maximum remaining allocated memory (all proc) : ', max_remaining_mem * convert_b2kb, ' Kb'
+        else
+        write(*,'(X,A,I3.3,A)') 'Maximum remaining allocated memory (all proc) : ', max_remaining_mem,              '    b'
+        end if
+
+        write(*,'(X,A,I3.3)')   'Remaining allocated arrays      (master proc) : ', counter
+
+      end if
+
+    end if
+
+    if (mem_debug_level > 0) then
+
+      write(1000 + myid_world,*)
+
+      if      (maxmem * convert_b2gb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Total allocated memory       : ', maxmem * convert_b2gb, ' Gb'
+      else if (maxmem * convert_b2mb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Total allocated memory       : ', maxmem * convert_b2mb, ' Mb'
+      else if (maxmem * convert_b2kb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Total allocated memory       : ', maxmem * convert_b2kb, ' Kb'
+      else
+      write(1000 + myid_world,'(A,I3.3,A)') 'Total allocated memory       : ', maxmem,              '    b'
+      end if
+
+      if      (mem * convert_b2gb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Remaining allocated memory   : ', mem    * convert_b2gb, ' Gb'
+      else if (mem * convert_b2mb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Remaining allocated memory   : ', mem    * convert_b2mb, ' Mb'
+      else if (mem * convert_b2kb > 1.) then
+      write(1000 + myid_world,'(A,F5.1,A)') 'Remaining allocated memory   : ', mem    * convert_b2kb, ' Kb'
+      else
+      write(1000 + myid_world,'(A,I3.3,A)') 'Remaining allocated memory   : ', mem,                 '    b'
+      end if
+
+      write(1000 + myid_world,'(A,I3.3)')   'Remaining allocated arrays   : ', counter
+
+    end if
+
+  end subroutine print_mem_alloc_stat
+
+end module mem_alloc_mod

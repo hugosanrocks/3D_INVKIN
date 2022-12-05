@@ -1,0 +1,19 @@
+2 2 2                 ! nsub_dom
+2                     ! novlp
+201 401 401           ! nglobal
+25. 25. 25.           ! spatial_step
+0. 0. 0.              ! grid_origin
+# Define a SG_GRID_POINT_ZONE_KIND characterized by 9 points
+9                     ! npt_glob
+  1  1    1000           ! pt_icoor(1:npt_glob,1:3) = (/ ixglob, iyglob, izglob )/
+102  1    1
+102  202  1
+102  202  202
+1    202  1
+1    202  202
+102  1    202
+102  2    202
+102  3    202
+# Define a SG_CONTINUUM_POINT_ZONE_KIND characterized by 1 points
+1                     ! npt_glob
+4499.9 4500. 4500.     ! pt_coor(1:npt_glob,1:3) = (/ xglob, yglob, zglob )/

@@ -1,5 +1,0 @@
-60.0 30.0  	% Fault length (str) and wide (dip) (km)
-30.0 15.0       % Hypocentral position in the fault plane (km) (str and dip)
-55.0         	% Hypocentral depth (km)
-313 20 290   	% Strike, dip and rake (deg)
-20 10   	% Number of subfaults along str and dip 

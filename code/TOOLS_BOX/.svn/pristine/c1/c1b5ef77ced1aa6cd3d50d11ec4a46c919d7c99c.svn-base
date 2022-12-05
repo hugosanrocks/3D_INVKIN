@@ -1,0 +1,240 @@
+program ug_test_hexa_par
+
+  use dd_common_mod
+  use hexa_mesh_mod
+  use hexa_comm_mod
+  use mesh_writers_mod
+
+  implicit none
+
+  character(len = 100)                                     :: iRootName, oFileName
+  character(len = 1024)                                    :: exec
+  integer                                                  :: nb_args, ngll1D, nvar
+  real                                                     :: time_end = 0., time_begin = 0., time0 = 0.
+  character(len=3)                                         :: buffer
+  integer(4)                                               :: iargc  ! declare function for xlf compiler
+
+  type(hexa_mesh_type)                                     :: mesh   ! the sub-mesh object associated to the current processor
+  type(hexa_comm_type)                                     :: comm   ! the communication object associated to the current processor
+
+  real, dimension(:),         allocatable                  :: F          ! a   local       continuous scalar field (1:ndof)
+  real, dimension(:,:),       allocatable                  :: VF         ! a   local       continuous vector field (1:nvar,1:ndof)
+  real, dimension(:,:,:,:),   allocatable                  :: discF      ! a   local    discontinuous scalar field (1:ngll1D,1:ngll1D,1:ngll1D,1:nElem)
+  real, dimension(:,:,:,:),   allocatable                  :: discFglob  ! the gathered discontinuous scalar field (1:ngll1D,1:ngll1D,1:ngll1D,1:nElem)
+  real, dimension(:,:,:,:,:), allocatable                  :: discVF     ! a   local    discontinuous vector field (1:nvar,1:ngll1D,1:ngll1D,1:ngll1D,1:nElem)
+  real, dimension(:,:,:,:,:), allocatable                  :: discVFglob ! the gathered discontinuous vector field (1:nvar,1:ngll1D,1:ngll1D,1:ngll1D,1:nElem)
+
+  integer                                                  :: ifac, ifactag, tag
+  integer, dimension(4)                                    :: iv
+  integer, parameter                                       :: FREE_SURFACE = 10 ! defines arbitrarily a tag associated to the free surface
+  character(len=8)                                         :: str8
+  character(len=6)                                         :: str6
+  character(len=4)                                         :: str4
+  integer                                                  :: verbose = 0
+
+  dd_debug_level   = 0
+  debug_graph      = 0
+
+  ! read parameters
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 3) then
+    write(6,*) "ERROR : bad number of arguments :", nb_args
+    write(6,*) "command line : mpirun -np n ug_test_hexa_par[_gnu] ngll1D meshrootname npart"
+    stop
+  end if
+  call getarg(1, buffer)
+  read(buffer,*) ngll1D
+  call getarg(2, iRootName)
+  call getarg(3, buffer)
+  read(buffer,*) npart
+
+  !==============================================================================
+  call init_mpi()
+  !==============================================================================
+
+  if (myid_1 == 0) then
+    write(6,*)
+    write(6,*) "-----------------------------------------"
+    write(6,*) "Start ug_test_hexa_par : "
+    write(6,*) "-----------------------------------------"
+    write(*,*) ' ngll1D       = ', ngll1D
+    write(*,*) ' meshrootname = ', iRootName
+    write(*,*) ' npart        = ', npart
+    write(6,*) "-----------------------------------------"
+    write(6,*)
+    !print *, selected_int_kind(8), huge(0_4)
+  end if
+
+  !==============================================================================
+  call comm%create_mpi_communicators(mpi_comm_world)
+  !==============================================================================
+
+  !==============================================================================
+  call mesh%hexa_mesh_parameterized_constructor(ngll1D, iRootname)
+  !==============================================================================
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call mesh%grid_init()
+  !==============================================================================
+  call cpu_time(time_end)
+  if (myid_1 == 0) then
+    write(*,*)
+    write(*,*) 'read sub-mesh and dof creation: Total time (seconds) = ', REAL(time_end - time_begin)
+    write(*,*)
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call comm%create_mpi_types(mesh)
+  !==============================================================================
+  call cpu_time(time_end)
+  if (myid_1 == 0) then
+    write(*,*)
+    write(*,*) 'create communication structures: Total time (seconds) = ', REAL(time_end - time_begin)
+    write(*,*)
+  end if
+
+  !------------------------------------------------------------------------------
+  ! Example of communication (with sum of values) on a continuous scalar field 
+  ! of dofs shared with neighbour partitions
+  !------------------------------------------------------------------------------
+
+  !==============================================================================
+  call mesh%hexa_mesh_allocate_continuous_scalar_field(F, 'F')
+  !==============================================================================
+  F(:) = 10. ** myid_1 ! hard-coded initialization value
+
+  if (verbose == 1) write(*,'(I3,A,F8.3)') myid_1, ' : Before comm : ', F(1)
+  !==============================================================================
+  call comm%hexa_comm_communicate_continuous_scalar_field(F, mesh)
+  !==============================================================================
+  write(str6,'(I6)') mesh%pMesh_struct%ndof
+  if (verbose == 1) write(*,'(I3,A,'//str6//'F8.3,A,2F8.3)') myid_1, ' : After  comm : ', F(:), ' min max =', minval(F), maxval(F)
+
+  ! Test parallel paraview outputs:
+  ! - Write the paraview root file aggregating pieces associated to each subdomain (.pvtu)
+  if (myid_1 == 0) then
+    call write_paraview_parallel_vtu_xml_format(iRootName, npart, POINT_DATA)
+  end if
+  ! - Write the piece (.vtu) associated to the subdomain
+  write(str4,'(I4)') myid_1+1
+  oFileName = trim(adjustl(iRootName)) // '_' // trim(adjustl(str4))
+  call write_paraview_ascii_vtu_xml_format(oFileName, mesh%pMesh_struct%coorV, mesh%pMesh_struct%EtoV, F, &
+  &             mesh%pMesh_struct%nEdeg, mesh%pMesh_struct%nV, mesh%pMesh_struct%nE, POINT_DATA)
+
+  !==============================================================================
+  call dealloc_(F, 'F')
+  !==============================================================================
+
+  !------------------------------------------------------------------------------
+  ! Example of communication (with sum of values) on a continuous vector field 
+  ! of dofs shared with neighbour partitions
+  !------------------------------------------------------------------------------
+
+  nvar = 3
+  !==============================================================================
+  call mesh%hexa_mesh_allocate_continuous_vector_field(VF, nvar, 'VF')
+  !==============================================================================
+
+  VF(:,:) = 10. ** myid_1
+
+  if (verbose == 1) write(*,'(I3,A,F8.3)') myid_1, ' : Before comm : vector field : ', VF(1,1)
+  !==============================================================================
+  call comm%hexa_comm_communicate_continuous_vector_field(VF, mesh)
+  !==============================================================================
+  write(str6,'(I6)') mesh%pMesh_struct%ndof * nvar
+  if (verbose == 1) write(*,'(I3,A,'//str6//'F8.3)') myid_1, ' : After  comm : vector field : ', VF(:,:)
+
+  !==============================================================================
+  call dealloc_(VF, 'VF')
+  !==============================================================================
+
+  !------------------------------------------------------------------------------
+  ! Example of gather of a discontinuous scalar field (expended dof : (i,j,k,ielem)
+  ! on the master processor
+  !------------------------------------------------------------------------------
+
+  !==============================================================================
+  call mesh%hexa_mesh_allocate_discontinuous_scalar_field(discF, 'discF')
+  call mesh%hexa_mesh_allocate_global_discontinuous_scalar_field(discFglob, 'discFglob') !allocation on master
+  !==============================================================================
+
+  discF(:,:,:,:) = 10. ** myid_1
+
+  if (verbose == 1) write(*,'(I3,A,F8.3)') myid_1, ' : Before gather : discontinuous vector field : ', discF(1,1,1,1)
+  !==============================================================================
+  call comm%hexa_comm_gather_global_discontinuous_scalar_field(mesh, discFglob, discF)
+  !==============================================================================
+  if (myid_1 == 0) then
+    write(str8,'(I8)') mesh%pMesh_struct%ngll1D**3 * mesh%pMaster_struct%nEglob
+    if (verbose == 1) write(*,'(I3,A,'//str8//'F8.3)') myid_1, &
+    &                 ' : After  gather : discontinuous scalar field : ', discFglob(:,:,:,:)
+  end if
+
+  !==============================================================================
+  call dealloc_(discF, 'discF')
+  call mesh%hexa_mesh_deallocate_global_discontinuous_scalar_field(discFglob, 'discFglob')
+  !==============================================================================
+
+  !------------------------------------------------------------------------------
+  ! Example of gather of a discontinuous vector field (expended dof : (ivar,i,j,k,ielem)
+  ! on the master processor
+  !------------------------------------------------------------------------------
+
+  nvar = 3
+  !==============================================================================
+  call mesh%hexa_mesh_allocate_discontinuous_vector_field(discVF, nvar, 'discVF')
+  call mesh%hexa_mesh_allocate_global_discontinuous_vector_field(discVFglob, nvar, 'discVFglob') !allocation on master
+  !==============================================================================
+
+  discVF(:,:,:,:,:) = 10. ** myid_1
+
+  if (verbose == 1) write(*,'(I3,A,F8.3)') myid_1, ' : Before gather : discontinuous vector field : ', discVF(1,1,1,1,1)
+  !==============================================================================
+  call comm%hexa_comm_gather_global_discontinuous_vector_field(mesh, discVFglob, discVF)
+  !==============================================================================
+  if (myid_1 == 0) then
+    write(str8,'(I8)') nvar * mesh%pMesh_struct%ngll1D**3 * mesh%pMaster_struct%nEglob
+    if (verbose == 1) write(*,'(I3,A,'//str8//'F8.3)') myid_1, &
+    &                 ' : After  gather : discontinuous vector field : ', discVFglob(:,:,:,:,:)
+  end if
+
+  !==============================================================================
+  call dealloc_(discVF, 'discVF')
+  call mesh%hexa_mesh_deallocate_global_discontinuous_vector_field(discVFglob, 'discVFglob')
+  !==============================================================================
+
+  !------------------------------------------------------------------------------
+  ! Example of loop on the tagged faces of a partition to treat free surface 
+  ! and other boundaries inside a sub domain
+  !------------------------------------------------------------------------------
+
+  do ifactag = 1, mesh%pMesh_struct%nFtag      ! relative index of the face among the tagged faces subset
+    ifac  = mesh%pMesh_struct%FtagtoF(ifactag) ! global index of the face among the whole set of faces
+    iv(:) = mesh%pMesh_struct%FtoV(:,ifac)     ! retrieve the vertices defining the face
+    tag   = mesh%pMesh_struct%Ftag(ifactag)    ! retrieve the associated tag
+    if (tag == FREE_SURFACE) then
+      if (verbose == 1) write(*,'(2A,I3,A,4I3,2A)') end_of_line, 'The face ', ifactag, &
+      &                 ' vertices(', iv(:),') defines a free surface', end_of_line
+    end if
+  end do
+
+  !==============================================================================
+  call comm%comm_engine_free_mem()
+  call comm%end_mpi()
+  !==============================================================================
+
+  call cpu_time(time_end)
+
+  if (myid_1 == 0) then
+    write(6,*)
+    write(6,*) "-----------------------------------------"
+    write(6,*) "ug_test_hexa_par successfully ended : "
+    write(*,*) 'Total time (seconds) = ', REAL(time_end - time0)
+    write(6,*) "-----------------------------------------"
+    write(6,*)
+  end if
+
+end program ug_test_hexa_par

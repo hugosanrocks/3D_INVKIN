@@ -1,0 +1,26 @@
+3.0 1.0                ! rise time, origin time (delays on convolutions due to impulsive force)
+40 3 648               ! #stations, #components, #nodes on fault
+8192 127.9844 0.015625 ! Stress input file: #samples, window duration (s), dt (s)
+3                      ! Stress input file style: 1=GEO3D, 2=AXITRA, 3=DWN-IBEM
+39 0.25 96 271 351     ! Slip-rate to invert: #time samples per node, dt(s),
+                       ! #time samples per node in time interpolation, #samples traction,
+                       ! #samples in synthetics to compute
+
+!Last line of inputs:
+nsamp dt nsampint nsamptracint nsampsynint
+
+!Attention:
+The time sampling for the time interpolation
+of the slip-rate is estimated as:
+
+   dtint = ((nsamp-1)*dt)/(nsampint-1)
+
+Time sampling for synthetic seismograms, observations and traction file
+must be equal to dtint to correctly estimate the convolutions of the 
+forward modeling.
+
+Remember that:  (not to run on allocation errors)
+
+   nsampint + nsamptracint - 1 > nsampsynint
+
+

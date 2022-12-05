@@ -1,0 +1,100 @@
+!-----------------------------------------------------------------------
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+program test_poly_1d
+  implicit none
+
+  integer::nt !number of time steps
+  integer::i1min !minimum index of boundary elements for 1-axis 
+  integer::i1max !maximum index of boundary elements for 1-axis 
+  integer::i2min !minimum index of boundary elements for 2-axis 
+  integer::i2max !maximum index of boundary elements for 2-axis 
+  integer::i3min !minimum index of boundary elements for 3-axis 
+  integer::i3max !maximum index of boundary elements for 3-axis 
+  integer::r !decimation ratio for it
+  real,dimension(:,:,:,:),allocatable:: var, var0, var1
+  !----------------------------------------------------------------!
+  !variables and parameter for L2-norm
+  !----------------------------------------------------------------!
+  real::l2sum_var1
+  real::l2nrm !the computed norm
+  real::l2err !absolute error between the reference and the computed norm
+  real,parameter:: l2ref=22.3606758 !the computed norm is tested against this one
+
+  real,parameter::pi=3.14159265359
+  integer::i1,i2,i3,it,mt,l,q
+
+  nt=1000 !number of time steps
+  r=4 !temporal decimation
+  i1min=1 
+  i1max=1
+  i2min=1
+  i2max=1
+  i3min=1
+  i3max=1
+  l=4 !radius of Kaiser window
+  q=7 !q-th order polynomial
+  mt=nt/r
+
+  allocate(var0(nt,i1min:i1max,i2min:i2max,i3min:i3max))
+  allocate(var(mt,i1min:i1max,i2min:i2max,i3min:i3max))
+  allocate(var1(nt,i1min:i1max,i2min:i2max,i3min:i3max))
+
+  do it=1,nt
+     var0(it,1,1,1)=sin(2*pi*0.01*it)
+  enddo
+
+  do it=1,nt
+     !decimation
+     call poly_interp(.true.,var,var0(it,:,:,:),i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q)
+  enddo
+  do it=nt,1,-1
+     !interpolation
+     call poly_interp(.false.,var,var1(it,:,:,:),i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q)
+  enddo
+  
+  !l2-nrm
+  l2nrm = 0.
+  l2err = 0.
+  l2sum_var1 = 0.
+  do it = 1,nt
+    l2sum_var1 = l2sum_var1 + var1(it,1,1,1)**2
+  enddo
+  l2nrm=sqrt(l2sum_var1)
+  l2err=abs(l2nrm-l2ref)/l2ref
+
+  write(*,*) '----------------------------------------------'
+  if (l2err .gt. 1E-3) then
+    write(*,*) 'CAUTION: l2nrm_ref=  0.4721577'
+    write(*,*) '         l2nrm    = ', l2nrm
+    write(*,*) '         ERR      = ', l2err
+    write(*,*) '--- INTERPOLATION poly_1d ..........*** Failed'
+  else
+    write(*,*) '--- INTERPOLATION poly_1d ..........*** Passed'
+  endif
+  write(*,*) '----------------------------------------------' 
+  !open(10,file='exact.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) var0
+  !close(10)
+  !open(10,file='decimated.bin',access='direct',recl=nt,status='replace')
+  !write(10,rec=1) var
+  !close(10)
+  !open(10,file='interpolated.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) var1
+  !close(10)
+
+  deallocate(var)
+  deallocate(var0)
+  deallocate(var1)
+end program test_poly_1d
+

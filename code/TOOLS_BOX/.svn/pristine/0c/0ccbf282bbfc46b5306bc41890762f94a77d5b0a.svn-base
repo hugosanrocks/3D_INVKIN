@@ -1,0 +1,49 @@
+function demo_lsQ
+% demo for generalized Maxwell body to estimate Yl using least-squares:
+%
+% Copyright (c) Seiscope, University Joseph Fourier, Pengliang Yang, 2015
+% Email: pengliang.yang@ujf-grenoble.fr; ypl.2100@gmail.com
+%
+
+w1=1; %omega1=Hz
+w3=60; % omega3=50 Hz
+w2=sqrt(w1*w3); %equidistant on a logarithmic scale
+y1= 0.117548786   
+y2=1.45336362E-02  
+y3=  0.148132190  
+nw=100;
+w=logspace(log10(w1),log10(w3),nw);
+
+Q=zeros(1,nw);
+for iw=1:nw 
+	num=0;
+	den=1;
+	[ya,yb]=func(w(iw),w1,y1);
+	num=num+ya;
+	den=den-yb;
+	[ya,yb]=func(w(iw),w2,y2);
+	num=num+ya;
+	den=den-yb;
+	[ya,yb]=func(w(iw),w3,y3);
+	num=num+ya;
+	den=den-yb;
+	%Qinv(iw)=num/den;
+	Q(iw)=den/num;
+end
+figure(1),clf
+semilogy(w,Q,'Linewidth',3)
+xlim([w1 w3])
+xlabel('Frequency/Hz')
+ylabel('Q')
+title('Quality factor')
+
+
+set(gcf, 'PaperPosition', [0 0 5 4]);
+set(gcf, 'PaperSize', [5 4]);
+print  -dpdf qualityfactor.pdf
+				
+
+function [ya,yb]=func(w,wl,yl)
+a=w./wl;
+yb=yl./(1.+a.^2);		
+ya=yb.*a;

@@ -1,0 +1,33 @@
+!
+!!$  Copyright (C) 2016 University Joseph Fourier, Grencle (Pengliang Yang)
+!!$
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!----------------------------------------------------------------------------
+integer function checkpoint_r(nt,nc)
+  implicit none
+  integer::nt,nc
+
+  integer::r,beta
+
+  r=0;beta=1
+  do while (beta<nt)
+     r=r+1
+     beta=beta*(r+nc)/r
+  enddo
+  checkpoint_r=r
+end function checkpoint_r

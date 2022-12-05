@@ -1,0 +1,35 @@
+***********************
+* SEISCOPE TOOLS_BOX  *
+***********************
+-------------------------
+Responsible: L. Metivier
+-------------------------
+
+This directory intends to gather the methodological tools that can 
+be shared between the different SEISCOPE CODES. 
+
+For now, the TOOL_BOX contains 2 librairies: 
+# the optimization TOOL_BOX, which shall 
+contain the following methods :
+- Preconditioned Steepest Descent (PSTD)
+- Preconditioned Nonlinear Conjugate Gradient (PNLCG)
+- l-BFGS (LBFGS)
+- Preconditioned l-BFGS (PLBFGS)
+- Truncated Newton (TRN)
+- Preconditioned Truncated Newton (PTRN)
+These methods are implemented following a reverse communication 
+strategy so as to simplify their use. More details can be found
+in the OPTIMIZATION directory. 
+
+# the SU_IO library to read/write Seismic Unix (SEGY) data format
+
+
+
+-------------------------------
+Installation and documentation
+
+Adapt the Makefile.inc to your environment  and just type 'make'
+
+The Optimization tool_box contains its own documentation located OPTIMIZATION/doc
+
+

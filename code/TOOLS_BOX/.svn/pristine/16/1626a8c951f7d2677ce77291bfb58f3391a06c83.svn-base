@@ -1,0 +1,38 @@
+# --- MASTER Makefile for the OPTIMIZATION library
+include ../Makefile.inc
+
+LIB = ./lib
+COM = ./COMMON/src/
+KER_PSTD = ./PSTD/kernel/src/
+KER_PNLCG = ./PNLCG/kernel/src/
+KER_LBFGS = ./LBFGS/kernel/src/
+KER_PLBFGS = ./PLBFGS/kernel/src/
+KER_TRN = ./TRN/kernel/src/
+KER_PTRN = ./PTRN/kernel/src/
+SUBDIRS=LBFGS PLBFGS PNLCG PSTD PTRN TRN
+
+all : lib
+
+.PHONY: lib
+
+lib : 
+	for d in $(SUBDIRS); do $(MAKE) -C $$d lib; done
+	$(AR) $(ARFUNCT2) $(LIB)/libSEISCOPE_OPTIM.a $(COM)*.o $(KER_PSTD)*.o $(KER_PNLCG)*.o $(KER_LBFGS)*.o $(KER_PLBFGS)*.o $(KER_TRN)*.o $(KER_PTRN)*.o
+
+clean :	
+	for d in $(SUBDIRS); do $(MAKE) -C $$d clean; done
+	$(RM) $(LIB)/*.a
+
+test :
+	for d in $(SUBDIRS) ; do $(MAKE) -C $$d test ; done
+
+testclean :
+	for d in $(SUBDIRS) ; do $(MAKE) -C $$d testclean ; done
+
+distclean : clean testclean
+
+
+help : 
+	@echo 'Usage: make all [GNU=1]'
+	@echo '       make distclean [GNU=1]'
+

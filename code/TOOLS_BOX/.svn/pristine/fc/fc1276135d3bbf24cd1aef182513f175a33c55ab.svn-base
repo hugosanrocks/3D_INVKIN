@@ -1,0 +1,220 @@
+module mesh_partition_struct_mod
+
+  use dd_common_mod
+
+  implicit none
+
+  ! Type used to build the graph of entities shared by different partitions and their local numbering in each partition
+  type, public :: entity_part_cell_t
+      sequence
+      integer :: ipart = 0 ! the partition index the entity belongs to
+      integer :: iloc  = 0 ! the local index of the entity in the partition
+      type(entity_part_cell_t), pointer :: next => Null() ! pointer on the next cell corresponding the possible other partition the entity belongs to
+  end type entity_part_cell_t
+
+  public :: entity_part_cell_default_constructor
+  public :: entity_part_cell_constructor
+  public :: entity_part_cell_ptr_constructor
+  public :: entity_part_cell_destructor
+  public :: entity_part_cell_ptr_destructor
+  public :: fulfill_entity_part_ht
+  public :: dump_entity_part_ht
+  public :: free_memory_entity_part_ht
+
+  contains
+
+  !----------------------------------------------------------------
+  ! entity_part_cell constructors / destructor
+  !----------------------------------------------------------------
+
+  ! Default constructor
+  subroutine entity_part_cell_default_constructor(oCell)
+    type(entity_part_cell_t),          intent(in out) :: oCell
+    oCell%ipart = -1
+    oCell%iloc  = 0
+    nullify(oCell%next)
+  end subroutine entity_part_cell_default_constructor
+
+  ! Constructor
+  subroutine entity_part_cell_constructor(oCell, ipart, iloc, next)
+    type(entity_part_cell_t),          intent(in out) :: oCell
+    integer,                           intent(in)     :: ipart, iloc
+    type(entity_part_cell_t), pointer, intent(in)     :: next
+    oCell%ipart = ipart
+    oCell%iloc  = iloc
+    nullify(oCell%next)
+    oCell%next => next
+  end subroutine entity_part_cell_constructor
+
+  ! Constructor
+  subroutine entity_part_cell_ptr_constructor(oCell, ipart, iloc, next)
+    type(entity_part_cell_t), pointer, intent(in out) :: oCell
+    integer,                           intent(in)     :: ipart, iloc
+    type(entity_part_cell_t), pointer, intent(in)     :: next
+    nullify(oCell); allocate(oCell)
+    oCell%ipart = ipart
+    oCell%iloc  = iloc
+    oCell%next => next
+  end subroutine entity_part_cell_ptr_constructor
+
+  ! Destructor
+  subroutine entity_part_cell_destructor(Cell)
+    type(entity_part_cell_t),          intent(in out) :: Cell
+    nullify(Cell%next)
+  end subroutine entity_part_cell_destructor
+
+  ! Destructor
+  subroutine entity_part_cell_ptr_destructor(Cell)
+    type(entity_part_cell_t), pointer, intent(in out) :: Cell
+    if (associated(Cell)) then
+      nullify(Cell%next)
+      deallocate(Cell)
+    end if
+    nullify(Cell)
+  end subroutine entity_part_cell_ptr_destructor
+
+
+  subroutine fulfill_entity_part_ht(iglob, ipart, npart, cpt_part, entity_globtoloc_ht)
+    integer,                                                     intent(in)     :: iglob, ipart, npart
+    integer,                  dimension(npart),                  intent(in out) :: cpt_part
+    type(entity_part_cell_t), dimension(:), allocatable, target, intent(in out) :: entity_globtoloc_ht
+    type(entity_part_cell_t), pointer :: PrevCell => Null(), NextCell => Null(), NewCell => Null()
+    integer                           :: iloc
+    character(len = *),    parameter  :: proc_name = "fulfill_entity_part_ht"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+!     if (debug_graph > 1) then
+!       write(*,'(3(A,I6))') 'iglob =', iglob, 'ipart =', ipart
+!     end if
+
+    ! search if the entity is already handled by this partition
+    if (entity_globtoloc_ht(iglob)%ipart == -1) then
+      ! first occurence of the entity in the global partition, add it
+
+      cpt_part(ipart) = cpt_part(ipart) + 1
+      iloc = cpt_part(ipart)
+
+      call entity_part_cell_constructor(entity_globtoloc_ht(iglob), ipart, iloc, Null())
+
+!       if (debug_graph > 1) then
+!         write(*,'(2(A,I6))') "iglob =", iglob, " entity already registered within partition ", ipart
+!       end if
+
+    else if (ipart /= entity_globtoloc_ht(iglob)%ipart) then
+      ! the entity is already handled by some partitions, check that the current partition is not already present and add it
+
+      PrevCell => entity_globtoloc_ht(iglob)
+      NextCell => entity_globtoloc_ht(iglob)%next
+
+      ! Search the place in the chained list (of the partitions sharing the entity)
+      ! where the current partition must be inserted
+      loop : do
+
+!         if (debug_graph > 1) then
+!           write(*,'(A,I6,A,I6)') " - 1- loop iglob =", iglob, " PrevCell =", PrevCell%ipart
+!           if (associated(NextCell)) &
+!           & write(*,'(A,I6)')    "                     and NextCell =", NextCell%ipart
+!         end if
+
+        if (.not. associated(NextCell)) then
+          ! The current partition has not been found in the list, so add it
+
+!           if (debug_graph > 1) then
+!             write(*,'(A,I6,A)') " - 2- loop iglob =", iglob, " no next cell, put here"
+!           end if
+
+          cpt_part(ipart) = cpt_part(ipart) + 1
+          iloc = cpt_part(ipart)
+
+          call entity_part_cell_ptr_constructor(NewCell, ipart, iloc, next = Null())
+          PrevCell%next => NewCell
+
+          exit loop ! no next cell in the chained list, the new cell must be inserted here
+
+        else if ( ipart == NextCell%ipart  ) then
+          ! The current partition is already present in the list, do nothing
+
+!           if (debug_graph > 1) then
+!             write(*,'(2(A,I6))') " - 3- loop iglob =", iglob, " Vertex already registered within partition ", ipart
+!           end if
+
+          exit loop
+
+        else
+
+          PrevCell => NextCell
+          NextCell => NextCell%next
+
+        end if
+
+      end do loop
+    end if ! entity_globtoloc_ht(iglob)%ipart /= -1
+
+  end subroutine fulfill_entity_part_ht
+
+
+  subroutine dump_entity_part_ht(ht, n, ht_name)
+    type(entity_part_cell_t), dimension(:), allocatable, target, intent(in) :: ht
+    integer,                                                     intent(in) :: n
+    character(len=15),                                           intent(in) :: ht_name
+    type(entity_part_cell_t),                            pointer            :: NextCell => Null()
+    integer                                                                 :: i
+    character(len = *),                                  parameter          :: proc_name = "dump_entity_part_ht"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    write(*,*)
+    write(*,*) 'Dump ', ht_name, ' hash table'
+    write(*,'(100A1)') ('-', i=1, 100)
+
+    do i = 1, n ! global index
+      NextCell => ht(i)
+      do while (associated(NextCell))
+        write(*,'(" entity = ",I6," ipart: ",I6," iloc: ",I6)') i, NextCell%ipart, NextCell%iloc
+        NextCell => NextCell%next
+      end do
+    end do
+
+    write(*,'(100A1)') ('-', i=1, 100)
+    write(*,*)
+
+  end subroutine dump_entity_part_ht
+
+
+  subroutine free_memory_entity_part_ht(ht)
+    type(entity_part_cell_t), dimension(:), allocatable, target, intent(in out) :: ht
+    type(entity_part_cell_t), pointer :: PrevCell => Null(), NextCell => Null()
+    integer                           :: i
+    character(len = *),     parameter :: proc_name = "free_memory_entity_part_ht"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    end if
+
+    if (.not. allocated(ht)) return
+
+    do i = 1, size(ht)
+      PrevCell => ht(i)%next
+      if (associated(PrevCell)) then
+        NextCell => PrevCell%next
+        
+        do while (associated(NextCell))
+
+          call entity_part_cell_ptr_destructor(PrevCell)
+          NextCell => NextCell%next
+
+        end do
+        call entity_part_cell_ptr_destructor(PrevCell)
+      end if
+      call entity_part_cell_destructor(ht(i))
+    end do
+
+  end subroutine free_memory_entity_part_ht
+
+
+end module mesh_partition_struct_mod

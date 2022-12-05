@@ -1,0 +1,393 @@
+module mesh_readers_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use mesh_utils_mod
+
+  implicit none
+
+  contains
+
+  subroutine read_medit_mesh(filename, nV, coorV, nE, nEdeg, EtoV, Etag, nFtag, nFdeg, FtagtoV, Ftag)
+    character(len = 100),                 intent(in)  :: filename
+    integer,                              intent(out) :: nV, nE, nEdeg, nFtag, nFdeg
+    real,    dimension(:,:), allocatable, intent(out) :: coorV
+    integer, dimension(:,:), allocatable, intent(out) :: EtoV, FtagtoV
+    integer, dimension(:),   allocatable, intent(out) :: Ftag, Etag
+    
+    character(len = *),                   parameter   :: proc_name = "read_medit_mesh"
+    integer                                           :: mshunit = 11, status
+    character(len = 30)                               :: keyword
+    logical                                           :: exist
+    integer                                           :: dummy, i, ie, cpt, iv, ifac
+    integer                                           :: ndim = 0, nedge = 0, ntet = 0, nhex = 0, ntri = 0, nquad = 0
+    real(kind=FP), dimension(:,:),   allocatable      :: coorE
+    real                                              :: volume
+    character(len=20)                                 :: fmt1
+    character(len=3)                                  :: str1
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, " : ", proc_name
+    endif
+
+    nV    = 0
+    nE    = 0
+    nFtag = 0
+    nFdeg = 0
+    nEdeg = 0
+
+    inquire(file = filename, exist = exist)
+    if (.not. exist) then
+      write(*,*) proc_name, " :: ERROR : unexisting file ", trim(filename)
+      stop
+    end if
+
+    open(unit = mshunit, file = trim(filename), iostat = status)
+    if (status /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", status, " unable to open ", trim(filename)
+      stop
+    end if
+    rewind(mshunit)
+
+    read(mshunit,*) ! skip first line MeshVersionFormatted
+    read(mshunit,*) keyword
+
+    do
+
+      select case(trim(keyword))
+      case("Dimension")
+        read(mshunit,*) ndim
+        if (ndim /= 3) then
+          write(*,*) proc_name, " :: ERROR : not implemented for dimension /= 3 == ", ndim
+          stop
+        end if
+        read(mshunit,*) keyword
+
+      case("Vertices")
+        read(mshunit,*) nV
+        call alloc_(coorV, 1, ndim, 1, nV, "coorV")
+
+        do i = 1, nV
+          read(mshunit,*) coorV(1: ndim, i), dummy
+        end do
+        read(mshunit,*) keyword
+
+      case("Edges")
+        read(mshunit,*) nedge
+
+        ! skip edges
+        do i = 1, nedge
+          read(mshunit,*)
+        end do
+        read(mshunit,*) keyword
+
+      case("Triangles")
+        read(mshunit,*) ntri
+        if (ntri > 0) then
+          nFtag = ntri
+          nFdeg = 3
+          call alloc_(FtagtoV, 1, nFdeg, 1, nFtag, "FtagtoV")
+          call alloc_(Ftag, 1, nFtag, "Ftag")
+
+          do i = 1, nFtag
+            read(mshunit,*) FtagtoV(:, i), Ftag(i)
+          end do
+        end if
+        read(mshunit,*) keyword
+
+      case("Quadrilaterals")
+        read(mshunit,*) nquad
+        if (nquad > 0) then
+          nFtag = nquad
+          nFdeg = 4
+          call alloc_(FtagtoV, 1, nFdeg, 1, nFtag, "FtagtoV")
+          call alloc_(Ftag, 1, nFtag, "Ftag")
+
+          do i = 1, nFtag
+            read(mshunit,*) FtagtoV(:, i), Ftag(i)
+          end do
+        end if
+        read(mshunit,*) keyword
+
+      case("Tetrahedra")
+        read(mshunit,*) ntet
+        if (ntet > 0) then
+          nE = ntet
+          nEdeg = 4
+          call alloc_(EtoV, 1, nEdeg, 1, nE, "EtoV")
+          call alloc_(Etag, 1, nE, "Etag")
+
+          do i = 1, nE
+            read(mshunit,*) EtoV(:, i), Etag(i)
+          end do
+        end if
+        read(mshunit,*) keyword
+
+      case("Hexahedra")
+        read(mshunit,*) nhex
+        if (nhex > 0) then
+          nE = nhex
+          nEdeg = 8
+          call alloc_(EtoV, 1, nEdeg, 1, nE, "EtoV")
+          call alloc_(Etag, 1, nE, "Etag")
+
+          do i = 1, nE
+            read(mshunit,*) EtoV(:, i), Etag(i)
+          end do
+        end if
+        read(mshunit,*) keyword
+
+      case("End")
+        exit
+
+      case default
+        write(*,*) proc_name, " ERROR : unexpected keyword", trim(keyword)
+        stop
+
+      end select
+    end do
+
+    close(mshunit)
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'Mesh info:'
+      write(*,*)
+      write(*,'(A,I3)') ' Nb vertices:', nV
+      do iv = 1, nV
+        write(*,'(A,I3,A,3F17.10)')      &
+        & ' iv = ',   iv,              &
+        & ' coor = ', coorV(:,iv)
+      end do
+      write(*,*)
+      write(*,'(2(A,I3))') ' Nb tagged faces:', nFtag, ' degree = ', nFdeg
+      write(str1,'(I3)') nFdeg
+      fmt1 = '(A,I3,A,' // str1 // 'I3,A,I3)'
+      do ifac = 1, nFtag
+        write(*,fmt1) ' ifac = ',    ifac,            &
+        &             ' FtagtoV = ', FtagtoV(:,ifac), &
+        &             ' tag = ',     Ftag(ifac)
+      end do
+      write(*,*)
+      write(*,'(2(A,I3))') ' Nb elements:', nE, ' degree = ', nEdeg
+      write(str1,'(I3)') nEdeg
+      fmt1 = '(A,I3,A,' // str1 // 'I3,A,I3)'
+      do ie = 1, nE
+      write(*,fmt1) ' ie = ',   ie,         &
+      &             ' EtoV = ', EtoV(:,ie), &
+      &             ' tag = ',  Etag(ie)
+      end do
+      write(*,*)
+    end if
+
+    if (nV <= 0 .or. nE <= 0) then
+      write(*,*) proc_name, " :: ERROR : non valid mesh: nV = ", nV, " nE = ", nE
+      stop
+    end if
+
+    if (nFtag <= 0) then
+      write(*,*) proc_name, " :: WARNING : mesh defines no boundary face."
+
+      ! Deduce face degree
+      if (ntet > 0) then
+        nFdeg = 3
+      else if (nhex > 0) then
+        nFdeg = 4
+      end if
+    end if
+
+    if ((ntet > 0 .and. nhex > 0) .or. (ntri > 0 .and. nquad > 0)) then
+      write(*,*) proc_name, " :: ERROR : Hybrid meshes of tetrahedra/hexahedra are not supported."
+      write(*,*) " Nb tetrahedra = ", ntet, " Nb hexahedra      = ", nhex
+      write(*,*) " Nb triangles  = ", ntet, " Nb quadrilaterals = ", nquad
+      stop
+    end if
+
+    write(*,*) "  global mesh info:"
+    write(*,*) "  nb Vertices     =", nV
+    write(*,*) "  nb tagged Faces =", nFtag, " degree = ", nFdeg
+    write(*,*) "  nb Elements     =", nE,    " degree = ", nEdeg
+
+    call alloc_(coorE, 1, 3, 1, nEdeg, proc_name // 'coorE')
+
+    ! Check vertices order of tetrahedra,
+    ! i.e. check the positivity of the volume (or, more precisely a positive Jacobian determinant)
+    cpt = 0
+    do ie = 1, nE
+      do i = 1, nEdeg
+        coorE(:,i) = real(coorV(:,EtoV(i,ie)),FP)
+      end do
+      if (nEdeg == 4) then
+        volume = tetrahedron_volume(coorE)
+      else
+        volume = hexahedron_volume(coorE, ie)
+      end if
+   
+      if (volume <= 0) then
+        cpt = cpt + 1
+        if (cpt <= 10) then
+          write(*,*)
+          write(*,*) proc_name, ' :: WARNING : element ', ie, '(', EtoV(:,ie),') not in direct order :', volume
+        end if
+      end if
+    end do
+    if (cpt > 0) then
+      write(*,*)
+      write(*,*) proc_name, ' :: WARNING :', cpt, ' element not defined in the direct order'
+    end if
+
+    call dealloc_(coorE, proc_name // 'coorE')
+
+  end subroutine read_medit_mesh
+
+
+  subroutine read_mmesh3d_mesh(filename, nV, coorV, nE, nEdeg, EtoV, Etag, nFtag, nFdeg, FtagtoV, Ftag)
+    character(len = 100),                 intent(in)  :: filename
+    integer,                              intent(out) :: nV, nE
+    integer,                              intent(out) :: nEdeg, nFtag, nFdeg
+    real,    dimension(:,:), allocatable, intent(out) :: coorV
+    integer, dimension(:,:), allocatable, intent(out) :: EtoV, FtagtoV
+    integer, dimension(:),   allocatable, intent(out) :: Ftag, Etag
+    
+    character(len = *),                   parameter   :: proc_name = "read_mmesh3d_mesh"
+    integer                                           :: mshunit = 11, status
+    character(len = 30)                               :: keyword
+    logical                                           :: exist
+    integer                                           :: dummy, i, ie, cpt, iv, ifac
+    integer                                           :: ndim = 0, nedge = 0, ntet = 0, nhex = 0, ntri = 0, nquad = 0
+    real(kind=FP), dimension(:,:),   allocatable      :: coorE
+    real                                              :: volume
+    character(len=20)                                 :: fmt1
+    character(len=3)                                  :: str1
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, " : ", proc_name
+    endif
+
+    nFtag = 0
+    nFdeg = 0
+    nEdeg = 0
+
+    inquire(file = filename, exist = exist)
+    if (.not. exist) then
+      write(*,*) proc_name, " :: ERROR : unexisting file ", trim(filename)
+      stop
+    end if
+
+    open(unit = mshunit, file = trim(filename), iostat = status)
+    if (status /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", status, " unable to open ", trim(filename)
+      stop
+    end if
+    rewind(mshunit)
+
+    read(mshunit,*) !skip line
+    read(mshunit,*) nE, nV
+
+    read(mshunit,*) keyword
+
+    do
+
+      select case(trim(keyword))
+
+      case("COORDINATES")
+        call alloc_(coorV, 1, 3, 1, nV, "coorV")
+
+        do i = 1, nV
+          read(mshunit,*) dummy, coorV(1: 3, i)
+        end do
+        read(mshunit,*) keyword
+
+      case("END_COORDINATES")
+        exit
+
+      case("ELEMENTS")
+        nEdeg = 8
+        call alloc_(EtoV, 1, 8, 1, nE, "EtoV")
+
+        do i = 1, nE
+          read(mshunit,*) dummy, EtoV(:, i)
+        end do
+        read(mshunit,*) keyword
+
+      case("END_ELEMENTS")
+        read(mshunit,*) keyword
+
+      case("End")
+        exit
+
+      case default
+        write(*,*) proc_name, " ERROR : unexpected keyword", trim(keyword)
+        stop
+
+      end select
+    end do
+
+    close(mshunit)
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'Mesh info:'
+      write(*,*)
+      write(*,'(A,I3)') ' Nb vertices:', nV
+      do iv = 1, nV
+        write(*,'(A,I3,A,3F8.4)')      &
+        & ' iv = ',   iv,              &
+        & ' coor = ', coorV(:,iv)
+      end do
+      write(*,*)
+      write(*,'(2(A,I3))') ' Nb elements:', nE, ' degree = ', nEdeg
+      write(str1,'(I3)') nEdeg
+      fmt1 = '(A,I3,A,' // str1 // 'I3)'
+      do ie = 1, nE
+      write(*,fmt1) ' ie = ',   ie,         &
+      &             ' EtoV = ', EtoV(:,ie)
+      end do
+      write(*,*)
+    end if
+
+    if (nV <= 0 .or. nE <= 0) then
+      write(*,*) proc_name, " :: ERROR : non valid mesh: nV = ", nV, " nE = ", nE
+      stop
+    end if
+
+    nFdeg = 4
+
+    write(*,*) "  global mesh info:"
+    write(*,*) "  nb Vertices     =", nV
+    write(*,*) "  nb tagged Faces =", nFtag, " degree = ", nFdeg
+    write(*,*) "  nb Elements     =", nE,    " degree = ", nEdeg
+
+    call alloc_(coorE, 1, 3, 1, nEdeg, proc_name // 'coorE')
+
+    ! Check vertices order of tetrahedra,
+    ! i.e. check the positivity of the volume (or, more precisely a positive Jacobian determinant)
+    cpt = 0
+    do ie = 1, nE
+      do i = 1, nEdeg
+        coorE(:,i) = real(coorV(:,EtoV(i,ie)),FP)
+      end do
+      if (nEdeg == 4) then
+        volume = tetrahedron_volume(coorE)
+      else
+        volume = hexahedron_volume(coorE, ie)
+      end if
+   
+      if (volume <= 0) then
+        cpt = cpt + 1
+        if (cpt <= 10) then
+          write(*,*)
+          write(*,*) proc_name, ' :: WARNING : element ', ie, '(', EtoV(:,ie),') not in direct order :', volume
+        end if
+      end if
+    end do
+    if (cpt > 0) then
+      write(*,*)
+      write(*,*) proc_name, ' :: WARNING :', cpt, ' element not defined in the direct order'
+    end if
+
+    call dealloc_(coorE, proc_name // 'coorE')
+
+  end subroutine read_mmesh3d_mesh
+
+end module mesh_readers_mod

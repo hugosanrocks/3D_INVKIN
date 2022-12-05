@@ -1,0 +1,192 @@
+module global_parameters_mod
+  use MPI
+  use dd_common_mod
+  use tetra_ref_dof_mod
+  use tetra_mesh_struct_mod
+  implicit none
+  !include 'mpif.h'
+
+  type acquisition
+     integer                                      :: nsrc, nsta
+     real(kind=FP), dimension(:,:), allocatable   :: sta_coor, src_coor
+     real(kind=FP), dimension(:,:), allocatable   :: sta_weig, src_weig
+     real(kind=FP), dimension(:),   allocatable   :: pressure_gather
+     real(kind=FP), dimension(:),   allocatable   :: veloc_x_gather, veloc_y_gather,&
+          veloc_z_gather
+     integer, dimension(:),   allocatable         :: iel_sta, iel_src
+  end type acquisition
+
+
+  character(len=100)                                   :: iFileName, oFileName
+  character(len=1024)                                  :: exec
+  integer                                              :: nb_args 
+
+  ! duplicate of tetra mesh structure
+  integer                                              :: nV, nE, nF, nEdeg, nFdeg, nFtag, nEtag, ndof
+  real,                dimension(:,:),     allocatable :: coorV
+  integer,             dimension(:,:),     allocatable :: EtoV, FtoE, EtoF, EtoE, FtoV, FtagtoV, EtoFtag
+  integer,             dimension(:),       allocatable :: Ftag, wholeEtag, FtagtoF, EtagtoE, Etag, PkE
+  type(dof_connect),   dimension(:),       allocatable :: dof_dof
+  integer,             dimension(:,:,:,:), allocatable :: dof_dof_array 
+  real(kind=FP),       dimension(:,:),     allocatable :: coordof, Jacobian_2D
+  integer,             dimension(:),       allocatable :: Etodof_adj
+  real(kind=FP),       dimension(:),       allocatable :: weight_vol
+  real(kind=FP),       dimension(:),       allocatable :: drdx, drdy, drdz
+  real(kind=FP),       dimension(:),       allocatable :: dsdx, dsdy, dsdz
+  real(kind=FP),       dimension(:),       allocatable :: dtdx, dtdy, dtdz
+  real(kind=FP),       dimension(:,:,:),   allocatable :: normal
+
+  type(permu_tri),     dimension(:),       allocatable :: perm
+  type(surf_funct)  ,  dimension(:),       allocatable :: surface_basis_function
+  type(tetra_ref_dof_t), dimension(:),     allocatable :: ref_dof
+  type(ref_matrix_t),  dimension(:),       allocatable :: ref_matrix
+
+  integer                                              :: nvar, nterm_iso
+  real(kind=FP),       dimension(:),       allocatable :: field,field1,field2,field3,field4,wx,wy
+
+  !type(vtk_snapshot),  dimension(:),       allocatable :: vtk
+  type(acquisition)                                    :: acqui
+
+
+  integer, parameter :: free_surface_tag      = -1    !! harcoded todo: change this !!!!!
+  integer, parameter :: absorbing_surface_tag =  1    !! harcoded todo: change this !!!!!
+
+
+  ! sparse matrix approach -----------------------------------------------------------------------------------------
+  real(kind=FP),       dimension(:),       allocatable :: csr_matrix_stress, csr_matrix_veloc
+  integer,             dimension(:),       allocatable :: id_csr_stress, id_csr_veloc 
+  integer,             dimension(:),       allocatable :: ic_csr_stress, ic_csr_veloc
+  integer                                              :: nnz_csr_stress, nnz_csr_veloc
+  integer                                              :: nl_csr_stress, nl_csr_veloc
+  integer                                              :: nc_csr_stress, nc_csr_veloc
+  real(kind=FP),       dimension(:),       allocatable :: vector_stress, vector_stress_rhs, vector_stress_res
+  real(kind=FP),       dimension(:),       allocatable :: vector_veloc, vector_veloc_rhs, vector_veloc_res
+ !!-----------------------------------------------------------------------------------------------------------------
+
+  ! block matrix approach-------------------------------------------------------------------------------------------
+  !! FIELDS VX VY VZ SXX SYY SZZ SXY SXZ SYZ
+  !!         1  2  3   4   5   6  7    8  9
+  real(kind=fp),     dimension(:,:),     allocatable :: vec_rhs, vec_res, vec_fel  ! fields(9*ndof_local,ie)
+  real(kind=fp),     dimension(:,:,:,:), allocatable :: Mfl_global
+  real(kind=fp),     dimension(:,:,:),   allocatable :: Mfl, Mds_global  ! fluxes matrix
+  real(kind=fp),     dimension(:,:),     allocatable :: Mds               ! spatial derivative matrix
+  real(kind=fp),     dimension(:),       allocatable :: ve1,ve2,ve3,ve4,ve5,ve6
+  integer,           dimension(:,:),     allocatable :: indx_to_use
+  integer,           dimension(:),       allocatable :: indx_face_ref, flux
+  
+  !-----------------------------------------------------------------------------------------------------------------
+  ! working arrays------------------------------------------------------------------------------------------------
+  real(kind=FP),       dimension(:,:),     allocatable :: stress_local,veloc_local,stress_nghb,veloc_nghb
+  !----------------------------------------------------------------------------------------------------------------
+
+  integer                                              :: iv, ifac, Pkmax, Pkmin, k, idof, j1, jend, irow, idof1, idofend 
+  integer                                              :: norder_simu, ndof_local, ndof_local_face 
+ 
+  logical                                              :: dump_vtk=.false.
+  logical                                              :: debug = .false.
+  logical                                              :: debug_vm = .false.
+  logical                                              :: acoustic = .true.
+  logical                                              :: elastic = .false.
+  real                                                 :: time_end = 0., time_begin = 0.
+  character                                            :: str1*3, fmt1*20, str2*8, fmt2*30, simu_type*50
+  
+  
+  integer,            dimension(:,:),      allocatable :: hexa_for_vtk, tetra_for_vtk
+  
+  ! fileds
+  real(kind=fp),      dimension(:,:,:),     allocatable :: veloc,stress  !! stress reduced to pressure in acoustic case
+  real(kind=fp),      dimension(:,:,:),     allocatable :: veloc_rhs,stress_rhs
+  real(kind=fp),      dimension(:,:,:),     allocatable :: veloc_res,stress_res
+  
+  ! elements matrices 
+  real(kind=fp),      dimension(:,:),       allocatable :: Lift
+  !
+  ! derivative matrices 
+  real(kind=fp),      dimension(:,:,:),     allocatable :: Drx, Dry, Drz  
+  real(kind=fp),      dimension(:,:),       allocatable :: Dr_x, Dr_y, Dr_z  
+  ! 
+  ! working arrays 
+  real(kind=fp),      dimension(:),       allocatable :: wksp
+  real(kind=fp),      dimension(:),       allocatable :: stress_jump, velocity_jump
+  real(kind=fp),      dimension(:,:),     allocatable :: stress_jump_el, velocity_jump_el
+  real(kind=fp),      dimension(:,:),     allocatable :: src_weig, sta_weig
+  integer,            dimension(:),       allocatable :: iel_src, iel_sta
+
+  integer,            dimension(:),       allocatable :: indx_flux_face_adj,indx_free_face_adj,indx_abs_face_adj
+  integer,            dimension(:,:),     allocatable :: indx_flux_face,indx_free_face,indx_abs_face
+  ! outward normal 
+  real(kind=fp),      dimension(:),       allocatable :: nx,ny,nz
+  ! jacobian face
+  real(kind=fp),      dimension(:),       allocatable :: Jface
+  ! fluxes coefficient (acousitic upwind)
+  real(kind=fp),      dimension(:),       allocatable :: TauP, TauV
+ 
+  real(kind=fp),      dimension(:),       allocatable :: vp, vs, rho
+
+  !! Runge Kutta coeff
+  real(kind=fp),       dimension(5)                   :: rk4a,rk4b,rk4c
+
+  !! vtk 
+  integer,            dimension(:,:),  allocatable :: hexa_to_write, tetra_to_write, glob2loc
+
+  !! bounding box
+  real(kind=fp)                                  :: xmin_value, xmax_value, ymin_value, ymax_value, zmin_value, zmax_value
+
+  !! snapshot
+  real(kind=fp)                                  :: step_snap
+  integer                                        :: irec_snap_x, irec_snap_y
+  integer                                        :: nx_snap, ny_snap, nz_snap
+  integer                                        :: nb_snap_x, nb_snap_y, nb_snap_z
+  real(kind=fp), dimension(:),       allocatable :: x_snap, y_snap
+  real(kind=fp), dimension(:,:,:),   allocatable :: snap_x, snap_y, snap_z
+  real(kind=fp), dimension(:,:,:,:), allocatable :: weight_snap_x, weight_snap_y
+  integer,       dimension(:,:,:),   allocatable :: iele_snap_x, iele_snap_y 
+
+  real(kind=fp) delta_t, current_time, time_simu
+  integer nl, nc, ntime, it, ntetra, nhexa, iterator_on_file
+  character(len=30) prefix_vtk_name
+
+  !! STF 
+  real(kind=fp) Am_stf, Fm_stf
+
+  !! physical constants 
+  real(kind=fp) rho_cste, vp_cste, vs_cste
+
+  !! working arrays 
+  real(kind=fp), dimension(:,:), allocatable :: matrix1,matrix2,matrix3,matrix4
+  real(kind=fp), dimension(:,:), allocatable :: tmp_work_vector
+  real(kind=fp), dimension(:),   allocatable :: vector1, vector2, vector3, vector4, vector5, vector6, vector7, vector8, vector9
+
+  !! tmp parameters
+  real(kind=fp) xsr, ysr, zsr
+  real(kind=fp) xst,yst,zst
+  real(kind=fp) x_snap_tmp, y_snap_tmp
+
+  
+
+  !! unit output files
+  integer :: IOUT_SISMO = 998
+  integer :: IOUT_GATHER_P = 501
+  integer :: IOUT_GATHER_Vx = 502
+  integer :: IOUT_GATHER_Vy = 503
+  integer :: IOUT_GATHER_Vz = 504
+
+  integer :: IOUT_SNAP_X =601
+  integer :: IOUT_SNAP_Y =602
+  integer :: IOUT_SNAP_Z =603
+
+  integer :: IIN_PAR = 899
+  integer :: IIN_STA = 898
+
+  integer :: IOUT_STF=401
+
+  !! iterators 
+  integer :: irec_gather_p=0
+
+  !! mpi naive impementation
+!!$  INTEGER  ::  myrank=0
+!!$  INTEGER  :: nbrank,ierr
+!!$  INTEGER  :: irecmin, irecmax
+!!$  real(kind=fp), dimension(:,:,:), allocatable :: stress_rhs_reduce, veloc_rhs_reduce
+
+end module global_parameters_mod

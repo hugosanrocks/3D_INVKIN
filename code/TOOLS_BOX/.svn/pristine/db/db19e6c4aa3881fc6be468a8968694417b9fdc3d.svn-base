@@ -1,0 +1,5 @@
+../bin/test_revolve_binomial_gnu <<EOF
+15
+3
+3
+EOF

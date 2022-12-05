@@ -1,0 +1,32 @@
+#Makefile for CARP method
+include ../../../Makefile.inc
+
+TARGET = ./test_carfs.x
+LIB = 	-L$(TOOLS_BOX_DIR)/OPTIMIZATION/lib -lSEISCOPE_OPTIM \
+	-L$(TOOLS_BOX_DIR)/INTERPOLATION/lib -lSEISCOPE_INTERP \
+	-L$(TOOLS_BOX_DIR)/CARFS/lib -lSEISCOPE_CARFS -lm -fopenmp
+INC= 	-I$(TOOLS_BOX_DIR)/OPTIMIZATION/COMMON/include \
+	-I$(TOOLS_BOX_DIR)/CARFS/include
+
+COMMON_SRC = ../common
+SRC= $(COMMON_SRC)/gmbva.f90 $(COMMON_SRC)/lsq.f90
+OBJ = $(SRC:.f90=.o) 
+
+all : $(OBJ)
+	$(FC) $(INC) -o test_carfs.x $(OBJ) test_carfs.f90 $(LIB)
+
+
+%.o : %.f90
+	$(FC) -c  $(INC) $(FFLAGS) -o $@ $< $(LIB)
+
+clean:
+	$(RM) -r Fig test*.x *.o *.bin *.mod *~ *.ps *.pdf iterate_CG.dat
+	$(RM) -r *.o $(COMMON_SRC)/*.o $(COMMON_SRC)/*.mod
+
+test : testclean
+	$(MAKE) ; $(TARGET)
+
+testclean :
+	$(RM) *.bin *.x *.dat *.mod $(COMMON_SRC)/*.o
+
+distclean : clean testclean 

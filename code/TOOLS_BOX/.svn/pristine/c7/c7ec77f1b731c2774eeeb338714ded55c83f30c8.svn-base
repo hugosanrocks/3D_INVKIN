@@ -1,0 +1,41 @@
+*****************************************************************
+                 SEISCOPE Interpolation TOOLBOX             
+                           06/02/2016                        
+                          Pengliang Yang                       
+                 pengliang.yang@univ-grenoble-alpes.fr     
+-------------------------------------------------------
+Acknowledgements:
+The SEISCOPE Interpolation TOOLBOX codes have been developed in the
+framework of the SEISCOPE and SEISCOPE II consortia and we thank
+the sponsors of these projects. 
+
+-------------------------------------------------------
+Conditions of use:
+The SEISCOPE OPTIMIZATION TOOLBOX code is provided open-source (see Legal Statement). 
+Please refer to the two following articles in any study or publications for which
+this code has been used
+
+[1] Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+   from significantly decimated boundaries. Geophysics, submitted.
+
+-------------------------------------------------------
+Content
+1. Boundary reconstruction by DFT interpolation
+2. Boundary reconstruction by Kaiser-windowed sinc interpolation
+3. Boundary reconstruction by Lagrange polynomial interpolation
+
+Currently, only temporal decimation and interpolation has been implemented.
+The data compression for storing in memory can be further improved by spatial 
+decimation, which will be a future work!
+
+------------------------------------------------------
+Compilation and usage:
+
+1. cd src; 
+2. make;
+3. For specific use of boundary interpolation, go to /demo;
+   find a good example as the template; specify the variables and their size!
+
+
+
+

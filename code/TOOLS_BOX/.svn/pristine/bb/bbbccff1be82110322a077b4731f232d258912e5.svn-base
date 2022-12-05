@@ -1,0 +1,2319 @@
+module sg_comm_mod
+
+  use comm_engine_mod
+  use zone_mod
+  use sg_points_zone_mod
+  use sgrid_mod
+  use mpi
+
+  implicit none
+  
+  !=========================================================
+  type, extends(comm_engine_type), public :: sg_comm_type
+
+    ! Overlap bandwidth for each face of the subdomain
+    integer, dimension(3),                  private :: novlp     = 0
+
+    ! Additional overlap bandwidth for each face of the subdomain (involved by temporal blocking)
+    integer,                                private :: ntmpblock = 0
+
+    ! Total overlap bandwidth for each face of the subdomain
+    integer, dimension(3),                  private :: novlptot  = 0
+
+    ! number of points in each direction of the current subdomain
+    integer, dimension(3),                  private :: nloc
+
+    ! min. and max. global grid point number (((izmin, izmax), (ixmin, ixmax), (iymin, iymax)), idom)
+    ! for each sub_domain (gather of local iglob_bounds)
+    ! needed for communications done by the master processor in MPI_COMM_1 only
+    integer, dimension(:,:,:), allocatable, private :: iglob_bounds_dom
+
+    ! MPI types for overlap bandwidth along each direction inside the local subdomain
+    integer, dimension(3),                  private :: mpi_type_ovlpdom_to_ovlpface   = 0
+    integer, dimension(3),                  private :: mpi_type_ovlpdom_to_ovlpedge   = 0
+    integer,                                private :: mpi_type_ovlpdom_to_ovlpcorner = 0
+    integer, dimension    (-1:1,-1:1,-1:1), private :: mpi_types                      = 0
+    integer, dimension(1:3,-1:1,-1:1,-1:1), private :: istart_snd = 0, istart_rcv = 0
+
+    ! MPI type for local subdomain inside the local subdomain extended by the overlap bandwidth
+    integer,                                private :: mpi_type_ovlplocdom_to_locdom = 0
+
+    ! MPI types for regular and non regular subdomains inside the global domain
+    ! 0 index for regular dimension, 1 otherwise
+    integer, dimension(0:1,0:1,0:1),        private :: mpi_type_globdom_to_subdom = 0
+
+    logical,                                private :: type_faces_initialized = .False.
+
+  contains
+
+    procedure, pass :: create_mpi_types            => sg_comm_create_mpi_types
+    procedure, pass :: comm_engine_free_mem        => sg_comm_free_mem
+
+    ! Services dedicated to fields or parameters defined on each point of the grid
+    ! and on the grid associated to each subdomain of the decomposition
+    !-------------------------------------------------------------------------------------------
+
+    ! Services to dedicated to MPI type creation used for communications in the overlap of each subdomain
+    procedure, pass :: sg_comm_create_mpi_type_ovlpdom_to_ovlpface
+    procedure, pass :: sg_comm_create_mpi_type_ovlpdom_to_ovlpedge
+    procedure, pass :: sg_comm_create_mpi_type_ovlpdom_to_ovlpcorner
+    procedure, pass :: sg_comm_build_mpi_comm_tables
+    procedure, pass :: sg_comm_create_mpi_type_ovlplocdom_to_locdom
+    procedure, pass :: sg_comm_create_mpi_type_globdom_to_subdom
+
+    procedure, pass :: sg_comm_communicate_field
+    procedure, pass :: sg_comm_scatter_global_field
+    procedure, pass :: sg_comm_scatter_global_field_ptr
+    procedure, pass :: sg_comm_gather_global_field
+    procedure, pass :: sg_comm_gather_global_field_ptr
+
+    procedure, pass :: sg_comm_get_field_glob_min_value
+    procedure, pass :: sg_comm_get_field_glob_min_positive_value
+    procedure, pass :: sg_comm_get_field_glob_max_value
+
+    ! Services dedicated to the partition and the communications of particular zones in the domain
+    !---------------------------------------------------------------------------------------------
+
+    procedure, pass :: sg_comm_partition_sg_grid_points_global_zone
+    procedure, pass :: sg_comm_partition_sg_continuum_points_global_zone
+
+    procedure, pass :: sg_comm_scatter_points_global_zone_integer_data
+    procedure, pass :: sg_comm_scatter_points_global_zone_real_data
+    procedure, pass :: sg_comm_scatter_points_global_zone_buf_real_data
+    procedure, pass :: sg_comm_gather_points_global_zone_real_data
+    procedure, pass :: sg_comm_gather_points_global_zone_buf_real_data
+
+  end type sg_comm_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sg_comm_type
+
+  contains
+
+
+    function as_sg_comm_type(par_eng)
+      class(comm_engine_type), target, intent(in) :: par_eng
+      type(sg_comm_type),      pointer            :: as_sg_comm_type
+      character(len=*),        parameter          :: proc_name = 'as_sg_comm_type'
+
+      comm_engine_selector: select type(par_eng)
+      type is (sg_comm_type)
+        as_sg_comm_type => par_eng
+      class default
+        write(*,*) myid_1, ' :', proc_name, " :: ERROR : Wrong comm_engine type. Attempted: sg_comm_type"
+        call flush(6)
+        stop
+      end select comm_engine_selector
+
+    end function as_sg_comm_type
+
+
+    subroutine sg_comm_create_mpi_types(this, grid)
+
+      !----------------------------------------------------------------------
+      !
+      !     Build the data types used for MPI communication
+      !
+      !
+      !     IN  : nsubdom
+      !
+      !     OUT : types
+      !
+      !----------------------------------------------------------------------
+
+      class(sg_comm_type),      intent(in out) :: this
+      class(grid_type),         intent(in)     :: grid
+      character(len=*),         parameter      :: proc_name = "sg_comm_create_mpi_types"
+      type(sgrid_type),         pointer        :: sg_grid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (this%type_faces_initialized) return
+
+      ! retrieve nb of extra points (for MPI communication) of each face of the structured grid
+      call sg_grid%sgrid_get_overlap_vector(this%novlp)
+      call sg_grid%grid_get_temporal_blocking_size(this%ntmpblock)
+      this%novlptot(:) = this%novlp(:) + this%ntmpblock
+
+      this%nloc  = sg_grid%nnodes_loc
+      if (dd_debug_level > 1 .and. myid_1 == 0) then
+        write(*,*) 'novlptot = ', this%novlptot
+        call flush(6)
+      end if
+
+      call this%sg_comm_create_mpi_type_ovlpdom_to_ovlpface()
+
+      call this%sg_comm_create_mpi_type_ovlpdom_to_ovlpedge()
+
+      call this%sg_comm_create_mpi_type_ovlpdom_to_ovlpcorner()
+
+      call this%sg_comm_build_mpi_comm_tables()
+
+      call this%sg_comm_create_mpi_type_ovlplocdom_to_locdom()
+
+      call this%sg_comm_create_mpi_type_globdom_to_subdom(sg_grid)
+
+      this%type_faces_initialized = .True.
+
+    end subroutine sg_comm_create_mpi_types
+
+
+    subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpface(this)
+
+      !----------------------------------------------------------------------
+      !
+      !     Build the data types used for MPI communication
+      !
+      !
+      !     IN  : nsubdom
+      !
+      !     OUT : types
+      !
+      !----------------------------------------------------------------------
+
+      class(sg_comm_type), intent(in out) :: this
+      integer                             :: sizeofreal, idir, mpierr
+      integer, dimension(3)               :: nloc, stride, novlp
+      character(len=*),         parameter :: proc_name = "sg_comm_create_mpi_type_ovlpdom_to_ovlpface"
+      integer                             :: type_base_12,   type_base_13,   type_base_23
+      integer                             :: type_base_12_2, type_base_13_2, type_base_23_2
+      integer                             :: type_face_12,   type_face_13,   type_face_23
+      integer(kind=MPI_ADDRESS_KIND)      :: stride1, stride2
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_CREATE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      novlp (:) = this%novlptot
+      nloc  (:) = this%nloc(:)
+      stride(:) = nloc(:) + 2*novlp(:)
+      stride1   = int(stride(1)*sizeofreal,           kind=MPI_ADDRESS_KIND)
+      stride2   = int(stride(1)*stride(2)*sizeofreal, kind=MPI_ADDRESS_KIND)
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      !------------------------------
+      !     Dir 3 # y => FACE 12 # zx
+      !------------------------------
+
+      call mpi_type_vector        (nloc (1), 1,       1,       MPI_REAL,   type_base_12, mpierr)
+      call mpi_type_create_hvector(nloc (2), 1, stride1,   type_base_12, type_base_12_2, mpierr)
+      call mpi_type_create_hvector(novlp(3), 1, stride2, type_base_12_2,   type_face_12, mpierr)
+      !call mpi_type_hvector(nloc (2), 1, stride(1)*sizeofreal, type_base_12, type_base_12_2, mpierr)
+      !call mpi_type_hvector(novlp(3),   1, stride(1)*stride(2)*sizeofreal, type_base_12_2, type_face_12,   mpierr)
+
+      !------------------------------
+      !     Dir 1 # z => FACE 23 # xy
+      !------------------------------
+
+      call mpi_type_vector        (novlp(1), 1,       1,       MPI_REAL,   type_base_23, mpierr)
+      call mpi_type_create_hvector(nloc (2), 1, stride1,   type_base_23, type_base_23_2, mpierr)
+      call mpi_type_create_hvector(nloc (3), 1, stride2, type_base_23_2,   type_face_23, mpierr)
+      !call mpi_type_hvector(nloc(2), 1, stride(1)*sizeofreal,           type_base_23,   type_base_23_2, mpierr)
+      !call mpi_type_hvector(nloc(3), 1, stride(1)*stride(2)*sizeofreal, type_base_23_2, type_face_23,   mpierr)
+
+      !------------------------------
+      !     Dir 2 # x => FACE 13 # zy
+      !------------------------------
+
+      call mpi_type_vector        (nloc (1), 1,       1,       MPI_REAL,   type_base_13, mpierr)
+      call mpi_type_create_hvector(novlp(2), 1, stride1,   type_base_13, type_base_13_2, mpierr)
+      call mpi_type_create_hvector(nloc (3), 1, stride2, type_base_13_2,   type_face_13, mpierr) 
+      !call mpi_type_hvector(novlp(2), 1, stride(1)*sizeofreal,           type_base_13,   type_base_13_2, mpierr)
+      !call mpi_type_hvector(nloc (3), 1, stride(1)*stride(2)*sizeofreal, type_base_13_2, type_face_13,   mpierr)   
+
+      ! mpi_type_ovlpdom_to_ovlpface(idir) = type_face_jdir_kdir, jdir <> idir <> kdir
+      this%mpi_type_ovlpdom_to_ovlpface(1) = type_face_23
+      this%mpi_type_ovlpdom_to_ovlpface(2) = type_face_13
+      this%mpi_type_ovlpdom_to_ovlpface(3) = type_face_12
+
+      ! commit the MPI types
+      do idir = 1,3
+        call mpi_type_commit(this%mpi_type_ovlpdom_to_ovlpface(idir), mpierr)
+      end do
+
+    end subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpface
+
+
+    subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpedge(this)
+      class(sg_comm_type),      intent(in out) :: this
+      character(len=*),              parameter :: proc_name = "sg_comm_create_mpi_type_ovlpdom_to_ovlpedge"
+      integer                                  :: sizeofreal, idir, mpierr
+      integer                                  :: type_base_3,   type_base_2,   type_base_1
+      integer                                  :: type_base_3_2, type_base_2_2, type_base_1_2
+      integer                                  :: type_edge_3,   type_edge_2,   type_edge_1
+      integer, dimension(3)                    :: stride, nloc, novlp
+      integer(kind=MPI_ADDRESS_KIND)           :: stride1, stride2
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_CREATE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      novlp (:) = this%novlptot(:)
+      nloc  (:) = this%nloc(:)
+      stride(:) = nloc(:) + 2*novlp(:)
+      stride1   = int(stride(1)*sizeofreal,           kind=MPI_ADDRESS_KIND)
+      stride2   = int(stride(1)*stride(2)*sizeofreal, kind=MPI_ADDRESS_KIND)
+
+      ! retrieve size of MPI_REAL for displacement in mpi_type_hvector
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      !------------------------------
+      !     Edge Dir 3 # y
+      !------------------------------
+
+      call mpi_type_vector        (novlp(1), 1,       1,      MPI_REAL,   type_base_3, mpierr)
+      call mpi_type_create_hvector(novlp(2), 1, stride1,   type_base_3, type_base_3_2, mpierr)
+      call mpi_type_create_hvector(nloc (3), 1, stride2, type_base_3_2,   type_edge_3, mpierr)
+      !call mpi_type_hvector(novlp(2), 1, stride(1)*sizeofreal,           type_base_3,   type_base_3_2, mpierr)
+      !call mpi_type_hvector(nloc (3), 1, stride(1)*stride(2)*sizeofreal, type_base_3_2, type_edge_3,   mpierr)
+
+      !------------------------------
+      !     Edge Dir 1 # z
+      !------------------------------
+
+      call mpi_type_vector        (nloc (1),  1,       1,      MPI_REAL,   type_base_1, mpierr)
+      call mpi_type_create_hvector(novlp(2), 1, stride1,   type_base_1, type_base_1_2, mpierr)
+      call mpi_type_create_hvector(novlp(3), 1, stride2, type_base_1_2,   type_edge_1, mpierr)
+      !call mpi_type_hvector(novlp(2), 1, stride(1)*sizeofreal,           type_base_1,   type_base_1_2, mpierr)
+      !call mpi_type_hvector(novlp(3), 1, stride(1)*stride(2)*sizeofreal, type_base_1_2, type_edge_1,   mpierr)
+
+      !------------------------------
+      !     Edge Dir 2 # x
+      !------------------------------
+
+      call mpi_type_vector        (novlp(1), 1,       1,      MPI_REAL,   type_base_2, mpierr)
+      call mpi_type_create_hvector(nloc (2), 1, stride1,   type_base_2, type_base_2_2, mpierr)
+      call mpi_type_create_hvector(novlp(3), 1, stride2, type_base_2_2,   type_edge_2, mpierr)   
+      !call mpi_type_hvector(nloc (2), 1, stride(1)*sizeofreal,           type_base_2,   type_base_2_2, mpierr)
+      !call mpi_type_hvector(novlp(3), 1, stride(1)*stride(2)*sizeofreal, type_base_2_2, type_edge_2,   mpierr)   
+
+      ! mpi_type_ovlpdom_to_ovlpface(idir) = type_face_jdir_kdir, jdir <> idir <> kdir
+      this%mpi_type_ovlpdom_to_ovlpedge(1) = type_edge_1
+      this%mpi_type_ovlpdom_to_ovlpedge(2) = type_edge_2
+      this%mpi_type_ovlpdom_to_ovlpedge(3) = type_edge_3
+
+      ! commit the MPI types
+      do idir = 1,3
+        call mpi_type_commit(this%mpi_type_ovlpdom_to_ovlpedge(idir), mpierr)
+      end do
+
+    end subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpedge
+
+
+    subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpcorner(this)
+      class(sg_comm_type),      intent(in out) :: this
+      character(len=*),              parameter :: proc_name = "sg_comm_create_mpi_type_ovlpdom_to_ovlpcorner"
+      integer                                  :: sizeofreal, mpierr
+      integer                                  :: type_base_1, type_base_2, type_base_3
+      integer, dimension(3)                    :: stride, nloc, novlp
+      integer(kind=MPI_ADDRESS_KIND)           :: stride1, stride2
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_CREATE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      novlp     = this%novlptot
+      nloc(:)   = this%nloc(:)
+      stride(:) = nloc(:) + 2*novlp
+      stride1   = int(stride(1)*sizeofreal,           kind=MPI_ADDRESS_KIND)
+      stride2   = int(stride(1)*stride(2)*sizeofreal, kind=MPI_ADDRESS_KIND)
+
+      ! retrieve size of MPI_REAL for displacement in mpi_type_hvector
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      call mpi_type_vector        (novlp(1), 1,       1,    MPI_REAL, type_base_1, mpierr)
+      call mpi_type_create_hvector(novlp(2), 1, stride1, type_base_1, type_base_2, mpierr)
+      call mpi_type_create_hvector(novlp(3), 1, stride2, type_base_2, type_base_3, mpierr)
+      !call mpi_type_hvector(novlp(2), 1, stride(1)*sizeofreal,           type_base_1, type_base_2, mpierr)
+      !call mpi_type_hvector(novlp(3), 1, stride(1)*stride(2)*sizeofreal, type_base_2, type_base_3, mpierr)
+      
+      this%mpi_type_ovlpdom_to_ovlpcorner = type_base_3
+      call mpi_type_commit(this%mpi_type_ovlpdom_to_ovlpcorner, mpierr)
+
+    end subroutine sg_comm_create_mpi_type_ovlpdom_to_ovlpcorner
+
+
+    subroutine sg_comm_build_mpi_comm_tables(this)
+      class(sg_comm_type),      intent(in out) :: this
+      character(len=*),              parameter :: proc_name = "sg_comm_build_mpi_comm_tables"
+      integer                                  :: i1, i2, i3
+      integer, dimension(3)                    :: novlp, nloc
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      novlp(:) = this%novlptot(:)
+      nloc (:) = this%nloc    (:)
+
+      ! initialize with no type
+      this%mpi_types(:,:,:) = 0
+
+      ! mpi types for communications between subdomains sharing a face
+!       mpi_types(-1, 0, 0) = this%mpi_type_ovlpdom_to_ovlpface(1)
+!       mpi_types(+1, 0, 0) = this%mpi_type_ovlpdom_to_ovlpface(1)
+!       mpi_types( 0,-1, 0) = this%mpi_type_ovlpdom_to_ovlpface(2)
+!       mpi_types( 0,+1, 0) = this%mpi_type_ovlpdom_to_ovlpface(2)
+!       mpi_types( 0, 0,-1) = this%mpi_type_ovlpdom_to_ovlpface(3)
+!       mpi_types( 0, 0,+1) = this%mpi_type_ovlpdom_to_ovlpface(3)
+      this%mpi_types( -1:+1:+2, 0, 0) = this%mpi_type_ovlpdom_to_ovlpface(1)
+      this%mpi_types( 0, -1:+1:+2, 0) = this%mpi_type_ovlpdom_to_ovlpface(2)
+      this%mpi_types( 0, 0, -1:+1:+2) = this%mpi_type_ovlpdom_to_ovlpface(3)
+
+      this%istart_snd(:, -1, 0, 0) = (/ 1,                  1,                  1                  /)
+      this%istart_rcv(:, -1, 0, 0) = (/ nloc(1)+1,          1,                  1                  /)
+      this%istart_snd(:, +1, 0, 0) = (/ nloc(1)+1-novlp(1), 1,                  1                  /)
+      this%istart_rcv(:, +1, 0, 0) = (/ 1-novlp(1),         1,                  1                  /)
+
+      this%istart_snd(:, 0, -1, 0) = (/ 1,                  1,                  1                  /)
+      this%istart_rcv(:, 0, -1, 0) = (/ 1,                  nloc(2)+1,          1                  /)
+      this%istart_snd(:, 0, +1, 0) = (/ 1,                  nloc(2)+1-novlp(2), 1                  /)
+      this%istart_rcv(:, 0, +1, 0) = (/ 1,                  1-novlp(2),         1                  /)
+
+      this%istart_snd(:, 0, 0, -1) = (/ 1,                  1,                  1                  /)
+      this%istart_rcv(:, 0, 0, -1) = (/ 1,                  1,                  nloc(3)+1          /)
+      this%istart_snd(:, 0, 0, +1) = (/ 1,                  1,                  nloc(3)+1-novlp(3) /)
+      this%istart_rcv(:, 0, 0, +1) = (/ 1,                  1,                  1-novlp(3)         /)
+
+      ! mpi types for communications between subdomains sharing only an edge
+!       mpi_types( 0,+1,+1) = this%mpi_type_ovlpdom_to_ovlpedge(1)
+!       mpi_types( 0,+1,-1) = this%mpi_type_ovlpdom_to_ovlpedge(1)
+!       mpi_types( 0,-1,+1) = this%mpi_type_ovlpdom_to_ovlpedge(1)
+!       mpi_types( 0,-1,-1) = this%mpi_type_ovlpdom_to_ovlpedge(1)
+!       mpi_types(+1, 0,+1) = this%mpi_type_ovlpdom_to_ovlpedge(2)
+!       mpi_types(+1, 0,-1) = this%mpi_type_ovlpdom_to_ovlpedge(2)
+!       mpi_types(-1, 0,+1) = this%mpi_type_ovlpdom_to_ovlpedge(2)
+!       mpi_types(-1, 0,-1) = this%mpi_type_ovlpdom_to_ovlpedge(2)
+!       mpi_types(+1,+1, 0) = this%mpi_type_ovlpdom_to_ovlpedge(3)
+!       mpi_types(+1,-1, 0) = this%mpi_type_ovlpdom_to_ovlpedge(3)
+!       mpi_types(-1,+1, 0) = this%mpi_type_ovlpdom_to_ovlpedge(3)
+!       mpi_types(-1,-1, 0) = this%mpi_type_ovlpdom_to_ovlpedge(3)
+      this%mpi_types( 0, -1:+1:+2, -1:+1:+2) = this%mpi_type_ovlpdom_to_ovlpedge(1)
+      this%mpi_types( -1:+1:+2, 0, -1:+1:+2) = this%mpi_type_ovlpdom_to_ovlpedge(2)
+      this%mpi_types( -1:+1:+2, -1:+1:+2, 0) = this%mpi_type_ovlpdom_to_ovlpedge(3)
+
+      this%istart_snd(:, 0, +1, +1) = (/ 1,                  nloc(2)+1-novlp(2), nloc(3)+1-novlp(3)  /)
+      this%istart_rcv(:, 0, +1, +1) = (/ 1,                  1-novlp(2),         1-novlp(3)          /)
+
+      this%istart_snd(:, 0, +1, -1) = (/ 1,                  nloc(2)+1-novlp(2), 1                   /)
+      this%istart_rcv(:, 0, +1, -1) = (/ 1,                  1-novlp(2),         nloc(3)+1           /)
+
+      this%istart_snd(:, 0, -1, +1) = (/ 1,                  1,                  nloc(3)+1-novlp(3)  /)
+      this%istart_rcv(:, 0, -1, +1) = (/ 1,                  nloc(2)+1,          1-novlp(3)          /)
+
+      this%istart_snd(:, 0, -1, -1) = (/ 1,                  1,                  1                   /)
+      this%istart_rcv(:, 0, -1, -1) = (/ 1,                  nloc(2)+1,          nloc(3)+1           /)
+
+      this%istart_snd(:, +1, 0, +1) = (/ nloc(1)+1-novlp(1), 1,                  nloc(3)+1-novlp(3)  /)
+      this%istart_rcv(:, +1, 0, +1) = (/ 1-novlp(1),         1,                  1-novlp(3)          /)
+
+      this%istart_snd(:, +1, 0, -1) = (/ nloc(1)+1-novlp(1), 1,                  1                   /)
+      this%istart_rcv(:, +1, 0, -1) = (/ 1-novlp(1),         1,                  nloc(3)+1           /)
+
+      this%istart_snd(:, -1, 0, +1) = (/ 1,                  1,                  nloc(3)+1-novlp(3)  /)
+      this%istart_rcv(:, -1, 0, +1) = (/ nloc(1)+1,          1,                  1-novlp(3)          /)
+
+      this%istart_snd(:, -1, 0, -1) = (/ 1,                  1,                  1                   /)
+      this%istart_rcv(:, -1, 0, -1) = (/ nloc(1)+1,          1,                  nloc(3)+1           /)
+
+      this%istart_snd(:, +1, +1, 0) = (/ nloc(1)+1-novlp(1), nloc(2)+1-novlp(2), 1                   /)
+      this%istart_rcv(:, +1, +1, 0) = (/ 1-novlp(1),         1-novlp(2),         1                   /)
+
+      this%istart_snd(:, +1, -1, 0) = (/ nloc(1)+1-novlp(1), 1,                  1                   /)
+      this%istart_rcv(:, +1, -1, 0) = (/ 1-novlp(1),         nloc(2)+1,          1                   /)
+
+      this%istart_snd(:, -1, +1, 0) = (/ 1,                  nloc(2)+1-novlp(2), 1                   /)
+      this%istart_rcv(:, -1, +1, 0) = (/ nloc(1)+1,          1-novlp(2),         1                   /)
+
+      this%istart_snd(:, -1, -1, 0) = (/ 1,                  1,                  1                   /)
+      this%istart_rcv(:, -1, -1, 0) = (/ nloc(1)+1,          nloc(2)+1,          1                   /)
+
+
+      ! mpi types for communications between subdomains sharing only a corner
+!       mpi_types(+1,+1,+1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(-1,+1,+1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(+1,-1,+1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(+1,+1,-1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(-1,-1,+1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(-1,+1,-1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(+1,-1,-1) = this%mpi_type_ovlpdom_to_ovlpcorner
+!       mpi_types(-1,-1,-1) = this%mpi_type_ovlpdom_to_ovlpcorner
+      this%mpi_types( -1:+1:+2, -1:+1:+2, -1:+1:+2) = this%mpi_type_ovlpdom_to_ovlpcorner
+
+      this%istart_snd(:, +1, +1, +1) = (/ nloc(1)+1-novlp(1), nloc(2)+1-novlp(2), nloc(3)+1-novlp(3) /)
+      this%istart_rcv(:, +1, +1, +1) = (/ 1-novlp(1),         1-novlp(2),         1-novlp(3)         /)
+
+      this%istart_snd(:, -1, +1, +1) = (/ 1,                  nloc(2)+1-novlp(2), nloc(3)+1-novlp(3) /)
+      this%istart_rcv(:, -1, +1, +1) = (/ nloc(1)+1,          1-novlp(2),         1-novlp(3)         /)
+
+      this%istart_snd(:, +1, -1, +1) = (/ nloc(1)+1-novlp(1), 1,                  nloc(3)+1-novlp(3) /)
+      this%istart_rcv(:, +1, -1, +1) = (/ 1-novlp(1),         nloc(2)+1,          1-novlp(3)         /)
+
+      this%istart_snd(:, +1, +1, -1) = (/ nloc(1)+1-novlp(1), nloc(2)+1-novlp(2), 1                  /)
+      this%istart_rcv(:, +1, +1, -1) = (/ 1-novlp(1),         1-novlp(2),         nloc(3)+1          /)
+
+      this%istart_snd(:, -1, -1, +1) = (/ 1,                  1,                  nloc(3)+1-novlp(3) /)
+      this%istart_rcv(:, -1, -1, +1) = (/ nloc(1)+1,          nloc(2)+1,          1-novlp(3)         /)
+
+      this%istart_snd(:, -1, +1, -1) = (/ 1,                  nloc(2)+1-novlp(2), 1                  /)
+      this%istart_rcv(:, -1, +1, -1) = (/ nloc(1)+1,          1-novlp(2),         nloc(3)+1          /)
+
+      this%istart_snd(:, +1, -1, -1) = (/ nloc(1)+1-novlp(1), 1,                  1                  /)
+      this%istart_rcv(:, +1, -1, -1) = (/ 1-novlp(1),         nloc(2)+1,          nloc(3)+1          /)
+
+      this%istart_snd(:, -1, -1, -1) = (/ 1,                  1,                  1                  /)
+      this%istart_rcv(:, -1, -1, -1) = (/ nloc(1)+1,          nloc(2)+1,          nloc(3)+1          /)
+
+      if (dd_debug_level > 1 .and. myid_2 == 0) then
+        do i3 = -1, 1
+          do i1 = -1, 1
+            write(*,'(I6,A,3I6)') myid_1, " : mpi_types = ", (this%mpi_types(i1,i2,i3), i2 = -1, 1); call flush(6)
+          enddo
+          write(*,*)
+        enddo
+        write(*,*)
+
+        do i3 = -1, 1
+          do i1 = -1, 1
+            write(*,'(I6,A,9I6)') myid_1, " : istart_snd = ", (this%istart_snd(1:3,i1,i2,i3), i2 = -1, 1); call flush(6)
+          enddo
+          write(*,*)
+        enddo
+        write(*,*)
+
+        do i3 = -1, 1
+          do i1 = -1, 1
+            write(*,'(I6,A,9I6)') myid_1, " : istart_rcv = ", (this%istart_rcv(1:3,i1,i2,i3), i2 = -1, 1); call flush(6)
+          enddo
+          write(*,*)
+        enddo
+        write(*,*)
+      end if
+
+    end subroutine sg_comm_build_mpi_comm_tables
+
+
+    subroutine sg_comm_create_mpi_type_ovlplocdom_to_locdom(this)
+      class(sg_comm_type), intent(in out) :: this
+      integer                             :: sizeofreal, mpierr
+      integer, dimension(3)               :: nloc, stride
+      integer                             :: type_base_1, type_base_2
+      character(len=*),         parameter :: proc_name = "sg_comm_create_mpi_type_ovlplocdom_to_locdom"
+      integer(kind=MPI_ADDRESS_KIND)      :: stride1, stride2
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_CREATE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      nloc(:)   = this%nloc(:)
+      stride(:) = nloc(:) + 2 * this%novlptot(:)
+      stride1   = int(stride(1)*sizeofreal,           kind=MPI_ADDRESS_KIND)
+      stride2   = int(stride(1)*stride(2)*sizeofreal, kind=MPI_ADDRESS_KIND)
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      call mpi_type_vector        (nloc(1), 1,       1,    MPI_REAL, type_base_1,                        mpierr)
+      call mpi_type_create_hvector(nloc(2), 1, stride1, type_base_1, type_base_2,                        mpierr)
+      call mpi_type_create_hvector(nloc(3), 1, stride2, type_base_2, this%mpi_type_ovlplocdom_to_locdom, mpierr)
+      !call mpi_type_hvector(nloc(2), 1, stride(1)*sizeofreal,           type_base_1, type_base_2,                        mpierr)
+      !call mpi_type_hvector(nloc(3), 1, stride(1)*stride(2)*sizeofreal, type_base_2, this%mpi_type_ovlplocdom_to_locdom, mpierr)
+
+      ! commit the MPI type related to communications of the local subdomain with overlap
+      call mpi_type_commit(this%mpi_type_ovlplocdom_to_locdom, mpierr)
+
+    end subroutine sg_comm_create_mpi_type_ovlplocdom_to_locdom
+
+
+    subroutine sg_comm_create_mpi_type_globdom_to_subdom(this, sg_grid)
+      class(sg_comm_type), intent(in out) :: this
+      class(sgrid_type),       intent(in) :: sg_grid
+      integer                             :: i1, i2, i3, n1sub, n2sub, n3sub
+      integer                             :: sizeofreal, mpierr
+      integer                             :: type_column, type_face, type_cube
+      integer, dimension(0:1,1:3)         :: nnodes
+      integer, dimension(3)               :: stride
+      integer(kind=MPI_ADDRESS_KIND)      :: stride1, stride2
+
+      ! retrieve size of MPI_REAL for displacement in MPI_TYPE_CREATE_HVECTOR
+      call mpi_type_extent(MPI_REAL, sizeofreal, mpierr)
+
+      ! number of nodes in regular (0 index) and last subdomains (1 index) in each directions
+      nnodes(0,:) = sg_grid%nnodes_dom(:)
+      nnodes(1,:) = sg_grid%nnodes_dom_last(:)
+      stride(:)   = sg_grid%nnodes_glob(:)
+      stride1     = int(stride(1)*sizeofreal,           kind=MPI_ADDRESS_KIND)
+      stride2     = int(stride(1)*stride(2)*sizeofreal, kind=MPI_ADDRESS_KIND)
+
+      do i3 = 0, 1
+        do i2 = 0, 1
+          do i1 = 0, 1
+
+            ! retrieve nb points in each type of cube
+            n1sub = nnodes(i1,1)
+            n2sub = nnodes(i2,2)
+            n3sub = nnodes(i3,3)
+
+            !-----------------
+            !     TYPE CUBE
+            !-----------------
+            call mpi_type_vector        (n1sub, 1,       1,    MPI_REAL, type_column, mpierr)
+            call mpi_type_create_hvector(n2sub, 1, stride1, type_column,   type_face, mpierr)
+            call mpi_type_create_hvector(n3sub, 1, stride2,   type_face,   type_cube, mpierr)
+            !call mpi_type_hvector(n2sub, 1, stride(1)*sizeofreal,           type_column, type_face,   mpierr)
+            !call mpi_type_hvector(n3sub, 1, stride(1)*stride(2)*sizeofreal, type_face,   type_cube,   mpierr)
+            call mpi_type_commit(type_cube, mpierr)
+
+            this%mpi_type_globdom_to_subdom(i1,i2,i3) = type_cube
+
+          enddo
+        enddo
+      enddo
+
+    end subroutine sg_comm_create_mpi_type_globdom_to_subdom
+
+
+    subroutine sg_comm_communicate_field(this, V, grid, it)
+
+      !----------------------------------------------------------------------
+      !
+      !     Send/receive with MPI communication
+      !
+      !     IN :     V, V_ovlp, grid
+      !
+      !     IN/OUT : V (local structured grid + communication band)
+      !
+      !----------------------------------------------------------------------
+
+      class(sg_comm_type),                 intent(in out) :: this
+      !real, dimension(:,:,:), allocatable, intent(in out) :: V
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in out) :: V
+      class(grid_type),                    intent(in)     :: grid
+      integer,                   optional, intent(in)     :: it
+      character(len=*), parameter                         :: proc_name = "sg_comm_communicate_field"
+      integer, dimension(mpi_status_size)                 :: status
+      integer, dimension(3)                               :: isnd, ircv
+      integer                                             :: mpierr
+      integer                                             :: i1,    i2,    i3,  iproc, itype, itt
+      integer                                             :: isym1, isym2, isym3
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      integer                                             :: tag, tagsym
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (present(it)) then
+        itt = it
+      else
+        itt = -1
+      end if
+
+      ! Launch communications if curent iteration matches with temporal blocking buffer is ended
+      if (maxval(this%novlp) > 0 .and. & 
+      &  (this%ntmpblock == 0 .or. (this%ntmpblock > 0 .and. (mod(itt, this%ntmpblock) == 0 .or. itt <= 1)))) then
+
+        do i3 = -1, +1
+          do i2 = -1, +1
+            do i1 = -1, +1
+
+              if (i1 /= 0 .or. i2 /= 0 .or. i3 /= 0) then
+
+                ! Sender information
+                isnd(:) = this%istart_snd(:,   i1, i2, i3) ! copy from location
+                itype   = this%mpi_types      (i1, i2, i3) ! with type
+                iproc   = sg_grid%neighbours  (i1, i2, i3) ! to processor
+                tag = 1000 + i1 * 100 + i2 * 10 + i3
+
+                ! Receiver information 
+                ! stored in the tables as the symmetric neighbour processor relative to the current processor
+                isym1 = int((-1)*i1)
+                isym2 = int((-1)*i2)
+                isym3 = int((-1)*i3)
+                tagsym = 1000 + isym1 * 100 + isym2 * 10 + isym3
+                ircv(:) = this%istart_rcv(:, isym1, isym2, isym3) ! copy into location
+
+                if (iproc /= MPI_PROC_NULL) then
+                  !write(*,*) myid_1, "i1, i2, i3 = ", i1, i2, i3
+                  !write(*,*) myid_1, "isnd       = ", isnd
+                  !write(*,*) myid_1, "ircv       = ", ircv
+                  !write(*,*) myid_1, "itype      = ", itype
+                  !write(*,*) myid_1, "iproc      = ", iproc
+                  !write(*,*) myid_1, "tag, tagsym= ", tag, tagsym; call flush(6)
+
+                  ! send to neighbours / receive from neighbours
+                  call mpi_sendrecv(V(isnd(1), isnd(2), isnd(3)), 1, itype, iproc, tag, &
+                  &                 V(ircv(1), ircv(2), ircv(3)), 1, itype, iproc, tagsym, &
+                  &                 this%mpi_comm_1, status, mpierr)
+                end if
+
+              end if
+            end do
+          end do
+        end do
+
+      end if
+
+    end subroutine sg_comm_communicate_field
+
+
+    subroutine sg_comm_scatter_global_field(this, grid, Fglob, F)
+      class(sg_comm_type),                 intent(in out) :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(:,:,:), allocatable, intent(in)     :: Fglob
+      !real, dimension(:,:,:), allocatable, intent(in out) :: F
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in out) :: F
+      integer                                             :: iproc
+      integer, dimension(3)                               :: istart, nloc, nd!, iend
+      !integer                                             :: nloctot_recv
+      integer                                             :: i1, i2, i3, d1, d2, d3
+      integer                                             :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                 :: mpistat = 0
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_scatter_global_field'
+      integer,                             parameter      :: tag = 100
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (.not. allocated(this%iglob_bounds_dom)) then
+        ! gather iglob_bounds to all sub-domains
+        call alloc_(this%iglob_bounds_dom, 1, 2, 1, 3, 0, product(sg_grid%nd)-1, proc_name // "/iglob_bounds_dom")
+        call mpi_allgather(sg_grid%iglob_bounds,  6, MPI_INTEGER, &
+        &                  this%iglob_bounds_dom, 6, MPI_INTEGER, &
+        &                  this%mpi_comm_1, mpierr)
+      end if
+
+      nloc(:) = sg_grid%nnodes_loc(:)
+      nd(:) = sg_grid%nd(:)
+
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        ! Master proc send to each proc the part of Fglob corresponding to the associated subdomain
+        ! Solution with MPI automatic subarray type creation
+!         do iproc = 1, this%nproc_1-1 
+! 
+!             ! start and begin index of each receiver proc
+!             istart = this%iglob_bounds_dom(1, :, iproc)
+!             iend   = this%iglob_bounds_dom(2, :, iproc)
+!             nloctot_recv = product(iend(:) - istart(:) + 1)
+! 
+!             call mpi_send(Fglob(istart(1):iend(1),istart(2):iend(2),istart(3):iend(3)), nloctot_recv, MPI_REAL, &
+!                           iproc, tag, this%mpi_comm_1, mpierr)
+! 
+!         end do
+
+        ! Solution by explicit MPI type creation
+        do i3 = 1, nd(3)
+          ! Retrieve if this index is linked to a regular or non regular subdomain dimension
+          d3 = max(0, i3-nd(3)+1) ! returns 0 if regular dimension, 1 otherwise
+          !if (d3 /= 0 .and. d3 /= 1) stop "error d3"
+
+          do i2 = 1, nd(2)
+            d2 = max(0, i2-nd(2)+1)
+            !if (d2 /= 0 .and. d2 /= 1) stop "error d2"
+
+            do i1 = 1, nd(1)
+              d1 = max(0, i1-nd(1)+1)
+              !if (d1 /= 0 .and. d1 /= 1) stop "error d1"
+
+              iproc = (i1-1) + (i2-1)*nd(1) + (i3-1)*nd(1)*nd(2)
+
+              if (iproc /= 0) then
+                ! start index of each receiver proc
+                istart = this%iglob_bounds_dom(1, :, iproc)
+                !write(*,'(I3,A,3I6)') iproc, " : dom coor :", i1, i2, i3
+                !write(*,'(I3,A,3I6)') iproc, " : reg/!reg :", d1, d2, d3
+                !write(*,'(I3,A,3I6)') iproc, " : istart   :", istart; call flush(6)
+                if (this%mpi_type_globdom_to_subdom(d1,d2,d3)==0) stop "error type"
+
+                call mpi_send(Fglob(istart(1),istart(2),istart(3)), 1, this%mpi_type_globdom_to_subdom(d1,d2,d3), &
+                &             iproc, tag, this%mpi_comm_1, mpierr)
+              end if ! (iproc /= 0)
+
+            enddo
+          enddo
+        enddo
+
+      end if ! (this%myid_1 == 0)
+
+      if (this%myid_1 /= 0) then
+        ! Each proc receives the part of Fglob corresponding to the associated subdomain
+        ! It supposes that F has been allocated before to the size of the local subdomain including the overlaps
+
+        call mpi_recv(F(1,1,1), 1, this%mpi_type_ovlplocdom_to_locdom, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+      else
+        F(1:nloc(1), 1:nloc(2), 1:nloc(3)) = Fglob(1:nloc(1), 1:nloc(2), 1:nloc(3))
+      end if
+
+      ! Update overlap
+      call this%sg_comm_communicate_field(F, sg_grid)
+
+    end subroutine sg_comm_scatter_global_field
+
+
+    subroutine sg_comm_scatter_global_field_ptr(this, grid, Fglob, F)
+      class(sg_comm_type),                 intent(in out) :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(:,:,:), allocatable, intent(in)     :: Fglob
+      real, dimension(:,:,:), pointer,     intent(in out) :: F
+      integer                                             :: iproc
+      integer, dimension(3)                               :: istart, nloc, nd!, iend
+      !integer                                             :: nloctot_recv
+      integer                                             :: i1, i2, i3, d1, d2, d3
+      integer                                             :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                 :: mpistat = 0
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_scatter_global_field_ptr'
+      integer,                             parameter      :: tag = 100
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (.not. associated(F)) then
+        write(*,*) proc_name, " :: ERROR : pointer on local field array is not associated"; call flush(6)
+        stop
+      end if
+
+      if (.not. allocated(this%iglob_bounds_dom)) then
+        ! gather iglob_bounds to all sub-domains
+        call alloc_(this%iglob_bounds_dom, 1, 2, 1, 3, 0, product(sg_grid%nd)-1, proc_name // "/iglob_bounds_dom")
+        call mpi_allgather(sg_grid%iglob_bounds,  6, MPI_INTEGER, &
+        &                  this%iglob_bounds_dom, 6, MPI_INTEGER, &
+        &                  this%mpi_comm_1, mpierr)
+      end if
+
+      nloc(:) = sg_grid%nnodes_loc(:)
+      nd(:) = sg_grid%nd(:)
+
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        ! Master proc send to each proc the part of Fglob corresponding to the associated subdomain
+        ! Solution with MPI automatic subarray type creation
+!         do iproc = 1, this%nproc_1-1 
+! 
+!             ! start and begin index of each receiver proc
+!             istart = this%iglob_bounds_dom(1, :, iproc)
+!             iend   = this%iglob_bounds_dom(2, :, iproc)
+!             nloctot_recv = product(iend(:) - istart(:) + 1)
+! 
+!             call mpi_send(Fglob(istart(1):iend(1),istart(2):iend(2),istart(3):iend(3)), nloctot_recv, MPI_REAL, &
+!                           iproc, tag, this%mpi_comm_1, mpierr)
+! 
+!         end do
+
+        ! Solution by explicit MPI type creation
+        do i3 = 1, nd(3)
+          ! Retrieve if this index is linked to a regular or non regular subdomain dimension
+          d3 = max(0, i3-nd(3)+1) ! returns 0 if regular dimension, 1 otherwise
+          !if (d3 /= 0 .and. d3 /= 1) stop "error d3"
+
+          do i2 = 1, nd(2)
+            d2 = max(0, i2-nd(2)+1)
+            !if (d2 /= 0 .and. d2 /= 1) stop "error d2"
+
+            do i1 = 1, nd(1)
+              d1 = max(0, i1-nd(1)+1)
+              !if (d1 /= 0 .and. d1 /= 1) stop "error d1"
+
+              iproc = (i1-1) + (i2-1)*nd(1) + (i3-1)*nd(1)*nd(2)
+
+              if (iproc /= 0) then
+                ! start index of each receiver proc
+                istart = this%iglob_bounds_dom(1, :, iproc)
+                !write(*,'(I3,A,3I6)') iproc, " : dom coor :", i1, i2, i3
+                !write(*,'(I3,A,3I6)') iproc, " : reg/!reg :", d1, d2, d3
+                !write(*,'(I3,A,3I6)') iproc, " : istart   :", istart; call flush(6)
+                if (this%mpi_type_globdom_to_subdom(d1,d2,d3)==0) stop "error type"
+
+                call mpi_send(Fglob(istart(1),istart(2),istart(3)), 1, this%mpi_type_globdom_to_subdom(d1,d2,d3), &
+                &             iproc, tag, this%mpi_comm_1, mpierr)
+              end if ! (iproc /= 0)
+
+            enddo
+          enddo
+        enddo
+
+      end if ! (this%myid_1 == 0)
+
+      if (this%myid_1 /= 0) then
+        ! Each proc receives the part of Fglob corresponding to the associated subdomain
+        ! It supposes that F has been allocated before to the size of the local subdomain including the overlaps
+
+        call mpi_recv(F(1,1,1), 1, this%mpi_type_ovlplocdom_to_locdom, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+      else
+        F(1:nloc(1), 1:nloc(2), 1:nloc(3)) = Fglob(1:nloc(1), 1:nloc(2), 1:nloc(3))
+      end if
+
+      ! Update overlap
+      call this%sg_comm_communicate_field(F, sg_grid)
+
+    end subroutine sg_comm_scatter_global_field_ptr
+
+
+    subroutine sg_comm_gather_global_field(this, grid, Fglob, F)
+      class(sg_comm_type),                 intent(in out) :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(:,:,:), allocatable, intent(in out) :: Fglob
+      !real, dimension(:,:,:), allocatable, intent(in)     :: F
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in)     :: F
+      integer, dimension(3)                               :: istart, nloc, nd!, iend
+      integer                                             :: i1, i2, i3, d1, d2, d3
+      integer                                             :: iproc
+      integer                                             :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                 :: mpistat = 0
+      integer                                             :: nloctot = 0
+      integer, parameter                                  :: tag = 200
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_gather_global_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (.not. allocated(this%iglob_bounds_dom)) then
+        ! gather iglob_bounds to all sub-domains
+        call alloc_(this%iglob_bounds_dom, 1, 2, 1, 3, 0, product(sg_grid%nd)-1, proc_name // "/iglob_bounds_dom")
+        call mpi_allgather(sg_grid%iglob_bounds,  6, MPI_INTEGER, &
+        &                  this%iglob_bounds_dom, 6, MPI_INTEGER, &
+        &                  this%mpi_comm_1, mpierr)
+      end if
+
+      nloc(:) = sg_grid%nnodes_loc(:)
+      nd(:) = sg_grid%nd(:)
+
+      if (this%myid_1 /= 0) then
+
+        if (.False.) then ! Solution with MPI automatic subarray type creation
+
+          nloctot = product(nloc)
+          call mpi_send(F(1:nloc(1), 1:nloc(2), 1:nloc(3)), nloctot, MPI_REAL, &
+          &             0, tag, this%mpi_comm_1, mpierr)
+        
+        end if ! Solution with MPI automatic subarray type creation
+
+        if (.True.) then ! Solution by explicit MPI type creation
+
+          call mpi_send(F(1,1,1), 1, this%mpi_type_ovlplocdom_to_locdom, &
+          &             0, tag, this%mpi_comm_1, mpierr)
+
+        end if ! Solution by explicit MPI type creation
+
+      end if ! (myid_1 /= 0)
+
+      ! Receive slab of global array associated to the subdomain
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        Fglob(1:nloc(1), 1:nloc(2), 1:nloc(3)) = F(1:nloc(1), 1:nloc(2), 1:nloc(3))
+
+        do i3 = 1, nd(3)
+          ! Retrieve if this index is linked to a regular or non regular subdomain dimension
+          d3 = max(0, i3-nd(3)+1) ! returns 0 if regular dimension, 1 otherwise
+          !if (d3 /= 0 .and. d3 /= 1) stop "error d3"
+
+          do i2 = 1, nd(2)
+            d2 = max(0, i2-nd(2)+1)
+            !if (d2 /= 0 .and. d2 /= 1) stop "error d2"
+
+            do i1 = 1, nd(1)
+              d1 = max(0, i1-nd(1)+1)
+              !if (d1 /= 0 .and. d1 /= 1) stop "error d1"
+
+              iproc = (i1-1) + (i2-1)*nd(1) + (i3-1)*nd(1)*nd(2)
+
+              if (iproc /= 0) then
+                ! start index of each receiver proc
+                istart = this%iglob_bounds_dom(1, :, iproc)
+                !write(*,'(I3,A,3I6)') iproc, " : dom coor :", i1, i2, i3
+                !write(*,'(I3,A,3I6)') iproc, " : reg/!reg :", d1, d2, d3
+                !write(*,'(I3,A,3I6)') iproc, " : istart   :", istart; call flush(6)
+
+                if (this%mpi_type_globdom_to_subdom(d1,d2,d3)==0) stop "error type"
+                
+                call mpi_recv(Fglob(istart(1),istart(2),istart(3)), 1, this%mpi_type_globdom_to_subdom(d1,d2,d3), &
+                &             iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+              end if ! (iproc /= 0)
+
+            enddo
+          enddo
+        enddo
+      end if
+
+    end subroutine sg_comm_gather_global_field
+
+
+    subroutine sg_comm_gather_global_field_ptr(this, grid, Fglob, F)
+      class(sg_comm_type),                 intent(in out) :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(:,:,:), allocatable, intent(in out) :: Fglob
+      real, dimension(:,:,:),     pointer, intent(in)     :: F
+      integer, dimension(3)                               :: istart, nloc, nd!, iend
+      integer                                             :: i1, i2, i3, d1, d2, d3
+      integer                                             :: iproc
+      integer                                             :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                 :: mpistat = 0
+      integer                                             :: nloctot = 0
+      integer, parameter                                  :: tag = 200
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_gather_global_field_ptr'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+
+      if (.not. associated(F)) then
+        write(*,*) proc_name, " :: ERROR : pointer on local field array is not associated"; call flush(6)
+        stop
+      end if
+
+      if (.not. allocated(this%iglob_bounds_dom)) then
+        ! gather iglob_bounds to all sub-domains
+        call alloc_(this%iglob_bounds_dom, 1, 2, 1, 3, 0, product(sg_grid%nd)-1, proc_name // "/iglob_bounds_dom")
+        call mpi_allgather(sg_grid%iglob_bounds,  6, MPI_INTEGER, &
+        &                  this%iglob_bounds_dom, 6, MPI_INTEGER, &
+        &                  this%mpi_comm_1, mpierr)
+      end if
+
+      nloc(:) = sg_grid%nnodes_loc(:)
+      nd(:) = sg_grid%nd(:)
+
+      if (this%myid_1 /= 0) then
+
+        if (.False.) then ! Solution with MPI automatic subarray type creation
+
+          nloctot = product(nloc)
+          call mpi_send(F(1:nloc(1), 1:nloc(2), 1:nloc(3)), nloctot, MPI_REAL, &
+          &             0, tag, this%mpi_comm_1, mpierr)
+        
+        end if ! Solution with MPI automatic subarray type creation
+
+        if (.True.) then ! Solution by explicit MPI type creation
+
+          call mpi_send(F(1,1,1), 1, this%mpi_type_ovlplocdom_to_locdom, &
+          &             0, tag, this%mpi_comm_1, mpierr)
+
+        end if ! Solution by explicit MPI type creation
+
+      end if ! (myid_1 /= 0)
+
+      ! Receive slab of global array associated to the subdomain
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        Fglob(1:nloc(1), 1:nloc(2), 1:nloc(3)) = F(1:nloc(1), 1:nloc(2), 1:nloc(3))
+
+        do i3 = 1, nd(3)
+          ! Retrieve if this index is linked to a regular or non regular subdomain dimension
+          d3 = max(0, i3-nd(3)+1) ! returns 0 if regular dimension, 1 otherwise
+          !if (d3 /= 0 .and. d3 /= 1) stop "error d3"
+
+          do i2 = 1, nd(2)
+            d2 = max(0, i2-nd(2)+1)
+            !if (d2 /= 0 .and. d2 /= 1) stop "error d2"
+
+            do i1 = 1, nd(1)
+              d1 = max(0, i1-nd(1)+1)
+              !if (d1 /= 0 .and. d1 /= 1) stop "error d1"
+
+              iproc = (i1-1) + (i2-1)*nd(1) + (i3-1)*nd(1)*nd(2)
+
+              if (iproc /= 0) then
+                ! start index of each receiver proc
+                istart = this%iglob_bounds_dom(1, :, iproc)
+                !write(*,'(I3,A,3I6)') iproc, " : dom coor :", i1, i2, i3
+                !write(*,'(I3,A,3I6)') iproc, " : reg/!reg :", d1, d2, d3
+                !write(*,'(I3,A,3I6)') iproc, " : istart   :", istart; call flush(6)
+
+                if (this%mpi_type_globdom_to_subdom(d1,d2,d3)==0) stop "error type"
+                
+                call mpi_recv(Fglob(istart(1),istart(2),istart(3)), 1, this%mpi_type_globdom_to_subdom(d1,d2,d3), &
+                &             iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+              end if ! (iproc /= 0)
+
+            enddo
+          enddo
+        enddo
+      end if
+
+    end subroutine sg_comm_gather_global_field_ptr
+
+
+    function sg_comm_get_field_glob_min_value(this, grid, F)
+      class(sg_comm_type),                 intent(in)     :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in)     :: F
+      real                                                :: sg_comm_get_field_glob_min_value
+      real                                                :: fmin_loc = 0., fmin_glob = 0.
+      integer, dimension(3)                               :: istart, iend
+      integer                                             :: mpierr
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_get_field_glob_min_value'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+      istart(:) = 1
+      iend(:) = sg_grid%nnodes_loc(:)
+
+      fmin_loc = minval(F(istart(1):iend(1), istart(2):iend(2), istart(3):iend(3)))
+      call mpi_allreduce(fmin_loc, fmin_glob, 1, MPI_REAL, MPI_MIN, this%mpi_comm_1, mpierr)
+
+      !if (myid_1 == 0) write(*,*) 'glob_min = ', fmin_glob; call flush(6)
+
+      sg_comm_get_field_glob_min_value = fmin_glob
+
+    end function sg_comm_get_field_glob_min_value
+
+
+    function sg_comm_get_field_glob_min_positive_value(this, grid, F)
+      class(sg_comm_type),                 intent(in)     :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in)     :: F
+      real                                                :: sg_comm_get_field_glob_min_positive_value
+      real                                                :: fmin_loc = 0., fmin_glob = 0.
+      integer, dimension(3)                               :: istart, iend
+      integer                                             :: mpierr
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_get_field_glob_min_positive_value'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+      istart(:) = 1
+      iend(:) = sg_grid%nnodes_loc(:)
+
+      !fmin_loc = minval(F(istart(1):iend(1), istart(2):iend(2), istart(3):iend(3)))
+      fmin_loc = 0.
+      if (minval(F) == maxval(F)) then
+        fmin_loc = minval(F)
+      else
+        fmin_loc = minval(F, mask=F > epsilon(1.))
+      end if
+      call mpi_allreduce(fmin_loc, fmin_glob, 1, MPI_REAL, MPI_MIN, this%mpi_comm_1, mpierr)
+
+      !if (myid_1 == 0) write(*,*) 'glob_min = ',  fmin_glob
+
+      sg_comm_get_field_glob_min_positive_value = fmin_glob
+
+    end function sg_comm_get_field_glob_min_positive_value
+
+
+    function sg_comm_get_field_glob_max_value(this, grid, F)
+      class(sg_comm_type),                 intent(in)     :: this
+      class(grid_type),                    intent(in)     :: grid
+      real, dimension(1-this%novlptot(1):this%nloc(1)+this%novlptot(1),  &
+      &               1-this%novlptot(2):this%nloc(2)+this%novlptot(2),  &
+      &               1-this%novlptot(3):this%nloc(3)+this%novlptot(3)), &
+      &                                    intent(in)     :: F
+      real                                                :: sg_comm_get_field_glob_max_value
+      real                                                :: fmax_loc = 0., fmax_glob = 0.
+      integer, dimension(3)                               :: istart, iend
+      integer                                             :: mpierr
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_get_field_glob_max_value'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      sg_grid => as_sgrid_type(grid)
+      istart(:) = 1
+      iend(:) = sg_grid%nnodes_loc(:)
+
+      fmax_loc = maxval(F(istart(1):iend(1), istart(2):iend(2), istart(3):iend(3)))
+      call mpi_allreduce(fmax_loc, fmax_glob, 1, MPI_REAL, MPI_MAX, this%mpi_comm_1, mpierr)
+
+      !if (myid_1 == 0) write(*,*) 'glob_max = ',  fmax_glob
+
+      sg_comm_get_field_glob_max_value = fmax_glob
+
+    end function sg_comm_get_field_glob_max_value
+
+
+    subroutine sg_comm_partition_sg_grid_points_global_zone(this, grid, sg_grid_points_glob_zone, sg_grid_points_loc_zone)
+      class(sg_comm_type),                 intent(in out) :: this
+      class(grid_type),                    intent(in)     :: grid
+      type(sg_grid_points_glob_zone_type), intent(in out) :: sg_grid_points_glob_zone
+      type(sg_grid_points_loc_zone_type),  intent(out)    :: sg_grid_points_loc_zone
+
+      integer, dimension(:),               allocatable    :: cpt_proc_npt
+      integer                                             :: ipt, iproc, i1, iEnd, i, idx
+      integer                                             :: cpt, proc_rank, nsnd, npt_glob, npt_loc
+      integer, dimension(3)                               :: pt_glob_coor, pt_loc_coor, proc_coor
+      integer, dimension(:,:),             allocatable    :: mapping_loc_grid
+      integer, dimension(:),               allocatable    :: pts_loc
+
+      integer                                             :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                 :: mpistat = 0
+      character(len=*),                    parameter      :: proc_name = 'sg_comm_partition_sg_grid_points_global_zone'
+      integer,                             parameter      :: tag1 = 100, tag2 = 200
+      type(sgrid_type),                    pointer        :: sg_grid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      !dd_debug_level = 3 ! declared in common_mod
+
+      sg_grid => as_sgrid_type(grid)
+
+      ! (*) Important notice on the possible point that belong to none of the global domain and subdomains:
+      ! We manage the partition of the whole set by associating such points to the non existing -1 processor rank.
+      ! Of course no local zone is created to manage this non existing processor
+      ! it is not involved in scatter ang gather operations
+
+      ! (**) In the current implementation we suppose that a grid point belongs to a single subdomain (including -1):
+      ! This is not true for the case of continuum points for which Hicks interpolation may involve points to belong
+      ! to several subdomains
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute the number of points local to each subdomain
+      !--------------------------------------------------------------------
+
+      call alloc_(cpt_proc_npt, -1, this%nproc_1-1, proc_name // "/cpt_proc_npt") ! Cf. (*) about -1
+
+      if (this%myid_1 == 0) then
+
+        npt_glob =  sg_grid_points_glob_zone%npt_glob
+
+        ! Following notice (**) we can allocate and fulfill pt_nproc_tab and pt_proc_tab
+        ! as we know that a point belongs to a single subdomain
+        call alloc_(sg_grid_points_glob_zone%pt_nproc_tab, 1, npt_glob+1, &
+        &           proc_name // "/pt_nproc_tab")
+
+        call alloc_(sg_grid_points_glob_zone%pt_proc_tab, 1, npt_glob, &
+        &           proc_name // "/pt_proc_tab")
+
+        !------------------------------------------------------------------
+        ! First loop on the points :
+        ! Compute how many nodes belongs to each processor
+        !------------------------------------------------------------------
+        do ipt = 1, npt_glob
+
+          ! retrieve node global coordinates
+          pt_glob_coor = sg_grid_points_glob_zone%mapping_glob_grid(:,ipt)
+
+          ! retrieve processor coordinates and rank the node belongs to
+          call sg_grid%sgrid_retrieve_grid_node_processor(pt_glob_coor, proc_rank, proc_coor)
+
+          if (proc_rank == -1) then
+            write(*,*) proc_name, ' :: WARNING : point', ipt, pt_glob_coor, &
+            &                               ' of the global zone is located outside of the domain'
+            call flush(6)
+          end if
+
+          sg_grid_points_glob_zone%pt_nproc_tab(ipt) = ipt
+          sg_grid_points_glob_zone%pt_proc_tab (ipt) = proc_rank
+
+          ! increment counter of points located in the subdomain
+          cpt_proc_npt(proc_rank) = cpt_proc_npt(proc_rank) + 1
+
+        end do
+        sg_grid_points_glob_zone%pt_nproc_tab(npt_glob+1) = npt_glob + 1
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : cpt_proc_npt = ', cpt_proc_npt
+          write(*,*) proc_name, ' : pt_nproc_tab = ', sg_grid_points_glob_zone%pt_nproc_tab
+          write(*,*) proc_name, ' : pt_proc_tab  = ', sg_grid_points_glob_zone%pt_proc_tab; call flush(6)
+        endif
+
+        !------------------------------------------------------------------------------------
+        ! Proc to point data: fulfill proc_npt_tab from cpt_proc_npt and allocate proc_pt_tab
+        !------------------------------------------------------------------------------------
+
+        call alloc_(sg_grid_points_glob_zone%proc_npt_tab, -1, this%nproc_1, &
+        &           proc_name // "/sg_grid_points_glob_zone%proc_npt_tab") ! Cf. (*) about -1
+
+        sg_grid_points_glob_zone%proc_npt_tab(-1) = 1  ! Cf. (*) about -1
+        do iproc = -1, this%nproc_1-1                  ! Cf. (*) about -1
+
+          ! starting index for iproc+1 is equal to 
+          ! the starting index of iproc + the number of points asigned to iproc
+          sg_grid_points_glob_zone%proc_npt_tab(iproc + 1) = sg_grid_points_glob_zone%proc_npt_tab(iproc) &
+          &                                                + cpt_proc_npt(iproc)
+
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : proc_npt_tab = ', sg_grid_points_glob_zone%proc_npt_tab; call flush(6)
+        endif
+
+        ! Following notice (**) we can allocate proc_pt_tab with npt_glob size
+        ! as we know that a point belongs to a single subdomain
+        call alloc_(sg_grid_points_glob_zone%proc_pt_tab,  1, npt_glob,     &
+        &           proc_name // "/sg_grid_points_glob_zone%proc_pt_tab")
+
+        !------------------------------------------------------------------
+        ! 2nd loop on the points :
+        ! Fulfill the partition table (kept by the master processor) 
+        ! to be used later by scatter and gather operations
+        ! (proc_pt_tab is fulfilled with the point indices 
+        ! sorted by the assigned processor)
+        !------------------------------------------------------------------
+        cpt_proc_npt(:) = 0
+        do ipt = 1, npt_glob
+
+          ! Following notice (**) we can directly access to pt_proc_tab without using pt_nproc_tab
+          proc_rank = sg_grid_points_glob_zone%pt_proc_tab(ipt)
+
+          idx = sg_grid_points_glob_zone%proc_npt_tab(proc_rank) + cpt_proc_npt(proc_rank)
+
+          sg_grid_points_glob_zone%proc_pt_tab(idx) = ipt
+
+          cpt_proc_npt(proc_rank) = cpt_proc_npt(proc_rank) + 1
+
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : proc_pt_tab = ', sg_grid_points_glob_zone%proc_pt_tab; call flush(6)
+          call flush(6)
+        endif
+
+      end if ! (this%myid_1 == 0)
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Send the number of points belonging to each subdomain
+      !--------------------------------------------------------------------
+
+      ! Send the number of points belonging to each subdomain
+      call mpi_scatter(cpt_proc_npt(0:this%nproc_1-1), 1, MPI_INTEGER, npt_loc, 1, MPI_INTEGER, 0, this%mpi_comm_1, mpierr)
+
+      if (dd_debug_level > 5) then
+        write(*,*) myid_1, ' : ', proc_name, ' : npt_loc = ', npt_loc; call flush(6)
+      endif
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute and send mapping_loc array to each processor
+      !--------------------------------------------------------------------
+
+      if (this%myid_1 == 0) then
+
+        !------------------------------------------------------------------
+        ! 2nd loop on the processors
+        ! to compute mapping_loc table to be send to the assigned processors
+        ! Backward processing so that last computes mapping_loc array can be 
+        ! kept for master processor without any copy
+        !------------------------------------------------------------------
+        do iproc = this%nproc_1-1, 0, -1
+
+          if (cpt_proc_npt(iproc) > 0) then
+
+            call alloc_(mapping_loc_grid, 1, 3, 1, cpt_proc_npt(iproc), proc_name // "/mapping_loc_grid")
+
+            !------------------------------------------------------------------
+            ! Loop on the points assigned to a processor :
+            ! Fulfill the subdomain mapping table (send to the concerned processor)
+            ! and fulfill partition table (kept by the master processor) 
+            ! to be used later by scatter and gather operations
+            !------------------------------------------------------------------
+            i1   = sg_grid_points_glob_zone%proc_npt_tab(iproc)
+            iEnd = sg_grid_points_glob_zone%proc_npt_tab(iproc+1) - 1
+            cpt  = 1
+            do i = i1, iEnd
+              ipt = sg_grid_points_glob_zone%proc_pt_tab(i)
+
+              ! retrieve node global coordinates
+              pt_glob_coor = sg_grid_points_glob_zone%mapping_glob_grid(:, ipt)
+
+              ! store global coordinates in the grid of the point
+              mapping_loc_grid(:, cpt) = pt_glob_coor(:)
+
+              cpt = cpt + 1
+            end do ! i = i1, iEnd
+
+            if (iproc /= 0) then
+
+              nsnd = size(mapping_loc_grid)
+              call mpi_send(mapping_loc_grid, nsnd, MPI_INTEGER, iproc, tag1, this%mpi_comm_1, mpierr)
+
+              call dealloc_(mapping_loc_grid, proc_name // "/mapping_loc_grid")
+
+              nsnd = iEnd - i1 + 1
+              call mpi_send(sg_grid_points_glob_zone%proc_pt_tab(i1:iEnd), nsnd, MPI_INTEGER, &
+              &             iproc, tag2, this%mpi_comm_1, mpierr)
+
+            end if
+
+          end if ! (cpt_proc_npt(iproc) > 0)
+
+        end do ! iproc
+
+      end if ! (this%myid_1 == 0)
+
+      call dealloc_(cpt_proc_npt, proc_name // "/cpt_proc_npt")
+
+      if (npt_loc > 0) then
+
+        call alloc_(pts_loc, 1, npt_loc, proc_name // "/pts_loc")
+
+        !-----------------------------------------------------
+        ! All processors except master : 
+        ! Receive mapping_loc array 
+        !-----------------------------------------------------
+        if (this%myid_1 /= 0) then
+
+          call alloc_(mapping_loc_grid, 1, 3, 1, npt_loc, proc_name // "/mapping_loc_grid")
+
+          nsnd = size(mapping_loc_grid)
+          call mpi_recv(mapping_loc_grid, nsnd, MPI_INTEGER, 0, tag1, this%mpi_comm_1, mpistat, mpierr)
+
+          nsnd = size(pts_loc)
+          call mpi_recv(pts_loc, nsnd, MPI_INTEGER, 0, tag2, this%mpi_comm_1, mpistat, mpierr)
+
+        else
+
+          pts_loc(1:npt_loc) = sg_grid_points_glob_zone%proc_pt_tab(1:npt_loc)
+
+        end if ! (this%myid_1 == 0)
+
+        ! Transform mapping_loc_grid that refers to global indices in local ones
+        do ipt = 1, npt_loc
+          pt_glob_coor(:) = mapping_loc_grid(:,ipt)
+          call sg_grid%sgrid_glob2loc(pt_glob_coor, pt_loc_coor, iproc)
+          mapping_loc_grid(:,ipt) = pt_loc_coor(:)
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) myid_1, ' : ', proc_name, ' : npt_loc          = ', npt_loc
+          write(*,*) myid_1, ' : ', proc_name, ' : pts_loc          = ', pts_loc
+          write(*,*) myid_1, ' : ', proc_name, ' : mapping_loc_grid = ', mapping_loc_grid;   call flush(6)
+        endif
+
+        ! Build the local zone object
+        call sg_grid_points_loc_zone%sg_grid_points_loc_zone_constructor(npt_loc, pts_loc, mapping_loc_grid)
+
+        call dealloc_(pts_loc,          proc_name // "/pts_loc")
+
+      end if ! npt_loc > 0
+
+      call dealloc_(mapping_loc_grid, proc_name // "/mapping_loc_grid")
+
+    end subroutine sg_comm_partition_sg_grid_points_global_zone
+
+
+    subroutine sg_comm_partition_sg_continuum_points_global_zone(this, grid, sg_continuum_points_glob_zone, &
+    &                                                                        sg_continuum_points_loc_zone)
+      class(sg_comm_type),                      intent(in out) :: this
+      class(grid_type),                         intent(in)     :: grid
+      type(sg_continuum_points_glob_zone_type), intent(in out) :: sg_continuum_points_glob_zone
+      type(sg_continuum_points_loc_zone_type),  intent(out)    :: sg_continuum_points_loc_zone
+
+      integer, dimension(:),                    allocatable    :: cpt_proc_npt, cpt_pt_nproc
+      integer                                                  :: ipt, iproc, i, i1, iEnd, idx, irad, nproc_holder
+      integer                                                  :: cpt, proc_rank, nsnd, npt_glob, npt_loc
+      integer                                                  :: size_pt_proc_tab, size_proc_pt_tab
+      integer, dimension(8)                                    :: procs_rank
+      real,    dimension(3)                                    :: pt_glob_coor
+      real,    dimension(:,:),                  allocatable    :: coor
+      integer, dimension(:),                    allocatable    :: pts_loc
+
+      integer                                                  :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                      :: mpistat = 0
+      character(len=*),                         parameter      :: proc_name = 'sg_comm_partition_sg_continuum_points_global_zone'
+      integer,                                  parameter      :: tag1 = 100, tag2 = 101, tag3 = 110
+      type(sgrid_type),                         pointer        :: sg_grid => Null()
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      !dd_debug_level = 3 ! declared in common_mod
+
+      sg_grid => as_sgrid_type(grid)
+
+      ! (*) Important notice on the possible nodes that belong to none of the global domain and subdomains:
+      ! We manage the partition of the whole set by associating such points to the non existing -1 processor rank.
+      ! Of course no local zone is created to manage this non existing processor
+      ! it is not involved in scatter ang gather operations
+
+      ! (**) In the current implementation we suppose that a point can belong to several subdomains:
+      ! which can be possible in case of Hicks interpolation
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute the number of points local to each subdomain
+      ! and the number processors each point will be distributed on
+      !--------------------------------------------------------------------
+
+      call alloc_(cpt_proc_npt, -1, this%nproc_1-1, proc_name // "/cpt_proc_npt") ! Cf. (*) about -1
+
+      if (this%myid_1 == 0) then
+
+        npt_glob = sg_continuum_points_glob_zone%npt_glob
+        irad     = sg_continuum_points_glob_zone%irad
+
+        if (npt_glob > 0) call alloc_(cpt_pt_nproc,  1, npt_glob, proc_name // "/cpt_pt_nproc")
+
+        !------------------------------------------------------------------
+        ! First loop on the points :
+        ! Compute - how many nodes belongs to each processor
+        ! and     - on how many processors each point will be distributed
+        !------------------------------------------------------------------
+        do ipt = 1, npt_glob
+
+          ! retrieve node global coordinates
+          pt_glob_coor = sg_continuum_points_glob_zone%coor(:,ipt)
+
+          ! retrieve processor(s) coordinates and rank the node belongs to
+          if (irad > 0) then
+            call sg_grid%sgrid_retrieve_continuum_point_processors(pt_glob_coor, irad, nproc_holder, procs_rank)
+          else
+            call sg_grid%sgrid_retrieve_continuum_point_processor(pt_glob_coor, procs_rank(1))
+            nproc_holder = 1
+          end if
+
+          do iproc = 1, nproc_holder
+
+            proc_rank = procs_rank(iproc)
+
+            if (proc_rank == -1) then
+              write(*,*) proc_name, ' :: WARNING : point', ipt, pt_glob_coor, &
+              &                               ' of the global zone is located outside of the domain'
+              call flush(6)
+            end if
+
+            ! increment counter of processors each point will be distributed on
+            cpt_pt_nproc(ipt)       = cpt_pt_nproc(ipt) + 1
+
+            ! increment counter of points located in each subdomain
+            cpt_proc_npt(proc_rank) = cpt_proc_npt(proc_rank) + 1
+
+          end do ! iproc = 1, nproc_holder
+
+        end do ! ipt = 1, npt_glob
+
+        if (dd_debug_level > 5) then
+          if (npt_glob > 0) write(*,*) proc_name, ' : cpt_pt_nproc = ', cpt_pt_nproc
+          write(*,*) proc_name, ' : cpt_proc_npt = ', cpt_proc_npt; call flush(6)
+        endif
+
+        !------------------------------------------------------------------------------------
+        ! Point to proc data: fulfill pt_nproc_tab from cpt_pt_nproc and allocate pt_proc_tab
+        !------------------------------------------------------------------------------------
+
+        call alloc_(sg_continuum_points_glob_zone%pt_nproc_tab, 1, npt_glob+1, &
+        &           proc_name // "/pt_nproc_tab")
+
+        sg_continuum_points_glob_zone%pt_nproc_tab(1) = 1
+        do ipt = 1, npt_glob
+
+          sg_continuum_points_glob_zone%pt_nproc_tab(ipt + 1) = sg_continuum_points_glob_zone%pt_nproc_tab(ipt) &
+          &                                                   + cpt_pt_nproc(ipt)
+
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : pt_nproc_tab = ', sg_continuum_points_glob_zone%pt_nproc_tab; call flush(6)
+        endif
+
+        !------------------------------------------------------------------
+        ! Second loop on the points :
+        ! Point to proc data: fulfill pt_proc_tab array
+        !------------------------------------------------------------------
+
+        if (npt_glob > 0) then
+          size_pt_proc_tab = sum(cpt_pt_nproc(:))
+          call alloc_(sg_continuum_points_glob_zone%pt_proc_tab, 1, size_pt_proc_tab, &
+          &           proc_name // "/pt_proc_tab")
+
+          cpt_pt_nproc(:) = 0
+        end if
+
+        do ipt = 1, npt_glob
+
+          ! retrieve node global coordinates
+          pt_glob_coor = sg_continuum_points_glob_zone%coor(:,ipt)
+
+          ! retrieve processor(s) coordinates and rank the node belongs to
+          if (irad > 0) then
+            call sg_grid%sgrid_retrieve_continuum_point_processors(pt_glob_coor, irad, nproc_holder, procs_rank)
+          else
+            call sg_grid%sgrid_retrieve_continuum_point_processor(pt_glob_coor, procs_rank(1))
+            nproc_holder = 1
+          end if
+
+          do iproc = 1, nproc_holder
+
+            proc_rank = procs_rank(iproc)
+
+            idx = sg_continuum_points_glob_zone%pt_nproc_tab(ipt) + cpt_pt_nproc(ipt)
+
+            sg_continuum_points_glob_zone%pt_proc_tab(idx) = proc_rank
+
+            cpt_pt_nproc(ipt) = cpt_pt_nproc(ipt) + 1
+
+          end do ! iproc = 1, nproc_holder
+
+        end do ! ipt = 1, npt_glob
+
+        call dealloc_(cpt_pt_nproc, proc_name // "/cpt_pt_nproc")
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : pt_proc_tab = ', sg_continuum_points_glob_zone%pt_proc_tab; call flush(6)
+        endif
+
+        !------------------------------------------------------------------------------------
+        ! Proc to point data: fulfill proc_npt_tab from cpt_proc_npt and allocate proc_pt_tab
+        !------------------------------------------------------------------------------------
+
+        call alloc_(sg_continuum_points_glob_zone%proc_npt_tab, -1, this%nproc_1, &
+        &           proc_name // "/proc_npt_tab") ! Cf. (*) about -1
+
+        sg_continuum_points_glob_zone%proc_npt_tab(-1) = 1  ! Cf. (*) about -1
+        do iproc = -1, this%nproc_1-1                       ! Cf. (*) about -1
+
+          ! starting index for iproc+1 is equal to 
+          ! the starting index of iproc + the number of points asigned to iproc
+          sg_continuum_points_glob_zone%proc_npt_tab(iproc + 1) = sg_continuum_points_glob_zone%proc_npt_tab(iproc) &
+          &                                                     + cpt_proc_npt(iproc)
+
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : proc_npt_tab = ', sg_continuum_points_glob_zone%proc_npt_tab; call flush(6)
+        endif
+
+        size_proc_pt_tab = sum(cpt_proc_npt(:))
+        if (size_proc_pt_tab > 0) then
+          call alloc_(sg_continuum_points_glob_zone%proc_pt_tab, 1, size_proc_pt_tab, &
+          &           proc_name // "/proc_pt_tab")
+        end if
+
+        !------------------------------------------------------------------
+        ! Second loop on the points :
+        ! Proc to point data: fulfill proc_pt_tab array
+        !------------------------------------------------------------------
+        ! Fulfill the partition table (kept by the master processor) 
+        ! to be used later by scatter and gather operations
+        ! (proc_pt_tab is fulfilled with the point indices 
+        ! sorted by the assigned processor)
+        !------------------------------------------------------------------
+        cpt_proc_npt(:) = 0
+        do ipt = 1, npt_glob
+
+          i1   = sg_continuum_points_glob_zone%pt_nproc_tab(ipt)
+          iEnd = sg_continuum_points_glob_zone%pt_nproc_tab(ipt+1) - 1
+
+          do i = i1, iEnd
+
+            proc_rank = sg_continuum_points_glob_zone%pt_proc_tab(i)
+
+            idx = sg_continuum_points_glob_zone%proc_npt_tab(proc_rank) + cpt_proc_npt(proc_rank)
+
+            sg_continuum_points_glob_zone%proc_pt_tab(idx) = ipt
+
+            cpt_proc_npt(proc_rank) = cpt_proc_npt(proc_rank) + 1
+
+          end do
+
+        end do
+
+        if (dd_debug_level > 5) then
+          write(*,*) proc_name, ' : proc_pt_tab = ', sg_continuum_points_glob_zone%proc_pt_tab; call flush(6)
+          call flush(6)
+        endif
+
+      end if ! (this%myid_1 == 0)
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Send the number of points belonging to each subdomain
+      !--------------------------------------------------------------------
+
+      ! Send the number of points belonging to each subdomain
+      call mpi_scatter(cpt_proc_npt(0:this%nproc_1-1), 1, MPI_INTEGER, npt_loc, 1, MPI_INTEGER, 0, this%mpi_comm_1, mpierr)
+
+      if (dd_debug_level > 5) then
+        write(*,*) myid_1, ' : ', proc_name, ' : npt_loc = ', npt_loc; call flush(6)
+        call flush(6)
+      endif
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute and send mapping_loc array to each processor
+      !--------------------------------------------------------------------
+
+      if (this%myid_1 == 0) then
+
+        !------------------------------------------------------------------
+        ! 2nd loop on the processors
+        ! to compute mapping_loc table to be send to the assigned processors
+        ! Backward processing so that last computes mapping_loc array can be 
+        ! kept for master processor without any copy
+        !------------------------------------------------------------------
+        do iproc = this%nproc_1-1, 0, -1
+
+          if (cpt_proc_npt(iproc) > 0) then
+
+            call alloc_(coor, 1, 3, 1, cpt_proc_npt(iproc), proc_name // "/coor")
+
+            !------------------------------------------------------------------
+            ! Loop on the points assigned to a processor :
+            ! Fulfill the subdomain mapping table (send to the concerned processor)
+            ! and fulfill partition table (kept by the master processor) 
+            ! to be used later by scatter and gather operations
+            !------------------------------------------------------------------
+            i1   = sg_continuum_points_glob_zone%proc_npt_tab(iproc)
+            iEnd = sg_continuum_points_glob_zone%proc_npt_tab(iproc+1) - 1
+            cpt  = 1
+            do i = i1, iEnd
+              ipt = sg_continuum_points_glob_zone%proc_pt_tab(i)
+
+              ! retrieve node global coordinates
+              pt_glob_coor = sg_continuum_points_glob_zone%coor(:, ipt)
+
+              ! store global coordinates in the grid of the point
+              coor(:, cpt) = pt_glob_coor(:)
+
+              cpt = cpt + 1
+            end do ! i = i1, iEnd
+
+            if (iproc /= 0) then
+
+              nsnd = size(coor)
+              call mpi_send(coor, nsnd, MPI_REAL, iproc, tag1, this%mpi_comm_1, mpierr)
+
+              call dealloc_(coor, proc_name // "/coor")
+
+              nsnd = iEnd - i1 + 1
+              call mpi_send(sg_continuum_points_glob_zone%proc_pt_tab(i1:iEnd), nsnd, MPI_INTEGER, &
+              &             iproc, tag2, this%mpi_comm_1, mpierr)
+
+              call mpi_send(irad, 1, MPI_INTEGER, iproc, tag3, this%mpi_comm_1, mpierr)
+
+            end if
+
+          end if ! (cpt_proc_npt(iproc) > 0)
+
+        end do ! iproc
+
+      end if ! (this%myid_1 == 0)
+
+      call dealloc_(cpt_proc_npt, proc_name // "/cpt_proc_npt")
+
+      if (npt_loc > 0) then
+
+        call alloc_(pts_loc, 1, npt_loc, proc_name // "/pts_loc")
+
+        !-----------------------------------------------------
+        ! All processors except master : 
+        ! Receive mapping_loc array 
+        !-----------------------------------------------------
+        if (this%myid_1 /= 0) then
+
+          call alloc_(coor, 1, 3, 1, npt_loc, proc_name // "/coor")
+
+          nsnd = size(coor)
+          call mpi_recv(coor, nsnd, MPI_REAL, 0, tag1, this%mpi_comm_1, mpistat, mpierr)
+
+          nsnd = size(pts_loc)
+          call mpi_recv(pts_loc, nsnd, MPI_INTEGER, 0, tag2, this%mpi_comm_1, mpistat, mpierr)
+
+          call mpi_recv(irad, 1, MPI_INTEGER, 0, tag3, this%mpi_comm_1, mpistat, mpierr)
+
+        else
+
+          pts_loc(1:npt_loc) = sg_continuum_points_glob_zone%proc_pt_tab(1:npt_loc)
+
+        end if ! (this%myid_1 == 0)
+
+        if (dd_debug_level > 5) then
+          write(*,*) myid_1, ' : ', proc_name, ' : npt_loc = ', npt_loc, ' irad = ', irad
+          write(*,*) myid_1, ' : ', proc_name, ' : pts_loc = ', pts_loc
+          write(*,*) myid_1, ' : ', proc_name, ' : coor    = ', coor;   call flush(6)
+        endif
+
+        ! Build the local zone object
+        call sg_continuum_points_loc_zone%sg_continuum_points_loc_zone_constructor(grid, npt_loc, pts_loc, coor, irad)
+
+        call dealloc_(pts_loc, proc_name // "/pts_loc")
+
+      else
+
+        ! create an empty loc_zone object
+        call sg_continuum_points_loc_zone%sg_continuum_points_loc_zone_constructor_empty(grid, irad)
+
+      end if ! (npt_loc > 0)
+
+      call dealloc_(coor,    proc_name // "/coor")
+
+    end subroutine sg_comm_partition_sg_continuum_points_global_zone
+
+
+    subroutine sg_comm_scatter_points_global_zone_integer_data(this, glob_zone, data_glob, loc_zone, data_loc)
+      class(sg_comm_type),                    intent(in out) :: this
+      class(points_glob_zone_type),           intent(in)     :: glob_zone
+      integer, dimension(:), allocatable,     intent(in)     :: data_glob
+      class(points_loc_zone_type),            intent(in)     :: loc_zone
+      integer, dimension(:), allocatable,     intent(in out) :: data_loc
+
+      integer, dimension(:), allocatable                     :: data_snd
+      integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+      integer                                                :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+      character(len=*),                       parameter      :: proc_name = 'sg_comm_scatter_points_global_zone_integer_data'
+      integer,                                parameter      :: tag = 100
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute the data to send to each processor
+      !--------------------------------------------------------------------
+      if (this%myid_1 == 0) then
+
+        ! Backward processing so that last computed data_snd array can be 
+        ! kept for master processor
+        do iproc = this%nproc_1-1, 0, -1
+
+          i1   = glob_zone%proc_npt_tab(iproc)
+          iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+          nsnd = iEnd - i1 + 1
+
+          if (nsnd > 0) then
+
+            call alloc_(data_snd, 1, nsnd, "data_snd")
+
+            do loc_ipt = 1, nsnd
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+              data_snd(loc_ipt) = data_glob(glob_ipt)
+
+            end do ! ipt
+
+            if (iproc /= 0) then
+
+              call mpi_send(data_snd, nsnd, MPI_INTEGER, iproc, tag, this%mpi_comm_1, mpierr)
+
+              call dealloc_(data_snd, "data_snd")
+
+            end if
+
+            if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+          end if ! (nsnd > 0)
+
+        end do ! iproc
+
+      end if ! (this%myid_1 == 0)
+
+      npt_loc = loc_zone%npt_loc
+
+      if (npt_loc > 0) then
+
+        if (.not. allocated(data_loc)) then
+          call alloc_(data_loc, 1, npt_loc, "data_loc")
+        else
+          if (size(data_loc) /= npt_loc) then
+            call dealloc_(data_loc, "data_loc")
+            call alloc_(data_loc, 1, npt_loc, "data_loc")
+          end if
+        end if
+
+        !-----------------------------------------------------
+        ! All processors except master : 
+        ! Receive data_loc array 
+        !-----------------------------------------------------
+        if (this%myid_1 /= 0) then
+
+          call mpi_recv(data_loc, npt_loc, MPI_INTEGER, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+        else
+
+          data_loc(1:npt_loc) = data_snd(1:npt_loc)
+          call dealloc_(data_snd, "data_snd")
+
+        end if ! (this%myid_1 == 0)
+
+        if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' receive ', npt_loc
+
+      end if ! (npt_loc > 0)
+
+    end subroutine sg_comm_scatter_points_global_zone_integer_data
+
+
+    subroutine sg_comm_scatter_points_global_zone_real_data(this, glob_zone, data_glob, loc_zone, data_loc)
+      class(sg_comm_type),                    intent(in out) :: this
+      class(points_glob_zone_type),           intent(in)     :: glob_zone
+      real, dimension(:), allocatable,        intent(in)     :: data_glob
+      class(points_loc_zone_type),            intent(in)     :: loc_zone
+      real, dimension(:), allocatable,        intent(in out) :: data_loc
+
+      real, dimension(:), allocatable                        :: data_snd
+      integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+      integer                                                :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+      character(len=*),                       parameter      :: proc_name = 'sg_comm_scatter_points_global_zone_real_data'
+      integer,                                parameter      :: tag = 100
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute the data to send to each processor
+      !--------------------------------------------------------------------
+      if (this%myid_1 == 0) then
+
+        ! Backward processing so that last computed data_snd array can be 
+        ! kept for master processor
+        do iproc = this%nproc_1-1, 0, -1
+
+          i1   = glob_zone%proc_npt_tab(iproc)
+          iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+          nsnd = iEnd - i1 + 1
+
+          if (nsnd > 0) then
+
+            call alloc_(data_snd, 1, nsnd, "data_snd")
+
+            do loc_ipt = 1, nsnd
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+              data_snd(loc_ipt) = data_glob(glob_ipt)
+
+            end do ! ipt
+
+            if (iproc /= 0) then
+
+              call mpi_send(data_snd, nsnd, MPI_REAL, iproc, tag, this%mpi_comm_1, mpierr)
+
+              call dealloc_(data_snd, "data_snd")
+
+            end if
+
+            if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+          end if ! (nsnd > 0)
+
+        end do ! iproc
+
+      end if ! (this%myid_1 == 0)
+
+      npt_loc = loc_zone%npt_loc
+
+      if (npt_loc > 0) then
+
+        if (.not. allocated(data_loc)) then
+          call alloc_(data_loc, 1, npt_loc, "data_loc")
+        else
+          if (size(data_loc) /= npt_loc) then
+            call dealloc_(data_loc, "data_loc")
+            call alloc_(data_loc, 1, npt_loc, "data_loc")
+          end if
+        end if
+
+        !-----------------------------------------------------
+        ! All processors except master : 
+        ! Receive data_loc array 
+        !-----------------------------------------------------
+        if (this%myid_1 /= 0) then
+
+          call mpi_recv(data_loc, npt_loc, MPI_REAL, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+        else
+
+          data_loc(1:npt_loc) = data_snd(1:npt_loc)
+          call dealloc_(data_snd, "data_snd")
+
+        end if ! (this%myid_1 == 0)
+
+        if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' receive ', npt_loc
+
+      end if ! (npt_loc > 0)
+
+    end subroutine sg_comm_scatter_points_global_zone_real_data
+
+
+    subroutine sg_comm_scatter_points_global_zone_buf_real_data(this, ntbuf, glob_zone, data_glob, loc_zone, data_loc)
+      class(sg_comm_type),                    intent(in out) :: this
+      integer,                                intent(in)     :: ntbuf
+      class(points_glob_zone_type),           intent(in)     :: glob_zone
+      real, dimension(:,:), allocatable,      intent(in)     :: data_glob
+      class(points_loc_zone_type),            intent(in)     :: loc_zone
+      real, dimension(:,:), allocatable,      intent(in out) :: data_loc
+
+      real, dimension(:,:), allocatable                      :: data_snd
+      integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+      integer                                                :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+      character(len=*),                       parameter      :: proc_name = 'sg_comm_scatter_points_global_zone_buf_real_data'
+      integer,                                parameter      :: tag = 100
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      if (ntbuf < 1) return
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Compute the data to send to each processor
+      !--------------------------------------------------------------------
+      if (this%myid_1 == 0) then
+
+        do iproc = this%nproc_1-1, 0, -1
+
+          i1   = glob_zone%proc_npt_tab(iproc)
+          iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+          nsnd = iEnd - i1 + 1
+
+          if (nsnd > 0) then
+
+            call alloc_(data_snd, 1, ntbuf, 1, nsnd, "data_snd")
+
+            do loc_ipt = 1, nsnd
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+              data_snd(:,loc_ipt) = data_glob(:,glob_ipt)
+            end do ! ipt
+
+            if (iproc /= 0) then
+
+              call mpi_send(data_snd, nsnd*ntbuf, MPI_REAL, iproc, tag, this%mpi_comm_1, mpierr)
+
+              call dealloc_(data_snd, "data_snd")
+
+            end if
+
+            if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+          end if ! (nsnd > 0)
+
+        end do ! iproc
+
+      end if ! (this%myid_1 == 0)
+
+      npt_loc = loc_zone%npt_loc
+
+      if (npt_loc > 0) then
+
+        if (.not. allocated(data_loc)) then
+          call alloc_(data_loc, 1, ntbuf, 1, npt_loc, "data_loc")
+        else
+          if (size(data_loc, dim=1) /= ntbuf .or. size(data_loc, dim=2) /= npt_loc) then
+            call dealloc_(data_loc, "data_loc")
+            call alloc_(data_loc, 1, ntbuf, 1, npt_loc, "data_loc")
+          end if
+        end if
+
+        !-----------------------------------------------------
+        ! All processors except master : 
+        ! Receive data_loc array 
+        !-----------------------------------------------------
+        if (this%myid_1 /= 0) then
+
+            call mpi_recv(data_loc, npt_loc*ntbuf, MPI_REAL, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+        else
+
+          data_loc(:,1:npt_loc) = data_snd(:,1:npt_loc)
+          call dealloc_(data_snd, "data_snd")
+
+        end if ! (this%myid_1 == 0)
+
+        if (dd_debug_level > 0) write(*,*) myid_1, ':', proc_name, ' receive ', npt_loc
+
+      end if ! (npt_loc > 0)
+
+    end subroutine sg_comm_scatter_points_global_zone_buf_real_data
+
+
+    subroutine sg_comm_gather_points_global_zone_real_data(this, glob_zone, data_glob, loc_zone, data_loc)
+      class(sg_comm_type),                    intent(in out) :: this
+      class(points_glob_zone_type),           intent(in)     :: glob_zone
+      real, dimension(:), allocatable,        intent(in out) :: data_glob
+      class(points_loc_zone_type),            intent(in)     :: loc_zone
+      real, dimension(:), allocatable,        intent(in out) :: data_loc
+
+      real, dimension(:), allocatable                        :: data_rcv
+      integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nrcv, npt_loc
+
+      integer                                                :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+      character(len=*),                            parameter :: proc_name = 'sg_comm_gather_points_global_zone_real_data'
+      integer,                                     parameter :: tag = 100
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      npt_loc = loc_zone%npt_loc
+
+      !-----------------------------------------------------
+      ! All processors except master : 
+      ! Send data_loc array 
+      !-----------------------------------------------------
+      if (this%myid_1 /= 0 .and. npt_loc > 0) then
+
+        call mpi_send(data_loc, npt_loc, MPI_REAL, 0, tag, this%mpi_comm_1, mpierr)
+
+      end if ! (myid_1 /= 0)
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Receive data_loc array associated to each sub zone
+      ! and sort values following the point ranks in the global zone
+      !--------------------------------------------------------------------
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(data_glob)) then
+          write(*,*) proc_name, " :: ERROR : global zone data array is not allocated"; call flush(6)
+          stop
+        end if
+
+        do iproc = 0, this%nproc_1-1
+          i1   = glob_zone%proc_npt_tab(iproc)
+          iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+          nrcv = iEnd - i1 + 1
+
+          if (nrcv > 0) then
+
+            call alloc_(data_rcv, 1, nrcv, "data_rcv")
+
+            if (iproc /= 0) then
+    
+              call mpi_recv(data_rcv, nrcv, MPI_REAL, iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+
+            else
+
+              data_rcv(:) = data_loc(:)
+
+            end if ! (iproc /= 0)
+
+            do loc_ipt = 1, nrcv
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+              data_glob(glob_ipt) = data_rcv(loc_ipt)
+            end do ! ipt
+
+            call dealloc_(data_rcv, "data_rcv")
+
+          end if ! (nrcv > 0)
+
+        end do ! iproc
+
+      end if ! myid_1 == 0
+
+    end subroutine sg_comm_gather_points_global_zone_real_data
+
+
+    subroutine sg_comm_gather_points_global_zone_buf_real_data(this, ntbuf, glob_zone, data_glob, loc_zone, data_loc)
+      class(sg_comm_type),                      intent(in out) :: this
+      integer,                                  intent(in)     :: ntbuf
+      class(points_glob_zone_type),             intent(in)     :: glob_zone
+      real, dimension(:,:), allocatable,        intent(in out) :: data_glob
+      class(points_loc_zone_type),              intent(in)     :: loc_zone
+      real, dimension(:,:), allocatable,        intent(in out) :: data_loc
+
+      real, dimension(:,:), allocatable                        :: data_rcv
+      integer                                                  :: i1, iEnd, loc_ipt, glob_ipt, iproc, nrcv, npt_loc
+
+      integer                                                  :: mpierr
+      integer, dimension(MPI_STATUS_SIZE)                      :: mpistat = 0
+      character(len=*),                              parameter :: proc_name = 'sg_comm_gather_points_global_zone_buf_real_data'
+      integer,                                       parameter :: tag = 100
+      integer                                                  :: replace
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      if (ntbuf < 1) return
+
+      npt_loc = loc_zone%npt_loc
+
+      !-----------------------------------------------------
+      ! All processors except master : 
+      ! Send data_loc array 
+      !-----------------------------------------------------
+      if (this%myid_1 /= 0 .and. npt_loc > 0) then
+
+        call mpi_send(data_loc, npt_loc*ntbuf, MPI_REAL, 0, tag, this%mpi_comm_1, mpierr)
+
+      end if ! (myid_1 /= 0)
+
+      !--------------------------------------------------------------------
+      ! Master processor only : 
+      ! Receive data_loc array associated to each sub zone
+      ! and sort values following the point ranks in the global zone
+      !--------------------------------------------------------------------
+      if (this%myid_1 == 0) then
+
+        ! Define the need to sum data or to replace them
+        replace = 1 ! replace data by default
+        select type(glob_zone)
+        type is (sg_continuum_points_glob_zone_type)
+          ! sum values only in case of continuum points with irad parameter > 0
+          if (glob_zone%irad > 0) replace = 0
+        end select 
+
+        if (.not.allocated(data_glob)) then
+          write(*,*) proc_name, " :: ERROR : global zone data array is not allocated"; call flush(6)
+          stop
+        end if
+
+        do iproc = 0, this%nproc_1-1
+          i1   = glob_zone%proc_npt_tab(iproc)
+          iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+          nrcv = iEnd - i1 + 1
+
+          if (nrcv > 0) then
+
+            call alloc_(data_rcv, 1, ntbuf, 1, nrcv, "data_rcv")
+
+            if (iproc /= 0) then
+    
+              call mpi_recv(data_rcv, nrcv*ntbuf, MPI_REAL, iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+
+            else
+
+              data_rcv(:,:) = data_loc(:,:)
+
+            end if ! (iproc /= 0)
+
+            if (replace == 1) then
+
+              do loc_ipt = 1, nrcv
+                glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+                data_glob(:,glob_ipt) = data_rcv(:,loc_ipt)
+              end do ! ipt
+
+            else
+
+              do loc_ipt = 1, nrcv
+                glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+                data_glob(:,glob_ipt) = data_glob(:,glob_ipt) + data_rcv(:,loc_ipt)
+              end do ! ipt
+
+            end if
+
+            call dealloc_(data_rcv, "data_rcv")
+
+          end if ! (nrcv > 0)
+
+        end do ! iproc
+
+      end if ! myid_1 == 0
+
+    end subroutine sg_comm_gather_points_global_zone_buf_real_data
+
+
+    subroutine sg_comm_free_mem(this)
+      class(sg_comm_type), intent(in out) :: this
+      integer                             :: mpierr, idir, i1, i2, i3
+      character(len=*),       parameter   :: proc_name = 'sg_comm_free_mem'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name; call flush(6)
+      endif
+
+      !if (this%ntasks == 1) return
+
+      call mpi_barrier(this%mpi_comm_1, mpierr)
+      if (mpierr < 0) then
+        print *, proc_name, ' :: ERROR : mpi_barrier: ', mpierr
+        stop
+      end if
+
+      ! Free all derived MPI types
+      do idir = 1, 3
+        call mpi_type_free(this%mpi_type_ovlpdom_to_ovlpface(idir), mpierr)
+        call mpi_type_free(this%mpi_type_ovlpdom_to_ovlpedge(idir), mpierr)
+      end do
+      call mpi_type_free(this%mpi_type_ovlpdom_to_ovlpcorner, mpierr)
+
+      call mpi_type_free(this%mpi_type_ovlplocdom_to_locdom, mpierr)
+      do i1 = 0,1
+        do i2 = 0,1
+          do i3 = 0,1
+            call mpi_type_free(this%mpi_type_globdom_to_subdom(i1,i2,i3), mpierr)
+          end do
+        end do
+      end do
+
+      call dealloc_(this%iglob_bounds_dom, proc_name // "/iglob_bounds_dom")
+
+      ! simulate up-casting towards parent comm_engine class to delete communicators and close MPI
+      call comm_engine_free_mem(this)
+
+    end subroutine sg_comm_free_mem
+
+end module sg_comm_mod

@@ -1,0 +1,65 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+subroutine dft_interp(v2b,var,var0,i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it)
+  !interpolate the boundary elements by Kaiser window sinc interpolant
+  implicit none
+
+  logical::v2b !v to bourndary or reverse
+  integer::i1min !minimum index of boundary elements for 1-axis 
+  integer::i1max !maximum index of boundary elements for 1-axis 
+  integer::i2min !minimum index of boundary elements for 2-axis 
+  integer::i2max !maximum index of boundary elements for 2-axis 
+  integer::i3min !minimum index of boundary elements for 3-axis 
+  integer::i3max !maximum index of boundary elements for 3-axis 
+  integer::nt !number of time steps
+  integer::mt,it
+  complex::var(mt/2+1,i1min:i1max,i2min:i2max,i3min:i3max)
+  real::var0(i1min:i1max,i2min:i2max,i3min:i3max)
+  real,parameter::PI=3.14159265359
+
+  integer::r,i1,i2,i3,ik
+  complex::factor(mt/2+1)
+  r=nt/mt
+
+  if(v2b) then !v to bourndary
+     !"it" originates from 1 rather than 0
+     !assume it originates from 1, n=it-1 starts from 0
+     if(mod(it-1,r)==r-1) then !only every r-step, store fourier coefficients
+        do ik=1,mt/2+1
+           !complex exponential factor
+           factor(ik)=exp(cmplx(0,-2.*pi*(ik-1)*(it-1)/nt))
+        enddo
+        do i3=i3min,i3max
+           do i2=i2min,i2max
+              do i1=i1min,i1max
+                 var(:,i1,i2,i3)=var(:,i1,i2,i3)+var0(i1,i2,i3)*factor
+              enddo
+           enddo
+        enddo
+     endif
+  else !boundary to v, this part is done at every backward step
+     do ik=1,mt/2+1
+        factor(ik)=exp(cmplx(0,2.*pi*(ik-1)*(it-1)/nt))/mt
+     enddo
+     factor(1)=0.5*factor(1)
+     !handle the case mt is an even number
+     if(mod(mt,2)==0) factor(mt/2+1)=0.5*factor(mt/2+1)
+     do i3=i3min,i3max
+        do i2=i2min,i2max
+           do i1=i1min,i1max
+              var0(i1,i2,i3)=2.*real(sum(var(:,i1,i2,i3)*factor))
+           enddo
+        enddo
+     enddo
+  endif
+end subroutine dft_interp

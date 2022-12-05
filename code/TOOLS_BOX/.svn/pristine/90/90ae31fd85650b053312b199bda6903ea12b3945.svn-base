@@ -1,0 +1,283 @@
+! ****************************************************
+! Multiple constraints problem for the model based on the Dykstra algorithm 
+! Maily use for Vp and Vs at this moment 
+
+subroutine multiple_model_constraints(n,optim,x)
+
+  implicit none
+  
+  include 'optim_type.h'
+
+  !IN
+  integer :: n
+  type(optim_type) :: optim
+  
+  !IN/OUT
+  real,dimension(n) :: x
+  
+  !Local variables
+  real,dimension(:),ALLOCATABLE  :: y0_Vp,x0_Vp,p0_Vp,q0_Vp,y0_Vs,x0_Vs,p0_Vs,q0_Vs
+  INTEGER :: ndof 
+  INTEGER :: iparam
+  
+  real,dimension(:),ALLOCATABLE :: minbound,maxbound
+  
+  INTEGER :: hardbounds_finish ! For the communication in the hardbounds constraint 
+  LOGICAL :: poisson_finish ! For the communication in poisson constraint
+  
+  ! Testing 
+  INTEGER :: itest
+  
+  ! Initialize the flag for the communication 
+  optim%Dykstra_finish=.false.
+  
+  ndof = n/optim%nb_parameters_total; 
+  IF ((ndof*optim%nb_parameters_total) /= n) THEN 
+     WRITE(*,*) "---ERROR: OPTIM toolbox - Nb of parameters is not a divisor of the input vector",ndof,n
+  ENDIF 
+  
+  ALLOCATE(x0_Vp(ndof),y0_Vp(ndof),p0_Vp(ndof),q0_Vp(ndof))
+  ALLOCATE(x0_Vs(ndof),y0_Vs(ndof),p0_Vs(ndof),q0_Vs(ndof))
+  ALLOCATE(minbound(ndof),maxbound(ndof))
+  
+  ! Extract the parameters from the global vector x 
+  iparam=1; x0_Vp(:)=x(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof)) !Vp first  
+  iparam=2; x0_Vs(:)=x(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof)) !Vs after  
+  
+  ! Initialize parameters for the Dystra algorithm 
+  y0_Vp=0; p0_Vp=0.; q0_Vp=0.; y0_Vs=0; p0_Vs=0.; q0_Vs=0.; 
+  
+  itest=0; WRITE(*,*) itest, 'MIN(Vp-Vs)',MINVAL(x0_Vp-x0_Vs),'MIN(Vp/Vs),MAX(Vp/Vs)',MINVAL(x0_Vp/x0_Vs),MAXVAL(x0_Vp/x0_Vs)
+  
+  DO WHILE ((optim%Dykstra_finish==.false.) .AND. (itest<20)) 
+  
+     itest=itest+1; WRITE(*,*) "---INFO: Dykstra optimization step ",itest
+  
+     !*** Projection on the hard-bound constraint 
+     
+     
+     hardbounds_finish=0 ! Initialize the value
+     
+     !WRITE(*,*) itest, 'before C1',MINVAL(x0_Vs), MAXVAL(x0_Vs),MINVAL(x0_Vp), MAXVAL(x0_Vp),hardbounds_finish,poisson_finish,optim%Dykstra_finish
+     
+     iparam=1; 
+     maxbound(:)=optim%ub(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))-optim%threshold
+     minbound(:)=optim%lb(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))+optim%threshold
+     
+     CALL hard_bounds_constraint(x0_Vp,p0_Vp,y0_Vp,minbound,maxbound,ndof,hardbounds_finish)
+       
+     iparam=2;  
+     maxbound(:)=optim%ub(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))-optim%threshold
+     minbound(:)=optim%lb(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))+optim%threshold
+     
+     CALL hard_bounds_constraint(x0_Vs,p0_Vs,y0_Vs,minbound,maxbound,ndof,hardbounds_finish)
+     
+     ! IF 4 constraints are satifsfied, hardbounds_finish=4
+     !WRITE(*,*) itest, 'after C1',MINVAL(y0_Vs), MAXVAL(y0_Vs),MINVAL(y0_Vp), MAXVAL(y0_Vp),hardbounds_finish,poisson_finish,optim%Dykstra_finish
+     
+     !*** Projection on the Poisson ratio condition 
+
+     CALL poisson_ratio_constraint(y0_Vp,y0_Vs,q0_Vp,q0_Vs,x0_Vp,x0_Vs,ndof,optim%lower_ratio,optim%upper_ratio,poisson_finish)
+     
+     !WRITE(*,*) itest, 'after C2',MINVAL(x0_Vs), MAXVAL(x0_Vs),MINVAL(x0_Vp), MAXVAL(x0_Vp),hardbounds_finish,poisson_finish,optim%Dykstra_finish
+     
+     IF ((poisson_finish == .true.) .AND. (hardbounds_finish==4)) optim%Dykstra_finish=.true.
+     
+     WRITE(*,*) itest, 'MIN(Vp-Vs)',MINVAL(x0_Vp-x0_Vs),'MIN(Vp/Vs),MAX(Vp/Vs)',MINVAL(x0_Vp/x0_Vs),MAXVAL(x0_Vp/x0_Vs), hardbounds_finish,poisson_finish,optim%Dykstra_finish
+  
+  ENDDO 
+  
+  !WRITE(*,*) itest, 'MIN(Vp-Vs)',MINVAL(x0_Vp-x0_Vs),'MIN(Vp/Vs),MAX(Vp/Vs) ending',MINVAL(x0_Vp/x0_Vs),MAXVAL(x0_Vp/x0_Vs)
+  
+  IF(itest>15) THEN 
+     WRITE(*,*) "---INFO: Dykstra optimization fails - check the Dykstra_Vp and Dykstra_Vs for more info"
+     
+     OPEN(41,file='Dykstra_Vp',access='direct',recl=4*ndof)
+     WRITE(41,rec=1) x0_Vp
+     CLOSE(41)
+
+     OPEN(42,file='Dykstra_Vs',access='direct',recl=4*ndof)
+     WRITE(42,rec=1) x0_Vs
+     CLOSE(42)
+  ENDIF 
+  
+  ! Put values back to the vector x 
+  iparam=1; x(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))=x0_Vp(:) !Vp first  
+  iparam=2; x(((optim%index_parameters(iparam)-1)*ndof+1):(optim%index_parameters(iparam)*ndof))=x0_Vs(:) !Vs after  
+  
+  DEALLOCATE(y0_Vp,x0_Vp,p0_Vp,q0_Vp,y0_Vs,x0_Vs,p0_Vs,q0_Vs,minbound,maxbound)
+  
+end subroutine multiple_model_constraints
+
+!---------------------------------------------------------
+! Note that both bounds need to be applied before the update of p0
+subroutine hard_bounds_constraint(x0,p0,y0,minbound,maxbound,n1,hardbounds_finish)
+  implicit none 
+  
+  ! IN 
+  INTEGER :: n1
+  REAL,DIMENSION(n1) :: x0,p0,y0,minbound,maxbound
+  INTEGER :: hardbounds_finish,satisfy 
+  REAL :: error ! To avoid round off error
+  
+  ! TMP
+  REAL,DIMENSION(n1) :: diff_table_U,diff_table_L 
+  
+  error=-1.e-4*MINVAL(minbound); ! Negative value
+  satisfy=0; 
+  
+  !*** Upper bound check 
+  diff_table_U=x0-maxbound !Check on x0
+  
+  IF(MAXVAL(diff_table_U)<0.) THEN 
+     satisfy=satisfy+1; ! update the communication parameters
+     y0=x0;
+  ELSE 
+     y0=x0+p0; 
+     diff_table_U=y0-maxbound; 
+     WHERE(diff_table_U > error) !Remember that error <0
+       y0(:)=maxbound(:)+error;
+     END WHERE 
+  ENDIF 
+  
+  !*** Lower bound check
+  diff_table_L=minbound-y0; ! Check on the output 
+  
+  IF(MAXVAL(diff_table_L)<0.) THEN 
+     satisfy=satisfy+1; ! update the communication parameters
+     ! y0 is already updated by x0
+  ELSE 
+     WHERE(diff_table_L > error) !Remember that error <0
+        y0(:)=minbound(:)-error;
+     END WHERE
+  ENDIF   
+  
+  hardbounds_finish=hardbounds_finish+satisfy; 
+  
+!  IF(satisfy<2) THEN 
+!     !*** Update pk distance only at the modified position 
+!     p0(:) = x0(:) + p0(:) - y0(:)
+!  ENDIF    
+  
+  IF(satisfy<2) THEN 
+     WHERE(diff_table_U > error .OR. diff_table_L > error)
+        !*** Update pk distance only at the modified position 
+        p0(:) = x0(:) + p0(:) - y0(:)
+     END WHERE
+  ENDIF 
+
+end subroutine hard_bounds_constraint
+
+!----------------------------------------------------------
+subroutine poisson_ratio_constraint(y0_Vp,y0_Vs,q0_Vp,q0_Vs,x0_Vp,x0_Vs,n1,lower_ratio,upper_ratio, poisson_finish)
+  implicit none 
+  
+  ! IN/OUT 
+  REAL,DIMENSION(n1) :: y0_Vp,y0_Vs,q0_Vp,q0_Vs,x0_Vp,x0_Vs
+  INTEGER :: n1 
+  REAL :: ratio,lower_ratio,upper_ratio !Vp/Vs should > sqrt(2)
+  LOGICAL :: poisson_finish
+  
+  ! TMP
+  REAL,DIMENSION(n1) :: ratio_table
+  INTEGER :: satisfy 
+  
+  poisson_finish=.false.
+  
+  ratio_table(:)=y0_Vp(:)/y0_Vs(:)
+  
+  !WRITE(*,*) y0_Vp(1), y0_Vs(1), ratio
+  
+  !WRITE(*,*) "MINVAL ",MINVAL(ratio_table)
+  
+  IF((MINVAL(ratio_table) .GE. lower_ratio) .AND. ((MAXVAL(ratio_table) .LE. upper_ratio)))THEN
+     ! If no  modification is needed
+     poisson_finish=.true. 
+     x0_Vp=y0_Vp; x0_Vs=y0_Vs; 
+     
+  ELSE 
+     ! If some p
+     x0_Vp=y0_Vp+q0_Vp; 
+     x0_Vs=y0_Vs+q0_Vs; 
+     
+     ratio_table(:)=x0_Vp(:)/x0_Vs(:)
+     
+     ! Check lower ratio
+     WHERE(ratio_table(:) < lower_ratio)
+        ! Misfit (x-Vp)^2+(y-Vs)^2
+        !x0_Vs(:)=(x0_Vs(:)+lower_ratio*x0_Vp(:))/(lower_ratio**2+1.)
+        
+        ! Misfit (x-Vp)^2/Vp^2+(y-Vs)^2/Vs^2
+        x0_Vs(:)=(lower_ratio*x0_Vs(:)+x0_Vp(:))*x0_Vs(:)*x0_Vp(:)/((lower_ratio*x0_Vs(:))**2+x0_Vp(:)**2)
+        
+        x0_Vp(:)=1.02*lower_ratio*x0_Vs(:) ! Scale a bit to avoid the numerical precision
+     END WHERE 
+     
+     WHERE(ratio_table(:) > upper_ratio)
+        ! Misfit (x-Vp)^2+(y-Vs)^2
+        !x0_Vs(:)=(x0_Vs(:)+upper_ratio*x0_Vp(:))/(upper_ratio**2+1.)
+        
+        ! Misfit (x-Vp)^2/Vp^2+(y-Vs)^2/Vs^2
+        x0_Vs(:)=(upper_ratio*x0_Vs(:)+x0_Vp(:))*x0_Vs(:)*x0_Vp(:)/((upper_ratio*x0_Vs(:))**2+x0_Vp(:)**2)
+        
+        x0_Vp(:)=0.98*upper_ratio*x0_Vs(:) ! Scale a bit to avoid the numerical precision
+     END WHERE 
+     
+     WHERE((ratio_table(:) < lower_ratio) .OR. (ratio_table(:) > upper_ratio))
+        !*** Update qk distance only at the place where we have the update
+        q0_Vp(:)=y0_Vp(:) + q0_Vp(:) - x0_Vp(:)
+        q0_Vs(:)=y0_Vs(:) + q0_Vs(:) - x0_Vs(:)
+     END WHERE
+  ENDIF 
+
+end subroutine poisson_ratio_constraint
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

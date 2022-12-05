@@ -1,0 +1,17 @@
+# Before launching the current shell,
+# edit it and adapt the following parameters:
+# - set your compilation options,
+# - set the path to metis library
+# Then create a build directory at the same level than the current script,
+# go inside and type
+# my_build_dir > sh ../cmake_ibm.sh
+
+FC='mpixlf2003_r' \
+cmake \
+-DCMAKE_BUILD_TYPE='Release' \
+-DCMAKE_Fortran_FLAGS='-qsmp=omp' \
+-DCMAKE_Fortran_FLAGS_DEBUG='-g' \
+-DCMAKE_Fortran_FLAGS_RELEASE='-qhot -O3 -qarch=auto -qtune=auto -qsmp=omp' \
+-DMETIS_LIB_DIR='/home/combe/svn/SEISCOPE_CODES/GEOINV3D/trunk/TOOL/partitioning/metis-4.0' \
+-DMETIS_LIB_NAME='metis' \
+..

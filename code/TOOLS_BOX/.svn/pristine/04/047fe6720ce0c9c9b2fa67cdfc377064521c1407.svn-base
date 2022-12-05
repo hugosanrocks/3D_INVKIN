@@ -1,0 +1,98 @@
+module grid_mod
+
+  use dd_common_mod
+
+  implicit none
+
+  !=========================================================
+  type :: grid_type
+
+  ! Data members
+  
+  contains
+    procedure, pass :: grid_constructor
+    procedure, pass :: grid_init
+    procedure, pass :: grid_read_config
+    procedure, pass :: grid_destructor
+    procedure, pass :: grid_set_overlap
+    procedure, pass :: grid_get_overlap
+    procedure, pass :: grid_get_temporal_blocking_size
+    procedure, pass :: grid_set_temporal_blocking_size
+  end type grid_type
+  !=========================================================
+
+  contains
+
+  subroutine grid_constructor(this)
+    class(grid_type), intent(in out) :: this
+    character(len=*), parameter      :: proc_name = 'grid_constructor'
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+  end subroutine grid_constructor
+
+  subroutine grid_destructor(this)
+    class(grid_type), intent(in out) :: this
+    character(len=*), parameter      :: proc_name = 'grid_destructor'
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+  end subroutine grid_destructor
+
+  subroutine grid_read_config(this, config_file)
+    class(grid_type), intent(in out) :: this
+    character(len = *), intent(in) :: config_file
+    character(len=*), parameter      :: proc_name = 'grid_read_config'
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_read_config
+
+  subroutine grid_init(this)
+    class(grid_type), intent(in out) :: this
+    character(len=*), parameter      :: proc_name = 'grid_init'
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_init
+
+  subroutine grid_get_overlap(this, novlp)
+    class(grid_type), intent(in out) :: this
+    integer,          intent(out)    :: novlp
+    character(len=*), parameter      :: proc_name = 'grid_get_overlap'
+    novlp = -1
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_get_overlap
+
+  subroutine grid_set_overlap(this, novlp)
+    class(grid_type), intent(in out) :: this
+    integer,          intent(in)     :: novlp
+    character(len=*), parameter      :: proc_name = 'grid_set_overlap'
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_set_overlap
+
+  subroutine grid_get_temporal_blocking_size(this, ntmpblock)
+    class(grid_type), intent(in out) :: this
+    integer,          intent(out)    :: ntmpblock
+    character(len=*), parameter      :: proc_name = 'grid_get_temporal_blocking_size'
+    ntmpblock = -1
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_get_temporal_blocking_size
+
+  subroutine grid_set_temporal_blocking_size(this, in_ntmpblock)
+    class(grid_type), intent(in out) :: this
+    integer,          intent(in)     :: in_ntmpblock
+    character(len=*), parameter      :: proc_name = 'grid_set_temporal_blocking_size'
+    write(*,*) proc_name, ' :: ERROR : Virtual method invoked'
+    stop
+  end subroutine grid_set_temporal_blocking_size
+
+end module grid_mod
+
+
+

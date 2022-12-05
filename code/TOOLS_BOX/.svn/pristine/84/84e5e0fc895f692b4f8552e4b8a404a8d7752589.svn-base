@@ -1,0 +1,188 @@
+program ug_test_tetra_par
+
+  use dd_common_mod
+  use mesh_readers_mod
+  use mesh_partition_mod
+  !use mesh_writers_mod
+  !use tetra_mesh_graphs_mod
+  !use ref_dof_mod
+  !use mat_csr_mod
+  !use glob_dof_mod
+  !use ifport
+
+  implicit none
+
+
+  character(len = 100)                             :: iFileName!, oFileName
+  character(len = 1024)                            :: exec
+  integer                                          :: nV, nE, nF, nEdeg, nFdeg, nFtag, nEtag, ndof, nvar, nterm, nEdof
+  real,                dimension(:,:), allocatable :: coorV
+  integer,             dimension(:,:), allocatable :: EtoV, FtoE, EtoF, EtoE, FtoV, FtagtoV
+  integer,             dimension(:),   allocatable :: Ftag, Etag, FtagtoF, FtagNew, EtagtoE, EtagNew, PkE
+!   type(ref_dof_t),     dimension(:),   allocatable :: ref_dof
+!   real(kind=FP),       dimension(:,:), allocatable :: coordof
+!   integer,             dimension(:),   allocatable :: Etodof_adj
+!   real(kind=FP),       dimension(:),   allocatable :: weight_vol,Jacobian_2D
+!   real(kind=FP),       dimension(:),   allocatable :: drdx, drdy, drdz
+!   real(kind=FP),       dimension(:),   allocatable :: dsdx, dsdy, dsdz
+!   real(kind=FP),       dimension(:),   allocatable :: dtdx, dtdy, dtdz
+!   real(kind=FP),       dimension(:,:), allocatable :: normal
+!   type(mat_csr_t)                                  :: mat
+!   real(kind=FP),       dimension(:),   allocatable :: A
+!   integer,             dimension(:),   allocatable :: nPk
+  integer,             dimension(:),   pointer     :: epart
+  integer                                          :: nb_args, Pkmax, Pkmin
+  integer                                          :: graph_type, weight
+  real                                             :: time_end = 0., time_begin = 0., time0 = 0.
+  character(len=3)                                 :: buffer
+  integer(4)                                       :: iargc ! declare function for xlf compiler
+
+  dd_debug_level = 0
+  debug_graph    = 0
+
+  ! read parameters: input filename
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 2) then
+    write(6,*) "ERROR : bad number of arguments :", nb_args
+    write(6,*) "command line : ug_test_tetra_par[_gnu] filename npart"
+    stop
+  end if
+  call getarg(1, iFileName)
+  call getarg(2, buffer)
+  read(buffer,*) npart
+
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "Start ug_test_tetra_par : "
+  write(6,*) "-----------------------------------------"
+  write(*,*) ' filename = ', iFileName
+  write(*,*) ' npart    = ', npart
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+  !print *, selected_int_kind(8), huge(0_4)
+
+  call cpu_time(time0)
+
+  Pkmin = 1
+  Pkmax = 3
+
+  nvar = 1
+  nterm = 1
+
+!   !==============================================================================
+!   call build_tetra_ref_dof(Pkmax, ref_dof)
+!   !==============================================================================
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call read_medit_mesh (iFileName, &
+  &                     nV, coorV, nE, nEdeg, EtoV, Etag, nFtag, nFdeg, FtagtoV, Ftag)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'read_medit_mesh: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+!   graph_type = 0 ! nodal
+!   weight     = 0 ! no weight
+!   call cpu_time(time_begin)
+!   !==============================================================================
+!   call mesh_partition (nEdeg, nV, nE, EtoV, epart, graph_type, weight, npart)
+!   !==============================================================================
+!   call cpu_time(time_end)
+!   write(*,*)
+!   write(*,*) 'mesh_partition: Total time (seconds) = ', REAL(time_end - time_begin)
+!   write(*,*)
+
+!   call cpu_time(time_begin)
+!   !==============================================================================
+!   call build_tetra_face_graph(nV, nE, nEdeg, EtoV, nFtag, FtagtoV, Ftag, &
+!   &                     nF, FtoV, FtoE, FtagtoF, FtagNew               )
+!   !==============================================================================
+!   call cpu_time(time_end)
+!   write(*,*)
+!   write(*,*) 'build_face_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+!   write(*,*)
+
+!   call cpu_time(time_begin)
+!   !==============================================================================
+!   call build_tetra_element_to_face_graph(nE, nEdeg, nF, FtoE, Etag, &
+!   &                                EtoF, EtoE, nEtag, EtagtoE, EtagNew)
+!   !==============================================================================
+!   call cpu_time(time_end)
+!   write(*,*)
+!   write(*,*) 'build_element_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+!   write(*,*)
+
+!   ! Assign order to each element... Hard-coded for test
+!   call alloc_(nPk, 0, Pkmax, 'nPk')
+!   call alloc_(PkE, 1, nE,    'PkE')
+!   do ie = 1, nE
+!     k       = mod(ie, Pkmax-Pkmin) + Pkmin
+!     !k       = int(rand()*Pkmax)
+!     PkE(ie) = k
+!     nPk(k)  = nPk(k) + 1
+!   end do
+! 
+!   if (debug) then
+!     write(*,*)
+!     write(*,*) 'Element order:'
+!     do ie = 1, nE
+!       write(*,'(A,I3,A,I3)') ' ie = ',  ie, ' order = ', PkE(ie)
+!     end do
+!     write(*,*)
+!   end if
+! 
+!   write(*,*)
+!   write(*,*) 'Element order statistics:'
+!   do k = 0, Pkmax
+!     write(*,'(A,I3,A,I12)') ' order = ',  k, ' nb Elements = ', nPk(k)
+!   end do
+!   write(*,*)
+
+!   call cpu_time(time_begin)
+!   !==============================================================================
+!   call build_glob_dof(ref_dof, nV, nF, nFdeg, nE, nEdeg, coorV, EtoV, EtoE, PkE, & 
+!        &                   ndof, coordof, Etodof_adj, weight_vol, drdx, drdy, drdz, &
+!        &                                        dsdx, dsdy, dsdz, dtdx, dtdy, dtdz, &
+!        &                                                        normal, jacobian_2D)
+!   !==============================================================================
+!   call cpu_time(time_end)
+!   write(*,*)
+!   write(*,*) 'build_glob_dof: Total time (seconds) = ', REAL(time_end - time_begin)
+!   write(*,*)
+
+!   call cpu_time(time_begin)
+!   !==============================================================================
+!   call init_dof_CSR_matrix(nvar, nterm, ndof, nF, nFdeg, nE, nEdeg, EtoF, FtoE, EtoE, Etodof_adj, ref_dof, PkE, &
+!   &                        mat)
+!   !==============================================================================
+!   call cpu_time(time_end)
+!   write(*,*)
+!   write(*,*) 'init_dof_CSR_matrix: Total time (seconds) = ', REAL(time_end - time_begin)
+!   write(*,*)
+
+!   oFileName = out.mesh'
+!   !==============================================================================
+!   call write_medit_mesh(oFileName, mesh)
+!   call write_medit_mesh(oFileName, &
+!   & mesh%nV, mesh%coorV, &
+!   & mesh%nE, mesh%nEdeg, mesh%EtoV, mesh%Etag, &
+!   & mesh%nF, mesh%nFdeg, mesh%FtoV, &
+!   & mesh%nFtag, mesh%FtagtoF, mesh%Ftag)
+!   !==============================================================================
+
+  ! Free memory
+  !------------
+  ! TO DO
+
+  call cpu_time(time_end)
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "ugrid_test_tetra_par successfully ended : "
+  write(*,*) 'Total time (seconds) = ', REAL(time_end - time0)
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+
+end program ug_test_tetra_par

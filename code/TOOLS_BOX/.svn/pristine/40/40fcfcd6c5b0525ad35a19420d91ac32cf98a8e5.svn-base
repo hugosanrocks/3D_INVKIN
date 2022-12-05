@@ -1,0 +1,200 @@
+module mesh_partition_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use mesh_writers_mod
+
+  implicit none
+
+  ! Public types and functions
+  !-----------------------------
+
+  public :: mesh_partition
+
+  contains
+
+  ! graph_type = type of graph (0=nodal, 1=dual)
+  ! weight = weighted partitioning (0=no, 1=yes)
+
+  subroutine mesh_partition(nEdeg, nV, nE, coorV, EtoV, e_part, graph_type, weight, npart)
+
+    integer,                              intent(in) :: nEdeg, nV, nE
+    real,    dimension(:,:), allocatable, intent(in) :: coorV
+    integer, dimension(:,:), allocatable, intent(in) :: EtoV
+    integer,                              intent(in) :: graph_type, weight, npart
+    integer, dimension(:), pointer,      intent(out) :: e_part
+
+    integer, dimension(:), pointer                   :: nodepart ! for metis_partmeshdual and metis_partmeshnodal
+!     integer, dimension(:),   pointer                 :: xadj, adjncy    ! for metis_meshtonodal  and metis_meshtodual
+!     integer, dimension(:),   pointer                 :: vwgt, adjwgt    ! for metis_partgraphkway
+!     integer, dimension(5)                            :: options         ! for metis_partgraphkway
+
+    integer                                          :: etype, numflag, edgecut, ie
+    character(len=*),                     parameter  :: proc_name = "mesh_partition"
+    character(len=100)                               :: oFileName
+    real, dimension(:), allocatable                  :: F
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid_1, ' : ', proc_name
+    endif
+
+    !------------------------------------------------
+    !
+    !          mesh partitioning with metis
+    !
+    !------------------------------------------------
+
+    if (nEdeg == 4) then
+      etype    = 2   ! tetrahedra
+    else if (nEdeg == 8) then
+      etype    = 3   ! hexahedra
+    else
+      write(*,*) 'Wrong degree of element. Expected tetrahedra(4) or hexahedra(8). Get:', nEdeg
+      call flush(6)
+      stop
+    end if
+    numflag = 1 ! fortran style numbering
+
+    !-------------------------
+    ! no partitioning
+    !-------------------------
+
+    if (npart == 1) then
+
+      nullify(e_part)
+      allocate(e_part(1:nE))
+      e_part(:) = 1
+
+    !-------------------------
+    ! unweighted partitioning
+    !-------------------------
+
+    else if (weight == 0) then
+
+      ! allocate table
+      allocate(e_part(nE))
+      allocate(nodepart(nV))
+
+      !------------------------------------------------
+      ! call metis_partmeshnodal or metis_partmeshdual
+      !------------------------------------------------
+      write(*,*) ''
+      write(*,*) '--------------------------------'
+      write (6,*) ' unweighted partitioning'
+
+!       write(*,*) 'nE      =', nE
+!       write(*,*) 'nV      =', nV
+!       write(*,*) 'EtoV    =', EtoV
+!       write(*,*) 'etype   =', etype
+!       write(*,*) 'numflag =', numflag
+!       write(*,*) 'npart   =', npart
+
+      if (graph_type == 0) then
+        call metis_partmeshnodal(nE, nV, EtoV, etype, numflag, npart, edgecut, e_part, nodepart) 
+        write(*,*) ' -> call metis_partmeshnodal ok' 
+      else
+        call metis_partmeshdual(nE, nV, EtoV, etype, numflag, npart, edgecut, e_part, nodepart) 
+        write(*,*) ' -> call metis_partmeshdual ok' 
+      endif
+
+      if (dd_debug_level > 0) then
+        write(*,*) 'edgecut  =',edgecut
+        write(*,*) 'e_part   =',e_part
+        write(*,*) 'nodepart =',nodepart
+      end if
+
+      deallocate(nodepart)
+      write(*,*) '--------------------------------'
+
+!     else
+!   
+!        !-------------------------
+!        ! weighted partitioning
+!        !-------------------------
+!   
+!        !-----------------------------------------------------------
+!        ! build graph -> call metis_meshtonodal or metis_meshtodual
+!        !-----------------------------------------------------------
+!        write(*,*) ''
+!        write(*,*) '--------------------------------'
+!        write (6,*) ' weighted partitioning'
+!        if (graph_type == 0) then
+!   
+!           allocate(xadj(nnode+1))
+!           allocate(adjncy(15*nnode))
+!   
+!           call metis_meshtonodal(nE, nnode, transpose(tetra), etype, numflag, xadj, adjncy)
+!           write(*,*) ' -> call metis_meshtonodal ok' 
+!        else
+!   
+!           allocate(xadj(nE+1))
+!           allocate(adjncy(4*nE))
+!   
+!           call metis_meshtodual(nE, nnode, transpose(tetra), etype, numflag, xadj, adjncy)
+!           write(*,*) ' -> call metis_meshtodual ok' 
+!        endif
+!   
+!        !---------------------------------------------
+!        ! partition graph -> call metis_partgraphkway
+!        !---------------------------------------------
+!        nullify(adjwgt)
+!        wgtflag = 2    ! weights on the vertices only
+!        options(1) = 0 ! default options
+!   
+!        if (graph_type == 0) then
+!   
+!           allocate(vwgt(nnode))
+!           allocate(e_part(nnode))
+!           vwgt(:) = 1
+!           write(*,*) ' min/max weight', minval(vwgt), maxval(vwgt)
+!           call metis_partgraphkway(nnode, xadj, adjncy, vwgt, adjwgt, wgtflag, numflag, npart, options, edgecut, e_part)  
+!           write(*,*) ' -> call metis_partgraphkway ok' 
+!   
+!           deallocate(xadj)
+!           deallocate(adjncy)
+!           deallocate(vwgt)
+!   
+!        else
+!   
+!           allocate(vwgt(nE))
+!   
+!           ! read weight file
+!   !        open(unit=1, file='weight.mesh')
+!   !        do ie = 1, nE
+!   !           read(1, *) vwgt(ie)
+!   !        enddo
+!   !        close(unit=1)
+!           open(unit=1, file='weight.mesh', access='direct', form='unformatted', status='unknown', recl=4*nE)
+!           read(1,rec=1) (vwgt(ie), ie = 1,nE)
+!           close(unit=1)
+!           write(*,*) ' min/max weight', minval(vwgt), maxval(vwgt)
+!   
+!           allocate(e_part(nE))
+!           call metis_partgraphkway(nE, xadj, adjncy, vwgt, adjwgt, wgtflag, numflag, npart, options, edgecut, e_part)  
+!           write(*,*) ' -> call metis_partgraphkway ok' 
+!   
+!           deallocate(xadj)
+!           deallocate(adjncy)
+!           deallocate(vwgt)
+!   
+!        endif
+!   
+!        write(*,*) '--------------------------------'
+
+    endif
+
+    ! output mesh partition in a paraview file
+    if (.true.) then
+      oFileName = 'mesh_partition'
+      call alloc_(F, 1, nE, 'F')
+      do ie = 1, nE
+        F(ie) = real(e_part(ie))
+      end do
+      call write_paraview_ascii_vtu_xml_format(oFileName, coorV, EtoV, F, nEdeg, nV, nE, CELL_CENTERED_DATA)
+      call dealloc_(F, 'F')
+    end if
+
+  end subroutine mesh_partition
+
+
+end module mesh_partition_mod

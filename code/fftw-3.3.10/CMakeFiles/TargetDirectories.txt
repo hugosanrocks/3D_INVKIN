@@ -1,0 +1,9 @@
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/install/strip.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/install/local.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/install.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/list_install_components.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/rebuild_cache.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/edit_cache.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/test.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/bench.dir
+/home/sanchezh/Tools/3D_INVKIN/fftw-3.3.10/CMakeFiles/fftw3.dir

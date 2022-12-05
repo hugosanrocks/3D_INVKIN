@@ -1,0 +1,1445 @@
+program dg_test
+
+
+  use dd_common_mod
+  use mesh_readers_mod
+  use mesh_writers_mod
+  use tetra_mesh_graphs_mod
+  use ref_dof_mod
+  use mat_csr_mod
+  use glob_dof_mod
+  !use ifport
+
+  implicit none
+
+
+  character(len = 100)                             :: iFileName*100, oFileName*100, exec*1024
+  integer                                          :: nV, nE, nF, nEdeg, nFdeg, nFtag, nEtag, ndof, nvar, nterm_iso, nEdof
+  real,                dimension(:,:), allocatable :: coorV
+  integer,             dimension(:,:), allocatable :: EtoV, FtoE, EtoF, EtoE, FtoV, FtagtoV
+  integer,             dimension(:),   allocatable :: Ftag, Etag, FtagtoF, FtagNew, EtagtoE, EtagNew, PkE
+  type(ref_dof_t),     dimension(:),   allocatable :: ref_dof
+  type(ref_matrix_t),  dimension(:),   allocatable :: ref_matrix
+  type(surf_funct)  ,  dimension(:),   allocatable :: surface_basis_function
+  real(kind=FP),       dimension(:,:), allocatable :: coordof,Jacobian_2D
+  integer,             dimension(:),   allocatable :: Etodof_adj
+  real(kind=FP),       dimension(:),   allocatable :: weight_vol
+  real(kind=FP),       dimension(:),   allocatable :: drdx, drdy, drdz
+  real(kind=FP),       dimension(:),   allocatable :: dsdx, dsdy, dsdz
+  real(kind=FP),       dimension(:),   allocatable :: dtdx, dtdy, dtdz
+  real(kind=FP),       dimension(:,:,:), allocatable :: normal
+  type(mat_csr_t)                                  :: mat
+  real(kind=FP),       dimension(:),   allocatable :: A
+  integer,             dimension(:),   allocatable :: nPk
+  integer                                          :: nb_args, iv, ifac, ie, Pkmax, Pkmin, k, idof, j1, jend, irow, idof1, idofend
+  logical                                          :: debug = .false.
+  logical                                          :: debug_vm = .true.
+  real                                             :: time_end = 0., time_begin = 0.
+  character                                        :: str1*3, fmt1*20, str2*8, fmt2*30
+  integer(4)                                       :: iargc ! declare function for xlf compiler
+  ! first idea : allocate fields for global dofs 
+  real(kind=fp),      dimension(:,:),  allocatable :: veloc,sigma 
+  real(kind=fp),      dimension(:)  ,  allocatable :: vp, vs, rho
+  dd_debug_level = 2
+
+  print *, selected_int_kind(8), huge(0_4)
+
+  ! read parameters: input filename
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 1) then
+    write(6,*) "ERROR : bad number of arguments :", nb_args
+    write(6,*) "command line : ug_test_seq[_gnu] filename"
+    stop
+  end if
+  call getarg(1, iFileName)
+
+  !! TODO : put Pkmin=0 and Pkmax=15 
+  !! TODO : check what's happen when Pk=0, or 1. 
+  Pkmin = 1
+  Pkmax = 5
+
+  nvar = 9
+  nterm_iso = 24
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  !! 1. construct dof in ref tetra form order Pkmin to Pkmax
+  call build_ref_dof(Pkmax, ref_dof)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'dof construction: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug) then
+    write(*,*)
+    write(*,*) 'Pk order reference dof info:'
+    write(*,*)
+    do k = 1, Pkmax
+      write(*,'(3(A,I3))') ' order =', k, ' np =', ref_dof(k)%np, ' npf =', ref_dof(k)%npf
+      write(*,*)
+      do idof = 1, ref_dof(k)%np
+        write(*,'(A,I3,A,3F8.4)') ' idof = ', idof, ' coor =', ref_dof(k)%coor(:,idof)
+      end do
+      write(*,*)
+      do idof = 1, ref_dof(k)%np
+        write(*,'(A,I3,A,3I2)') ' idof = ', idof, ' doftoF =', ref_dof(k)%doftoF(:,idof)
+      end do
+      write(*,*)
+      if (k > 0) then
+        write(str1,'(I3)') ref_dof(k)%npf
+        fmt1 = '(A,I4,A,'//str1//'I4)'
+        do ifac = 1, 4
+          write(*,fmt1) ' ifac = ', ifac, ' Ftodof =', ref_dof(k)%Ftodof(:,ifac)
+        end do
+        write(*,*)
+      end if
+    end do
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 2. read mesh  
+  call read_medit_mesh (iFileName, &
+  &                     nV, coorV, nE, nEdeg, EtoV, Etag, nFtag, nFdeg, FtagtoV, Ftag)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'read_medit_mesh: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'Mesh info:'
+    write(*,*)
+    write(*,'(A,I3)') ' Nb vertices:', nV
+    do iv = 1, nV
+    write(*,'(A,I3,A,3F8.4)') ' iv = ', iv,  ' coor = ', coorV(:,iv)
+    end do
+    write(*,*)
+    write(*,'(2(A,I3))') ' Nb tagged faces:', nFtag, ' degree = ', nFdeg
+    write(str1,'(I3)') nFdeg
+    fmt1 = '(A,I3,A,' // str1 // 'I3,A,I3)'
+    do ifac = 1, nFtag
+    write(*,fmt1) ' ifac = ', ifac, ' FtagtoV = ', FtagtoV(:,ifac), ' tag = ', Ftag(ifac)
+    end do
+    write(*,*)
+    write(*,'(2(A,I3))') ' Nb elements:', nE, ' degree = ', nEdeg
+    write(str1,'(I3)') nEdeg
+    fmt1 = '(A,I3,A,' // str1 // 'I3,A,I3)'
+    do ie = 1, nE
+    write(*,fmt1) ' ie = ', ie, ' EtoV = ', EtoV(:,ie), ' tag = ', Etag(ie)
+    end do
+    write(*,*)
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 3. 
+  call build_tetra_face_graph(nV, nE, nEdeg, EtoV, nFtag, FtagtoV, Ftag, &
+  &                     nF, FtoV, FtoE, FtagtoF, FtagNew               )
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_face_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'Face graph info:'
+    write(*,*)
+    write(*,'(A,I3)') ' Nb faces:', nF
+    do ifac = 1, nF
+      write(*,'(A,I3,A,3I3,A,4I3)') ' ifac =', ifac, ' FtoV =', FtoV(:,ifac), ' FtoE =', FtoE(:,ifac)
+    end do
+    write(*,*)
+    write(*,*) 'Nb tagged faces:', nFtag
+    if (allocated(FtagtoF) .and. (allocated(FtagNew))) then
+      do ifac = 1, nFtag
+        write(*,'(A,I3,A,I4,A,I4)') ' itagfac =', ifac, ' FtagtoF =', FtagtoF(ifac), ' FtagNew =', FtagNew(ifac)
+      end do
+    end if
+    write(*,*)
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 4.
+  call build_tetra_element_to_face_graph(nE, nEdeg, nF, FtoE, Etag, &
+  &                        EtoF, EtoE, nEtag, EtagtoE, EtagNew)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_element_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'Element graph info:'
+    write(*,*)
+    write(*,'(A,I3)') ' Nb elements:', nE
+    if (allocated(EtoF) .and. (allocated(EtoE))) then
+    do ie = 1, nE
+      write(*,'(A,I3,A,4I3,A,4I3)') ' ie    =', ie, ' EtoF =', EtoF(:,ie), ' EtoE =', EtoE(:,ie)
+    end do
+    end if
+    write(*,*)
+    write(*,'(A,I3)') ' Nb tagged elements:', nEtag
+    if (allocated(EtagtoE) .and. (allocated(EtagNew))) then
+    do ie = 1, nEtag
+      write(*,'(A,I3,A,I4,A,I4)') ' ietag =', ie, ' EtagtoE =', EtagtoE(ie), ' EtagNew =', EtagNew(ie)
+    end do
+    end if
+    write(*,*)
+  end if
+
+  ! Assign order to each element... Hard-coded for test
+  call alloc_(nPk, 0, Pkmax, 'nPk')
+  call alloc_(PkE, 1, nE,    'PkE')
+  do ie = 1, nE
+    k       = mod(ie, Pkmax-Pkmin) + Pkmin
+    !k       = int(rand()*Pkmax)
+    PkE(ie) = k ! variable
+    PkE(ie) = 2 ! fixed
+    nPk(k)  = nPk(k) + 1
+  end do
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'Element order:'
+    do ie = 1, nE
+      write(*,'(A,I3,A,I3)') ' ie = ',  ie, ' order = ', PkE(ie)
+    end do
+    write(*,*)
+  end if
+
+  write(*,*)
+  write(*,*) 'Element order statistics:'
+  do k = 0, Pkmax
+    write(*,'(A,I3,A,I12,A,I4)') ' order = ',  k, ' nb Elements = ', nPk(k),' nb dof ', (k+1)*(k+2)*(k+3)/6
+  end do
+  write(*,*)
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 5.
+  call build_glob_dof(ref_dof, nV, nF, nFdeg, nE, nEdeg, coorV, EtoV, EtoE, PkE, &
+  &                   ndof, coordof, Etodof_adj, weight_vol, drdx, drdy, drdz,   &
+  &                                        dsdx, dsdy, dsdz, dtdx, dtdy, dtdz,   &
+  &                                                           normal, jacobian_2D)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_glob_dof: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'global dof info:'
+    write(*,*)
+    write(*,'(A,I3)') ' Nb dof:', ndof
+    do idof = 1, ndof
+      write(*,'(I3,A,3F8.4,A,F8.4)') idof, ' coor =', coordof(:,idof), ' weight_vol =', weight_vol(idof)
+    end do
+    write(*,*)
+    if (allocated(Etodof_adj)) then
+    do ie = 1, nE
+      idof1   = Etodof_adj(ie)
+      idofend = Etodof_adj(ie+1) - 1
+      nEdof   = idofend - idof1 + 1
+      write(*,'(4(A,I3))') ' ie   = ', ie, ' nEdof =', nEdof, ' from ', idof1, ' to ', idofend
+    end do
+    end if
+    write(*,*)
+  end if
+
+  
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 6. build all references matrices in ref tetra
+  call build_ref_matrix3D(Pkmax, ref_matrix, ref_dof)
+  call build_ref_matrix2D(Pkmax, ref_matrix, ref_dof)
+  call allocate_surf_basis_function(Pkmax, surface_basis_function)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) ' build all matrices: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 7. build all fiels and physical params in dof
+  call build_field_params(veloc, sigma, vp, vs, rho, ndof)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) ' build fields and params: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 7. construct the big csr matrix
+  call init_dof_CSR_matrix(nvar, nterm_iso, ndof, nF, nFdeg, nE, nEdeg, EtoF, FtoE, EtoE, Etodof_adj, ref_dof, PkE, &
+  &                        mat)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'init_dof_CSR_matrix: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'CSR matrix info:'
+    write(*,*)
+    write(*,'(A,I8)') ' mat%n   : ', mat%n
+    write(*,'(A,I8)') ' mat%nnz : ', mat%nnz
+    write(*,*)
+    do irow = 1, mat%n
+      j1 = mat%IA(irow)
+      jend = mat%IA(irow+1) - 1
+
+      write(str2,'(I8)') jend-j1+1
+      fmt2 = '(A,I8,A,' // trim(adjustl(str2)) // 'I4)'
+      write(*,fmt2) ' row = ', irow, ' JA =', mat%JA(j1:jend)
+    end do
+    write(*,*)
+  end if
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  ! 8. 
+  if (debug_vm) call Check_matrix(ref_matrix, Pkmax)
+  call fill_dof_CSR_matrix(ndof, nF, nFdeg, nE, nEdeg, nvar, EtoF, FtoE, PkE, Etodof_adj, coordof, &
+  &                        mat, A, ref_matrix, surface_basis_function, drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz,&
+  &                        normal, jacobian_2D, vp, vs, rho)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'fill_dof_CSR_matrix: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+  
+  if (debug .and. nV < 20) then
+    write(*,*)
+    write(*,*) 'CSR matrix values:'
+    write(*,*)
+    do irow = 1, mat%n
+      j1 = mat%IA(irow)
+      jend = mat%IA(irow+1) - 1
+
+      write(str1,'(I3)') jend-j1+1
+      fmt1 = '(A,I3,A,' // str1 // 'F8.4)'
+      write(*,fmt1) ' row = ', irow, ' A =', A((j1-1)*nvar+1:jend*nvar)
+    end do
+    write(*,*)
+  end if
+
+!   oFileName = "out_" // trim(iFileName)
+  !==============================================================================
+!   call write_medit_mesh(oFileName, nV, coorV, nE, nEdeg, EtoV, Etag, nF, nFdeg, FtoV, nFtag, FtagtoF, Ftag)
+  !==============================================================================
+
+
+  ! Free memory
+  !------------
+  ! TO DO
+
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "ugrid_test_seq successfully ended"
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+
+  contains
+
+
+  subroutine fill_dof_CSR_matrix(ndof, nF, nFdeg, nE, nEdeg, nvar, EtoF, FtoE, PkE, Etodof_adj, coordof,  &
+  &                              mat, A, ref_matrix, surface_basis_function, drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz,&
+  &                               normal, jacobian_2D, vp, vs, rho)
+    integer,                                          intent(in)     :: ndof, nF, nE, nFdeg, nEdeg, nvar
+    integer,             dimension(:,:), allocatable, intent(in)     :: EtoF, FtoE
+    integer,             dimension(:),   allocatable, intent(in)     :: PkE
+    integer,             dimension(:),   allocatable, intent(in)     :: Etodof_adj
+    real(kind=FP),       dimension(:,:), allocatable, intent(in)     :: coordof
+    type(mat_csr_t),                                  intent(in out) :: mat
+    type(surf_funct),   dimension(:),    allocatable, intent(in out) :: surface_basis_function
+
+    real(kind=FP),       dimension(:),   allocatable, intent(in out) :: A
+
+    real(kind=FP),       dimension(:,:), allocatable                 :: Avolu
+    real(kind=FP),       dimension(:,:,:), allocatable               :: Aflux
+    integer,             dimension(:,:), allocatable                 :: filled_aloc
+    integer,             dimension(:,:,:), allocatable               :: filled_aflux
+    integer,             dimension(:)  , allocatable                 :: visited_index
+    
+    character(len = *),                               parameter      :: proc_name = "fill_dof_CSR_matrix"
+    integer,             dimension(:),   allocatable                 :: nnghb
+    integer                                                          :: ie, i, idof, idof1, idofend, nEdof, j, jdof, k, npf
+    integer                                                          :: ifacref, ifac, k_nghb, npf_nghb, ifacref_nghb, ie_nghb
+    real(kind=FP),       dimension(nvar)                             :: aij
+
+    real(kind=FP),       dimension(:),   allocatable, intent(in) :: drdx, drdy, drdz
+    real(kind=FP),       dimension(:),   allocatable, intent(in) :: dsdx, dsdy, dsdz
+    real(kind=FP),       dimension(:),   allocatable, intent(in) :: dtdx, dtdy, dtdz
+    real(kind=FP),       dimension(:,:),   allocatable, intent(in) :: jacobian_2D
+    real(kind=FP),       dimension(:,:,:), allocatable, intent(in) :: normal 
+    real(kind=FP),       dimension(:),   allocatable, intent(in) :: vp, vs, rho
+    
+    type(ref_matrix_t),  dimension(:),   allocatable, intent(in) :: ref_matrix
+
+    logical                                                      :: debug_vm
+    integer ivar,jvar,l,nedof2D
+    real(kind=fp) value_to_fill, buoyancy, lambda, mu, buoyancy_nghb, lambda_nghb, mu_nghb
+    real(kind=fp) xk,yk,zk,rk,sk,tk
+    real(kind=fp) coor_vert(3,4)
+    integer idof_local, jdof_local, ldof_local, ldof
+    integer norder_max, NP_max, NPF_max, Na, Na2D, nnz_index
+    integer ifacv, ifacrefv, ivertex, kkk 
+    integer innz, iline
+    integer, dimension(4,3) :: index_vertex_face
+    integer, dimension(3)   :: IVx
+    integer, dimension(4)   :: idof_nghb, ie_nghb_store
+
+    !! todo : THIS TABLE SHOULD BE MOVED AND DEFINE IN OTHER PLACE 
+    !! if ABCD is the 4 vertices of phisical tetra,
+    !! face 1 : BCD
+    index_vertex_face(1,1)=2
+    index_vertex_face(1,2)=3
+    index_vertex_face(1,3)=4
+    !! face 2 : ACD
+    index_vertex_face(2,1)=1
+    index_vertex_face(2,2)=3
+    index_vertex_face(2,3)=4
+    !! face 3 : ABD
+    index_vertex_face(3,1)=1
+    index_vertex_face(3,2)=2
+    index_vertex_face(3,3)=4
+    !! face 4 : ABC
+    index_vertex_face(4,1)=1
+    index_vertex_face(4,2)=2
+    index_vertex_face(4,3)=3
+    !! ---------------------------
+    !!
+    debug_vm=.true.
+    iline=0
+    innz=0
+    if (dd_debug_level > 0) then
+      write(*,*) myid_1, " : ", proc_name
+    endif
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    !! debug
+    if (debug_vm) then
+       open(666,file='mat_check.txt')
+    end if
+
+    !! allocate work array
+    norder_max = maxval(PkE)
+    NP_max=(norder_max+1)*(norder_max+2)*(norder_max+3)/6
+    NPF_max=(norder_max+1)*(norder_max+2)/2
+    Na=nvar*NP_max
+    Na2D=nvar*NPF_max
+    
+    call alloc_(Avolu,1,Na,1,Na,'matrix A local')
+    call alloc_(Aflux,1,Na,1,Na2D,1,4,'matrix A surf local')
+    call alloc_(filled_Aloc,1,Na,1,Na,'matrix indexes A local')
+    call alloc_(filled_Aflux,1,Na,1,Na2D,1,4,'matrix A indexes surf local')
+    call alloc_(visited_index,1,Na*Na,'index already visited')
+    !! 
+    call alloc_(A, 1, nvar*mat%nnz, 'matrix A')
+
+    do ie = 1, nE  !! LOOP OVER ELEMENTS
+       
+      k   = PkE(ie)          !! order of tetra
+     
+      ! 1/ Add contribution of neighbors involved in volumic integration (dof of element x dof of element)
+      idof1   = Etodof_adj(ie)
+      idofend = Etodof_adj(ie+1) - 1
+      nEdof   = idofend - idof1 + 1
+      nEdof2D = 0
+
+      ! model parameters (assumed constant in element)
+      lambda = rho(idof1) * ( vp(idof1)*vp(idof1) - vs(idof1)*vs(idof1) )
+      mu = rho(idof1) * vs(idof1) * vs(idof1)
+      buoyancy = 1._FP / rho(idof1)
+
+
+      !! temporary work matrix arrays initialisation 
+      Avolu(:,:) = 0._fp
+      Aflux(:,:,:) = 0._fp
+      filled_Aloc(:,:) = 0
+      filled_Aflux(:,:,:) = 0
+      visited_index(:) = 0
+      ie_nghb_store(:)=0
+      nnz_index=0
+
+      !1/ VOLUMIC INTEGRATION ============================================ 
+      !! FISRT LOOP OVER DOF IN VOLUME ELEMENT ie
+      idof_local = 0
+      do idof = idof1, idofend
+         idof_local = idof_local + 1   
+         
+         
+         !! SECOND LOOP OVER DOF IN VOLUME ELEMENT ie
+         jdof_local = 0
+         do jdof = idof1, idofend
+            jdof_local=jdof_local + 1  
+            
+            ! ivar and jvar loop inside 
+            call fill_aij_volumic(aij, Avolu, filled_Aloc, visited_index, nnz_index, Na, nvar, ivar, ndof, idof, &
+                 ref_matrix(k)%np, idof_local, jdof_local, &
+                 drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz, &
+                 ref_matrix(k)%miSr, ref_matrix(k)%miSs, ref_matrix(k)%miSt, buoyancy, lambda, mu)
+                
+         end do ! jdof = idof1, idofend
+      end do ! idof = idof1, idofend
+      
+  
+            
+      ! 2/ SURFACE INTEGRAL ===================
+      npf = ref_dof(k)%npf   !! number of point in each faces
+      idof_nghb = 0
+
+      do ifacref = 1, 4  ! loop over 4 faces
+
+         ! global face numerotation
+         ifac = EtoF(ifacref, ie)
+
+         ! Retrieve the neighbour element index  ----- info voisin -------------------
+         ie_nghb = sum(FtoE(1:2,ifac)) - ie
+         ie_nghb_store(ifacref) = ie_nghb
+            
+         !! loop over dof's in interior face ifacref
+         do i = 1, npf 
+            idof_local = ref_dof(k)%Ftodof(i,ifacref)
+            idof =  Etodof_adj(ie) +  idof_local - 1    !! global dof number
+            
+            
+            !! loop over dof's in interior face ifacref
+            do j=1, npf
+               jdof_local = ref_dof(k)%Ftodof(j,ifacref)
+               jdof =  Etodof_adj(ie) +  jdof_local - 1 !! global dof number
+               
+               !! interior surface integral evaluation
+               call fill_aij_surfacic_interior(Avolu, Na, ndof, ref_matrix(k)%np ,idof, jdof, idof_local, jdof_local, &
+                    ref_matrix(k)%MassFace,normal, Jacobian_2D, buoyancy, lambda, mu)
+                
+               !!!! ------------------- PARTIE OBLIGATOIRE --------------------------------------------------------------
+
+               !! 1/ Evaluation de la position physique du dof : xk prise sur la face interne du tera 
+               xk = coordof(1,jdof)
+               yk = coordof(2,jdof)
+               zk = coordof(3,jdof)
+               
+               
+               !! loop over dof's in exterior face (exterior means neighbour face)------------------------------ VOISIN 
+               if (ie_nghb > 0) then  !! ce if va disparaitre dans la prochaine version
+
+                 
+
+                  k_nghb   = PkE(ie_nghb)   !! order of neighbour tetra
+
+                  if (k_nghb > 0) then  !! ce if n'est pas necessaire sauf si bug...
+
+                     npf_nghb = ref_dof(k_nghb)%npf  !! number of dof's in exterior face
+                     nEdof2D = max(nEdof2D ,npf_nghb)
+                     ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref  !! local face number  
+
+                    
+                     idof_nghb(ifacref) = Etodof_adj(ie_nghb)
+
+                    
+                     !! retrieve material properties in neighbourg
+                     kkk=idof_nghb(ifacref)
+                     lambda_nghb = rho(kkk) * ( vp(kkk)*vp(kkk) - vs(kkk)*vs(kkk) )
+                     mu_nghb = rho(kkk) * vs(kkk) * vs(kkk)
+                     buoyancy_nghb = 1._FP / rho(kkk)
+
+                     !! 1/  Retrieve vertex coordinates of the real neighbour tetrahedron
+                     do ivertex = 1, 4
+                        iv = EtoV(ivertex,ie_nghb)
+                        coor_vert(:,ivertex) = coorV(:,iv)
+                     end do
+
+                     !! extract vertices in face ifacref_nghb 
+                     IVx(1)=index_vertex_face(ifacref_nghb,1)
+                     IVx(2)=index_vertex_face(ifacref_nghb,2)
+                     IVx(3)=index_vertex_face(ifacref_nghb,3)
+
+                     !! 2/ On ramene le dof sur le triangle de ref par la fonction mapping du voisin ie_nghb r=\Psi^{-1}(xk)
+                     call Linear_map_xyz_rs(rk, sk, xk, yk, zk, coor_vert(:,IVx(1)), coor_vert(:,IVx(2)), coor_vert(:,IVx(3)))
+
+                     !! 3/ On evalue les valeurs des fonctions de bases modales au point rk.
+                     call Jacobi_2D_Pk(k_nghb,surface_basis_function(k_nghb)%npf,surface_basis_function(k_nghb)%Jacobi_2D,rk, sk)
+
+                     !! 4/ On calcule \theta(rk) en applicant l'inverse de la transposee de Vandermonde2D à la base modale
+                     call Lagrange_2D_pk(surface_basis_function(k_nghb)%npf,surface_basis_function(k_nghb)%Jacobi_2D, &
+                     &                   surface_basis_function(k_nghb)%Lagrange2D,ref_matrix(k_nghb)%InvV2D)
+                     !! on rempli la matrice pour les dof's de la face voisine
+                     do l = 1, npf_nghb  !! loop over neighbour face dofs
+                        ldof_local =  ref_dof(k_nghb)%Ftodof(l,ifacref_nghb)  !! local index dof in nghb tetra
+                        ldof = Etodof_adj(ie_nghb) + ldof_local - 1           !! global index dof in nghb tetra
+                        
+                        call fill_aij_surfacic_exterior(Aflux(:,:,ifacref), filled_Aflux(:,:,ifacref), Na, Na2D, ndof, &
+                        &                               ref_matrix(k)%np, idof, jdof, ldof, idof_local, j, l,&
+                        &                               ref_matrix(k)%MassFace, normal, Jacobian_2D,  &
+                        &                               surface_basis_function(k_nghb)%Lagrange2D, &
+                        &                               surface_basis_function(k_nghb)%npf , buoyancy_nghb, lambda_nghb, mu_nghb)
+
+                     end do
+
+                  end if
+               end if
+              
+            end do
+         end do
+      end do
+
+      !call add_csr_mat(mat, A, aij, idof, jdof, nvar, mat%nnz)
+
+      write(*,*) ' fill lines corresponding to :',ie, idof1, idof_nghb
+
+      !! add one line
+      call add_csr_lines(A, mat%JA, mat%IA, innz, iline, Avolu, Aflux, filled_aloc, filled_aflux, &
+           nEdof, nEdof2D, nvar, ie_nghb_store, idof_nghb, ie, idof1, PkE, EtoF, FtoE)
+
+      if (debug_vm) then ! write sparse matrix lines for debug                  
+         do idof_local = 1, nEdof 
+            idof = idof_local +  idof1 - 1
+            do ivar = 1, nvar
+               i = ivar + nvar*(idof_local - 1)
+               do jdof_local = 1, nEdof
+                  jdof = jdof_local + idof1 -1 
+               
+                  !! loop inside th element ie
+                  do jvar = 1, nvar
+                     j = jvar + nvar*(jdof_local - 1)
+                     if (filled_Aloc(i,j) /= 0) write(666,*)  ivar + nvar*(idof-1), jvar + nvar*(jdof-1), Avolu(i,j)
+                  end do                 
+               
+                  !! loop over exterior faces
+                  do ifacref = 1, 4
+                    
+                     ifac = EtoF(ifacref, ie) !! global face numerotation
+                     ie_nghb = ie_nghb_store(ifacref)  !! neighbour
+
+                     if (ie_nghb > 0) then  
+                        k_nghb   = PkE(ie_nghb)   !! order of neighbour tetra
+
+                        ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref  !! local face in  neighbour tetra
+                       
+                        do l = 1, nEdof2D  !! loop over dof in  neighbour tetra face
+                           ldof_local =  ref_dof(k_nghb)%Ftodof(l,ifacref_nghb) !! local dof 
+                           do jvar = 1, nvar
+                              j = jvar + nvar*(l - 1)
+                              ldof = ldof_local +  idof_nghb(ifacref) - 1 !! global dof
+                              if (filled_Aflux(i,j,ifacref) /= 0)  &
+                              &              write(666,*)  ivar + nvar*(idof-1), jvar + nvar*(ldof-1), Aflux(i,j,ifacref)
+                           end do
+                        end do
+                     end if
+                  end do
+
+               end do
+             
+
+            end do
+         end do
+      end if
+
+   end do
+
+   !! finalize csr matrix
+   mat%IA(iline+1)=innz+1
+   mat%nnz=innz+1
+   mat%n=iline
+   close(666)
+  end subroutine fill_dof_CSR_matrix
+
+!-----------------------------------------------------------------------------------------------------------------------------
+
+  subroutine add_csr_lines(mat, ic, id, innz, line, Avolu, Aflux, filled_aloc, filled_aflux, &
+       nEdof, nEdof2D, nvar, ie_nghb_store, idof_nghb, ie, idof1, PkE, EtoF, FtoE)
+    
+    integer  nvar,ie_nghb_store(4),idof_nghb(4),nEdof, nEdof2D,line,innz, idof1, ie
+    real(kind=FP),       dimension(:),   allocatable, intent(in out) :: mat
+    integer,       dimension(:),   allocatable :: ic        
+    integer,       dimension(:),   allocatable :: id 
+    real(kind=FP),       dimension(:,:), allocatable                 :: Avolu
+    real(kind=FP),       dimension(:,:,:), allocatable               :: Aflux
+    integer,             dimension(:,:), allocatable                 :: filled_aloc
+    integer,             dimension(:,:,:), allocatable               :: filled_aflux
+    integer,             dimension(:,:), allocatable, intent(in)     :: EtoF, FtoE
+    integer,             dimension(:),   allocatable, intent(in)     :: PkE
+
+    integer idof, idof_local, jdof, jdof_local, ldof, ldof_local
+    integer i,j,l,ivar,jvar
+    integer ifacref,ifac
+    integer ie_nghb, k_nghb, ifacref_nghb 
+
+    do idof_local = 1, nEdof 
+       idof = idof_local +  idof1 - 1
+       do ivar = 1, nvar
+          i = ivar + nvar*(idof_local - 1)
+
+          !! NEW LINE
+          line = line + 1
+          id(line) = innz + 1
+
+          do jdof_local = 1, nEdof
+             jdof = jdof_local + idof1 -1
+
+             !! loop inside th element ie
+             do jvar = 1, nvar
+                j = jvar + nvar*(jdof_local - 1)
+                if (filled_Aloc(i,j) /= 0) then
+                   innz = innz + 1
+                   ic(innz) = jvar + nvar*(jdof-1)
+                   mat(innz) = Avolu(i,j)
+                   !write(666,*)  ivar + nvar*(idof-1), jvar + nvar*(jdof-1), Avolu(i,j)
+                end if
+             end do
+
+             !! loop over exterior faces
+             do ifacref = 1, 4
+                    
+                ifac = EtoF(ifacref, ie) !! global face numerotation
+                ie_nghb = ie_nghb_store(ifacref)  !! neighbour
+
+                if (ie_nghb > 0) then  
+                   k_nghb   = PkE(ie_nghb)   !! order of neighbour tetra
+                   
+                   ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref  !! local face in  neighbour tetra
+                   
+                   do l = 1, nEdof2D  !! loop over dof in  neighbour tetra face
+                      ldof_local =  ref_dof(k_nghb)%Ftodof(l,ifacref_nghb) !! local dof 
+                      do jvar = 1, nvar
+                         j = jvar + nvar*(l - 1)
+                         ldof = ldof_local +  idof_nghb(ifacref) - 1 !! global dof
+                         if (filled_Aflux(i,j,ifacref) /= 0)  then
+                            innz = innz + 1
+                            ic(innz) = jvar + nvar*(ldof-1)
+                            mat(innz) = Aflux(i,j,ifacref)
+                            !write(666,*)  ivar + nvar*(idof-1), jvar + nvar*(ldof-1), Aflux(i,j,ifacref)
+                         end if
+                      end do
+                   end do
+                end if
+             end do
+          end do
+       end do
+    end do
+ 
+  end subroutine add_csr_lines
+
+!-------------------------------------------------------------------------------------------------
+
+  subroutine fill_aij_volumic(aij, Aloc, filled_Aloc, visited_index, nnz_index, na, nvar, ivar,& 
+                              ndof_glob, jdof_glob, ndof_loc, i, j, &
+                              drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz, &
+                              miSr, miSs, miSt,&
+                              buoyancy, lambda, mu)
+
+    implicit none
+    integer nvar,ivar,jvar,ndof_loc,ndof_glob,na
+    real(kind=FP) value_to_fill
+    real(kind=FP),dimension(na,na)             :: Aloc
+    integer      ,dimension(na,na)             :: filled_Aloc
+    integer      ,dimension(na*na)             :: visited_index 
+    real(kind=FP),dimension(nvar)              :: aij
+    real(kind=FP),dimension(ndof_glob)         :: drdx, drdy, drdz
+    real(kind=FP),dimension(ndof_glob)         :: dsdx, dsdy, dsdz
+    real(kind=FP),dimension(ndof_glob)         :: dtdx, dtdy, dtdz
+    real(kind=FP),dimension(ndof_loc,ndof_loc) :: miSr, miSs, miSt
+    real(kind=FP)                              :: buoyancy, lambda, mu
+    real(kind=FP)                              :: Deriv_X, Deriv_Y, Deriv_Z
+    integer                                    :: i, j, iloc, jloc, jdof_glob, nnz_index
+    
+
+    !aij(:)=0._fp
+    
+
+    !!=======================================================================!!
+    !!                                                                       !!
+    !!                     ELASTIC ISOTROPIC CASE                            !! 
+    !!                                                                       !!
+    !!  VECTOR FIELD :                                                       !!
+    !!                                                                       !!
+    !!   1 2  3  4        5        6        7        8        9              !!
+    !! (vx,vy,vz,sigma_xx,sigma_yy,sigma_zz,sigma_xy,sigma_xz,sigma_yz)      !!
+    !!                                                                       !!
+    !!                                                                       !!
+    !!=======================================================================!!
+    
+    !!
+    !! Purpose: fill local temporary matrix Aloc
+    !! 
+    !! index convention : 
+    !! 
+    !!  i : local dof in current tetra
+    !!  ivar : field considered (cf numeroation above)
+    !!  index in local matrix : ivar + nvar*(i-1)
+    !!  
+    !!  jdof_glob : global dof 
+    !!  jvar : field considered
+    !!  index in global matrix : jvar + nvar*(idof_glob-1) 
+    !!
+    !!
+    !!            pre-computation of coefficients
+    
+    !!  Weak discrete derivative with respect to x operator (-) sign because of integration by part
+    Deriv_X = - miSr(i,j)*drdx(jdof_glob) -  miSs(i,j)*dsdx(jdof_glob) - miSt(i,j)*dtdx(jdof_glob)
+    !!  Weak discrete derivative with respect to y operator (-) sign because of integration by part
+    Deriv_Y = - miSr(i,j)*drdy(jdof_glob) -  miSs(i,j)*dsdy(jdof_glob) - miSt(i,j)*dtdy(jdof_glob)
+    !!  Weak discrete derivative with respect to z operator (-) sign because of integration by part
+    Deriv_Z = - miSr(i,j)*drdz(jdof_glob) -  miSs(i,j)*dsdz(jdof_glob) - miSt(i,j)*dtdz(jdof_glob)
+
+    !! TO DO : check this with respect to Hesthaven Book
+    !write(*,*) drdx(jdof_glob), dsdx(jdof_glob), dtdx(jdof_glob)
+    !write(*,*) miSr(i,j),miSs(i,j),miSt(i,j)
+    !! TO DO : fill Aloc( ivar + 9*(i-1), jvar + 9*(j-1) )
+
+    !write(*,*) buoyancy,lambda, mu
+
+    !! dt_Vx = buoyancy*(dx_sigma_xx + dy_sigma_xy + dz_sigma_xz) ................................
+    !!if (ivar==1) then
+    ivar = 1
+    iloc = ivar + nvar*(i-1) 
+
+    !! buoyancy * weak derivative dx of (sgima_xx)
+    jvar = 4
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc)= buoyancy * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    
+    !! buoyancy * weak derivative dy of (sgima_xy)
+    jvar = 7
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc)= buoyancy * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    !! buoyancy * weak derivative dz of (sigma_xz)
+    jvar = 8
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+    
+
+    !! dt_Vy = buoyancy*(dx_sigma_xy + dy_sigma_yy + dz_sigma_yz) .................................
+    !!if (ivar==2) then
+    ivar = 2
+    iloc = ivar + nvar*(i-1)
+
+    !! buoyancy * weak  derivative dx of (sigma_xy) 
+    jvar = 7
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    !! buoyancy *  weak derivative dy of (sigma_yy) 
+    jvar = 5
+    jloc = jvar + nvar*(j-1)
+    Aloc(iloc,jloc) = buoyancy * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    !! buoyancy *  weak derivative dz of (sigma_yz)
+    jvar = 9
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+      
+    
+    !! dt_Vz =  buoyancy*(dx_sigma_xz + dy_sigma_yz + dz_sigma_zz) ...............................
+    !!if (ivar==3) then
+    ivar = 3
+    iloc = ivar + nvar*(i-1)
+    
+    !! buoyancy *  weak derivative dz of (sigma_zz)
+    jvar = 6
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    !! buoyancy *  weak derivative dx of (sigma_xz)
+    jvar = 8
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    !! buoyancy *  weak derivative dy of (sigma_yz)
+    jvar = 9
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = buoyancy * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+
+               
+    !!if (ivar==4) then................................................................
+    ivar=4
+    iloc = ivar + nvar*(i-1)
+    
+    jvar = 1
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = (lambda + 2._FP * mu ) * Deriv_X 
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 2
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = lambda * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 3
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = lambda * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+
+   
+    !!if (ivar==5) then...............................................................
+    ivar=5
+    iloc = ivar + nvar*(i-1)
+    
+    jvar = 1
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = lambda * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 2
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = (lambda + 2._FP * mu ) * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 3
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = lambda * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+ 
+               
+    !!if (ivar==6) then...............................................................
+    ivar = 6
+    iloc = ivar + nvar*(i-1)
+
+    jvar = 1 
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc)= lambda * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    
+    jvar = 2
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = lambda * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 3
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = (lambda + 2._FP * mu ) * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+
+    !!if (ivar==7) then..............................................................
+    ivar=7
+    iloc = ivar + nvar*(i-1)
+    
+    jvar = 1
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar=2
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+
+               
+    !!if (ivar==8) then..........................................................
+    ivar=8
+    iloc = ivar + nvar*(i-1)
+    
+    jvar=1
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar = 3
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_X
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+ 
+    !!if (ivar==9) then............................................................
+    ivar=9
+    iloc = ivar + nvar*(i-1)
+
+    jvar=2
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_Z
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+
+    jvar=3
+    jloc = jvar + nvar*(j-1)
+    nnz_index=nnz_index+1
+    Aloc(iloc,jloc) = mu * Deriv_Y
+    filled_Aloc(iloc, jloc) = 1
+    visited_index(nnz_index)=iloc+na*(jloc-1)
+    !!end if
+
+    
+
+  end subroutine fill_aij_volumic
+
+
+  subroutine fill_aij_surfacic_interior(Aloc, Na, ndof_glob, ndof_loc, idof, jdof, idof_local, jdof_local, &
+       MassFace, normal, Jacobian2D, &
+       buoyancy, lambda, mu)
+
+    implicit none
+    integer                                     :: Na, ndof_glob, ndof_loc, idof, idof_local, jdof, jdof_local
+    real(kind=FP),dimension(na,na)              :: Aloc
+    real(kind=FP),dimension(ndof_loc,ndof_loc)  :: MassFace
+    real(kind=FP),dimension(ndof_glob)          :: Jacobian2D
+    real(kind=FP),dimension(3,ndof_glob)        :: normal  
+    real(kind=FP)                               :: buoyancy, lambda, mu
+    real(kind=FP)                               :: nx, ny, nz, jacobian
+    real(kind=FP)                               :: discretized_surface_opreator
+    integer                                     :: ivar, jvar, iloc, jloc
+
+    !! since the faces are plane, the normal doesn't vary on it, but we store it for each dof because of future 
+    !! developpents with curved elements.  
+    !! Therefore, We choose any normal on any dof in the face
+    nx=normal(1,idof)
+    ny=normal(2,idof)
+    nz=normal(3,idof)
+
+   !! the same thing occurs with the jacobian_2D
+    jacobian=Jacobian2D(idof)
+
+    !! precomputed operators 
+    discretized_surface_opreator =   Jacobian * MassFace(idof_local,jdof_local) 
+    
+    !! Vx = buoyancy * discretized_surface_integral_oprator * [nx*sigma_xx + ny*sigma_xy + nz*sigma_xz]
+    !! discretized_surface_integral operator = buoyancy * Jacobian_2D * MassFace(idof,jdof) 
+    !!
+
+    ivar=1
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar=4    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+
+    jvar = 7   
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+
+    jvar = 8  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+
+
+    !! Vy =
+    ivar=2
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar = 7    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+
+    jvar = 5  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+
+    jvar = 9  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+    
+    !! VZ = 
+    ivar=3
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar = 6    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+
+    jvar = 8  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+
+    jvar = 9  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+
+    !! Sigma_xx =
+    ivar = 4 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * (lambda + 2._FP * mu) * discretized_surface_opreator
+
+    jvar = 2  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * lambda * discretized_surface_opreator
+
+    jvar = 3  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * lambda * discretized_surface_opreator
+
+    !! sigma_yy =
+    ivar = 5 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  lambda * discretized_surface_opreator
+
+    jvar = 2  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * (lambda + 2._FP * mu) * discretized_surface_opreator
+
+    jvar = 3  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * lambda * discretized_surface_opreator
+
+    !! sigma_zz =
+    ivar = 6 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * lambda * discretized_surface_opreator
+
+    jvar = 2  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * lambda * discretized_surface_opreator
+
+    jvar = 3  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * (lambda + 2._FP * mu) * discretized_surface_opreator
+    
+    !! sigma_xy
+    ivar = 7
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * mu * discretized_surface_opreator
+
+    jvar = 2  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+
+    !! sigma_xz
+    ivar = 8
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+
+    jvar = 3  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * mu * discretized_surface_opreator
+
+    !! sigma_yz
+    ivar = 9
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 2    
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+
+    jvar = 3  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * mu * discretized_surface_opreator
+
+  end subroutine fill_aij_surfacic_interior
+
+
+  subroutine fill_aij_surfacic_exterior(Aloc, Aind, Na, Na2D, ndof_glob, ndof_loc, idof, jdof, ldof, idof_local, jdof_local, &
+       ldof_local, MassFace, normal, Jacobian2D, Lagrange2D, ndof2D,  &
+       buoyancy, lambda, mu)
+
+    implicit none
+    integer                                     :: Na, Na2D, ndof_glob, ndof_loc, ndof2D
+    integer                                     :: idof, idof_local, jdof, jdof_local, ldof, ldof_local
+    integer      ,dimension(na,na2D)            :: Aind
+    real(kind=FP),dimension(na,na2D)            :: Aloc
+    real(kind=FP),dimension(ndof_loc,ndof_loc)  :: MassFace
+    real(kind=FP),dimension(ndof_glob)          :: Jacobian2D
+    real(kind=FP),dimension(ndof2D)             :: Lagrange2D
+    real(kind=FP),dimension(3,ndof_glob)        :: normal  
+    real(kind=FP)                               :: buoyancy, lambda, mu
+    real(kind=FP)                               :: nx, ny, nz, jacobian
+    real(kind=FP)                               :: discretized_surface_opreator
+    integer                                     :: ivar, jvar, iloc, jloc
+
+    !! since the faces are plane, the normal doesn't vary on it, but we store it for each dof because of future 
+    !! developpents with curved elements.  
+    !! Therefore, We choose any normal on any dof in the face
+    nx=normal(1,idof)
+    ny=normal(2,idof)
+    nz=normal(3,idof)
+
+   !! the same thing occurs with the jacobian_2D
+    jacobian=Jacobian2D(idof)
+
+    !! precomputed operators 
+    discretized_surface_opreator =   Lagrange2D(ldof_local) * Jacobian * MassFace(idof_local,jdof_local) 
+    
+    !! Vx = buoyancy * discretized_surface_integral_oprator * [nx*sigma_xx + ny*sigma_xy + nz*sigma_xz]
+    !! discretized_surface_integral operator = buoyancy * Jacobian_2D * MassFace(idof,jdof) 
+    !!
+
+    ivar=1
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar=4    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 7   
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 8  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    !! Vy =
+    ivar=2
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar = 7    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 5  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    jvar = 9  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    !! VZ = 
+    ivar=3
+    iloc = ivar + nvar*(idof_local-1) 
+
+    jvar = 6    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 8  
+    jloc = jvar + nvar*(jdof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 9  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz *  buoyancy * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    !! Sigma_xx =
+    ivar = 4 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * (lambda + 2._FP * mu) * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 2  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * lambda * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 3  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * lambda * discretized_surface_opreator
+
+    !! sigma_yy =
+    ivar = 5 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx *  lambda * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 2  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * (lambda + 2._FP * mu) * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 3  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * lambda * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    !! sigma_zz =
+    ivar = 6 
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * lambda * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 2  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * lambda * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    jvar = 3  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * (lambda + 2._FP * mu) * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    !! sigma_xy
+    ivar = 7
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    jvar = 2  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    !! sigma_xz
+    ivar = 8
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 1    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+
+    jvar = 3  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nx * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    !! sigma_yz
+    ivar = 9
+    iloc = ivar + nvar*(idof_local-1)
+ 
+    jvar = 2    
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + nz * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+    jvar = 3  
+    jloc = jvar + nvar*(ldof_local-1) 
+    Aloc(iloc,jloc) = Aloc(iloc,jloc) + ny * mu * discretized_surface_opreator
+    Aind(iloc,jloc) = 1
+    
+  end subroutine fill_aij_surfacic_exterior
+
+
+!! =================================================== DEBUG TOOLS ==============================================
+subroutine Check_matrix(ref_matrix,Pkmax)
+
+  
+  implicit none
+  integer Pkmax
+  type(ref_matrix_t),  dimension(:),   allocatable :: ref_matrix 
+  
+  integer pk
+
+  pk=2
+  write(*,*) ref_matrix(pk)%miSr
+  !read(*,*) pk
+
+end subroutine Check_matrix
+
+!!===============================================================================================================
+
+subroutine build_field_params(veloc, sigma, vp, vs, rho, nbdof)
+ 
+  implicit none
+  real(kind=fp), dimension(:,:), allocatable, intent(out) :: veloc, sigma
+  real(kind=fp), dimension(:)  , allocatable, intent(out) :: vp, vs, rho
+  integer nbdof
+
+  call alloc_(veloc,1,3,1,nbdof,'veloc')
+  call alloc_(sigma,1,6,1,nbdof,'sigma')
+  
+  veloc(:,:) = 0._fp
+  sigma(:,:) = 0._fp
+
+  call alloc_(vp,1,nbdof,'vp')
+  call alloc_(vs,1,nbdof,'vs')
+  call alloc_(rho,1,nbdof,'rho')
+  
+  ! tests values with constants physical parameters 
+  vp(:)  = 4000._fp
+  vs(:)  = 2600._fp
+  rho(:) = 3000._fp
+
+end subroutine build_field_params
+
+
+end program dg_test

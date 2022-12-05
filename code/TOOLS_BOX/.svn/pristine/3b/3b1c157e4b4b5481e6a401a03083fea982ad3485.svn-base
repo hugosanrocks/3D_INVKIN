@@ -1,0 +1,418 @@
+module glob_dof_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use ref_dof_mod
+  use mat_csr_mod
+
+  implicit none
+
+  !--------------------------------------------------------------------------------
+  ! This module implementation specialized for :
+  ! - unstructured 3D meshes of tetrahedra 
+  ! - and discontinuous Galerkin finite elements methods with adaptative Pk order
+  !
+  ! The discontinuities between elements involve that degree of freedom points are 
+  ! created independently by elements (no dof shared at faces between elements)
+  !--------------------------------------------------------------------------------
+
+  contains
+
+
+  ! Build mappings needed for global matrix of dof relations:
+  ! - Ftodof: mapping between faces and dof located on faces (involved on surface integration when computing fluxes)
+  ! - Etodof: mapping between elements and all its dof (involved on volume integration), stored in an adjacency table
+  ! and build dof coordinates
+  ! - coordof
+  subroutine build_glob_dof(ref_dof, nV, nF, nFdeg, nE, nEdeg, coorV, EtoV, EtoE, PkE, &
+  &                         ndof, coordof, Etodof_adj, weight_vol, drdx, drdy, drdz, &
+  &                         dsdx, dsdy, dsdz, dtdx, dtdy, dtdz,&
+  &                         normal, jacobian_2D)
+
+    type(ref_dof_t),     dimension(:),     allocatable, intent(in)  :: ref_dof
+    integer,                                            intent(in)  :: nV, nF, nE, nFdeg, nEdeg
+    real,                dimension(:,:),   allocatable, intent(in)  :: coorV
+    integer,             dimension(:,:),   allocatable, intent(in)  :: EtoV, EtoE
+    integer,             dimension(:),     allocatable, intent(in)  :: PkE
+    integer,                                            intent(out) :: ndof
+    real(kind=FP),       dimension(:,:),   allocatable, intent(out) :: coordof, jacobian_2D
+    integer,             dimension(:),     allocatable, intent(out) :: Etodof_adj
+    real(kind=FP),       dimension(:),     allocatable, intent(out) :: weight_vol
+    real(kind=FP),       dimension(:),     allocatable, intent(out) :: drdx,drdy,drdz
+    real(kind=FP),       dimension(:),     allocatable, intent(out) :: dsdx,dsdy,dsdz
+    real(kind=FP),       dimension(:),     allocatable, intent(out) :: dtdx,dtdy,dtdz
+    real(kind=FP),       dimension(:,:,:), allocatable, intent(in out) :: normal
+    character(len = *),                                 parameter   :: proc_name = "build_glob_dof"
+    integer                                                         :: i, idof, idof1, idofend, nedof, ie, iv, k, npk, cptdof
+    real(kind=FP),       dimension(3,4)                             :: coor_vert    ! vertex coordinates in real tetra
+    integer ll 
+    if (dd_debug_level > 0) then
+      write(*,*) myid, " : ", proc_name, ' : nE, nF =', nE, nF
+    endif
+
+    ndof = 0
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    call alloc_(Etodof_adj, 1, nE+1, 'Etodof_adj')
+    Etodof_adj(1) = 1
+    
+    ! 1/ Loop on elements 
+    ! to compute the total number of dof
+    ! and fulfill Etodof adjacency table
+    !-----------------------------------
+    cptdof = 0
+    do ie = 1, nE
+
+      k = PkE(ie)               ! Pk order associated to the element
+      npk = ref_dof(k)%nP
+      cptdof = cptdof + npk     ! increment the total number of dof
+
+      Etodof_adj(ie+1) = cptdof + 1
+
+    end do ! loop on elements
+    ndof  = cptdof
+
+    write(*,*) myid, " : ", proc_name, ' : Total number of dof =', ndof
+
+    call alloc_(coordof, 1, 3, 1, ndof, 'coordof')
+    call alloc_(weight_vol, 1, ndof, 'weight_vol')
+
+    call alloc_(drdx, 1, ndof, 'drdx')
+    call alloc_(drdy, 1, ndof, 'drdy')
+    call alloc_(drdz, 1, ndof, 'drdz')
+    
+    call alloc_(dsdx, 1, ndof, 'dsdx')
+    call alloc_(dsdy, 1, ndof, 'dsdy')
+    call alloc_(dsdz, 1, ndof, 'dsdz')
+    
+    call alloc_(dtdx, 1, ndof, 'dtdx')
+    call alloc_(dtdy, 1, ndof, 'dtdy')
+    call alloc_(dtdz, 1, ndof, 'dtdz')
+
+    call alloc_(normal, 1, 3,  1, ndof, 1, 4, 'normal')
+    call alloc_(jacobian_2D, 1, ndof, 1, 4, 'jacobian_2D')
+
+    normal(:,:,:)=0._fp
+    jacobian_2D(:,:)=0._fp
+
+    ! 2/ Loop on elements and ref dof associated to it
+    ! to build real dof and mapping data 
+    ! (dof coordinates, face <-> dof, element<->dof)
+    !-------------------------------------------------
+    idof  = 0
+    do ie = 1, nE
+
+      k   = PkE(ie)           ! Pk order associated to the element
+      npk = ref_dof(k)%nP     ! Number of dof of the element
+
+      ! Retrieve vertex coordinates of the real tetrahedron
+      do i = 1, 4
+        iv = EtoV(i,ie)
+        coor_vert(:,i) = coorV(:,iv)
+      end do
+
+      ! Compute coordinates of all the dof of the element using real tetrahedron vertices coordinates and reference element
+      ! + dof weight involved in volumic integration
+      call rsttoxyz(coordof   (:,idof+1:idof+npk), &
+      &             weight_vol(  idof+1:idof+npk), &
+      & drdx(  idof+1:idof+npk), drdy(  idof+1:idof+npk), drdz(  idof+1:idof+npk), &
+      & dsdx(  idof+1:idof+npk), dsdy(  idof+1:idof+npk), dsdz(  idof+1:idof+npk), &
+      & dtdx(  idof+1:idof+npk), dtdy(  idof+1:idof+npk), dtdz(  idof+1:idof+npk), &
+      & normal, jacobian_2D,&
+      &             ref_dof(k)%coor, coor_vert, npk, k, 4, idof, npk)
+
+      idof = idof + npk
+
+    end do ! loop on elements
+
+    if (debug_graph > 3) then
+      write(*,*)
+      write(*,*) 'global dof info:'
+      write(*,*)
+      write(*,'(A,I8)') ' Nb dof:', ndof
+      do idof = 1, ndof
+        write(*,'(I8,A,3F8.4,A,F8.4)') idof, ' coor =', coordof(:,idof), ' weight_vol =', weight_vol(idof)
+      end do
+      write(*,*)
+      if (allocated(Etodof_adj)) then
+      do ie = 1, nE
+        idof1   = Etodof_adj(ie)
+        idofend = Etodof_adj(ie+1) - 1
+        nEdof   = idofend - idof1 + 1
+        write(*,'(4(A,I8))') ' ie   = ', ie, ' nEdof =', nEdof, ' from ', idof1, ' to ', idofend
+      end do
+      end if
+      write(*,*)
+    end if
+
+  end subroutine build_glob_dof
+
+
+  ! Insertion sort algorithm efficient for small arrays (1-based)
+  ! Sort performed on 'a' array values and permutation is reported on 'aref' array
+  pure subroutine sort(n, a, aref)
+    integer,               intent(in)     :: n
+    integer, dimension(n), intent(in out) :: a, aref
+    integer                               :: i, j
+  
+    do i = 2, n
+      j = i - 1
+      do while (j>1 .and. a(j) > a(i))
+          j = j - 1
+      end do
+      a   (j+1:i) = cshift(a   (j+1:i),-1)
+      aref(j+1:i) = cshift(aref(j+1:i),-1)
+    end do
+    
+  ! variant algorithm without cshift instruction use
+  !   real :: temp, tempref
+  !   do i = 2, n
+  !      j = i - 1
+  !      temp    = a(i)
+  !      tempref = aref(i)
+  !      do while (j>1 .and. a(j)>temp)
+  !         a(j+1)    = a(j)
+  !         aref(j+1) = aref(j)
+  !         j = j - 1
+  !      end do
+  !      a   (j+1) = temp
+  !      aref(j+1) = tempref
+  !   end do
+  end subroutine sort
+
+  subroutine init_dof_CSR_matrix(nvar, nterm, ndof, nF, nFdeg, nE, nEdeg, EtoF, FtoE, EtoE, Etodof_adj, ref_dof, PkE, &
+  &                              mat)
+    integer,                                          intent(in)  :: nvar, nterm, ndof, nF, nE, nFdeg, nEdeg
+    integer,             dimension(:,:), allocatable, intent(in)  :: EtoF, FtoE, EtoE
+    integer,             dimension(:),   allocatable, intent(in)  :: Etodof_adj
+    type(ref_dof_t),     dimension(:),   allocatable, intent(in)  :: ref_dof
+    integer,             dimension(:),   allocatable, intent(in)  :: PkE
+    type(mat_csr_t),                                  intent(out) :: mat
+
+    character(len = *),                               parameter   :: proc_name = "init_dof_CSR_matrix"
+    integer,             dimension(:),   allocatable              :: nnghb, tmp_offsets, ordered_list, ordered_list_ref
+    integer                                                       :: ie, i, idof, idof1, idofend, nEdof, j, jdof, k, npf
+    integer                                                       :: ifacref, ifac, k_nghb, npf_nghb, ifacref_nghb, ie_nghb
+    integer                                                       :: iref, size_list, ie_ordered, j1, jend, irow
+    character(len=8)                                              :: str2
+    character(len=30)                                             :: fmt2
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, " : ", proc_name, ' : nvar, nterm, ndof, nE, nF =', nvar, nterm, ndof, nE, nF
+    endif
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    call alloc_(nnghb, 1, ndof, proc_name // 'nnghb')
+
+    ! First retrieve the number of neighbors of each dof
+    !---------------------------------------------------
+    do ie = 1, nE
+
+      ! 1/ Count neighbors involved in volumic integration (dof of element x dof of element)
+      ! Retrieve starting and ending endices (as they are contiguous) of dof associated to the current element
+      idof1   = Etodof_adj(ie)
+      nEdof   = Etodof_adj(ie+1) - Etodof_adj(ie)
+      nnghb(idof1:idof1 + nEdof - 1) = nEdof ! add the dof itself in the count of its neighbors
+
+      k   = PkE(ie)
+      npf = ref_dof(k)%npf
+
+      ! 2/ Count neighbours involved in surfacic integration of fluxes computations
+      ! - (dof of face of element x dof of face of element) -> neighbours already taken into account in 1/, do not recompute them
+      ! + (dof of face of element x dof of adjacent faces of adjacent elements)
+      do ifacref = 1, 4
+        ifac = EtoF(ifacref, ie)
+
+        ! Retrieve the neighbour element index
+        ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+        if (ie_nghb > 0) then
+
+          k_nghb   = PkE(ie_nghb)
+          npf_nghb = ref_dof(k_nghb)%npf
+
+          do j = 1, npf
+            ! Retrieve global indices of dofs linked to this face: 
+            ! first index of dofs linked to the current element + iterator on dofs of the reference face
+            jdof = Etodof_adj(ie) + ref_dof(k)%Ftodof(j,ifacref) - 1
+            
+            nnghb(jdof) = nnghb(jdof) + npf_nghb 
+
+          end do ! j = 1, npf
+        end if ! (ie_nghb > 0)
+          
+      end do ! ifacref = 1, 4
+      !if (mod(ie,1000000) == 0) write(*,*) '... ie = ', ie, ' ... nnz = ', sum(nnghb)
+    end do ! ie = 1, nE
+
+    ! Allocate the matrix
+    !--------------------
+    mat = mat_csr_t(n = ndof*nvar, nnz = sum(nnghb)*nvar*nterm, IA = null(), JA = null())
+    write(*,*) myid, " : ", proc_name, ' : n, nnz = ', mat%n, mat%nnz
+
+    if (mat%nnZ < 0) then
+      write(*,*) proc_name, ' :: ERROR : nnz greater than allowed in address space which is :', huge(0_4), &
+      &                     ' for integer kind = ', selected_int_kind(8)
+      stop
+    end if
+
+    call alloc_(mat%IA, 1, mat%n+1, 'mat%IA')
+    call alloc_(mat%JA, 1, mat%nnz, 'mat%JA')
+    call alloc_(tmp_offsets, 1, ndof, proc_name // 'tmp_offsets')
+
+    ! Fulfill row offsets in IA
+    !--------------------------
+    mat%IA(1) = 1
+    do idof = 1, ndof
+      mat%IA(idof + 1) = mat%IA(idof) + nnghb(idof) ! take into account the diagonal term
+    end do
+
+    ! Initialize offsets array associated to the filling-in rate of the matrix
+    tmp_offsets(1) = 1
+    do idof = 2, ndof
+      tmp_offsets(idof) = tmp_offsets(idof-1) + nnghb(idof-1)
+    end do
+
+    ! Create a list to be fulfilled with the indices of the currrent element and its neighbors element
+    ! The purpose is to sort it and fulfill the vector JA of the CSR matrix with a loop on this lits
+    ! such that the vector JA containing the neighbours of dofs will be ordered too
+    size_list = 5 !current element + 4 faces of the tetrahedron
+    call alloc_(ordered_list,     1, size_list, proc_name // 'ordered_list')
+    call alloc_(ordered_list_ref, 1, size_list, proc_name // 'ordered_list_ref')
+
+    ! Fulfill JA with neighbors dof indices
+    !--------------------------------------
+    do ie = 1, nE
+
+      k   = PkE(ie)
+      npf = ref_dof(k)%npf
+
+      ! Store in an array to be ordered current element and neighbors element indices
+      ! and keep the face reference in ordered_list_ref (set 0 for the current element itself)
+      ordered_list     = (/ ie, (EtoE(:, ie)) /)
+      ordered_list_ref = (/ (i, i = 0, size_list-1) /)
+      call sort(size_list, ordered_list, ordered_list_ref)
+
+      do iref = 1, size_list
+
+        ie_ordered = ordered_list(iref)
+
+        if (ie_ordered == ie) then
+
+          ! 1/ Neighbors inside the current element involved in volumic integration (dof of element x dof of element)
+          idof1   = Etodof_adj(ie)
+          idofend = Etodof_adj(ie+1) - 1
+          nEdof   = idofend - idof1 + 1
+
+          do idof = idof1, idofend
+
+            mat%JA(tmp_offsets(idof) : tmp_offsets(idof) + nEdof - 1) = (/ (jdof, jdof = idof1, idofend) /)
+
+            tmp_offsets(idof) = tmp_offsets(idof) + nEdof
+
+          end do
+
+        else
+
+          ifacref    = ordered_list_ref(iref)
+
+          ! 2/ Count neighbours involved in surfacic integration of fluxes computations
+          ! - (dof of face of element x dof of face of element) -> neighbours already taken into account in 1/, do not recompute them
+          ! + (dof of face of element x dof of adjacent faces of adjacent elements)
+          ifac = EtoF(ifacref, ie)
+
+          ! Retrieve the neighbour element index
+          ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+          if (ie_nghb > 0) then
+
+            k_nghb   = PkE(ie_nghb)
+
+            if (k_nghb > 0) then
+
+              npf_nghb = ref_dof(k_nghb)%npf
+              ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref
+
+              do j = 1, npf
+
+                ! Retrieve global indices of dofs linked to this face: 
+                ! first index of dofs linked to the current element + iterator on dofs of the reference face
+                jdof = Etodof_adj(ie) + ref_dof(k)%Ftodof(j,ifacref) - 1
+      
+                mat%JA(tmp_offsets(jdof) : tmp_offsets(jdof) + npf_nghb - 1) =   Etodof_adj(ie_nghb) - 1 &
+                &                                                              + ref_dof(k_nghb)%Ftodof(:,ifacref_nghb)
+
+                tmp_offsets(jdof) = tmp_offsets(jdof) + npf_nghb
+
+              end do ! j = 1, npf
+            end if ! (k_nghb > 0) 
+          end if ! (ie_nghb > 0)
+        end if ! (ifacref /= 0)
+      end do ! iref = 1, size_list
+!       if (mod(ie,1000) == 0) write(*,*) '... ie = ', ie
+    end do ! ie = 1, nE
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'CSR matrix info:'
+      write(*,*)
+      write(*,'(A,I8)') ' mat%n   : ', mat%n
+      write(*,'(A,I8)') ' mat%nnz : ', mat%nnz
+      write(*,*)
+      do irow = 1, mat%n
+        j1 = mat%IA(irow)
+        jend = mat%IA(irow+1) - 1
+
+        write(str2,'(I8)') jend-j1+1
+        fmt2 = '(A,I8,A,' // trim(adjustl(str2)) // 'I8)'
+        write(*,fmt2) ' row = ', irow, ' JA =', mat%JA(j1:jend)
+      end do
+      write(*,*)
+    end if
+
+    call dealloc_(nnghb,            proc_name // 'nnghb')
+    call dealloc_(tmp_offsets,      proc_name // 'tmp_offsets')
+    call dealloc_(ordered_list,     proc_name // 'ordered_list')
+    call dealloc_(ordered_list_ref, proc_name // 'ordered_list_ref')
+
+  end subroutine init_dof_CSR_matrix
+
+
+!!!====================================================!!
+!!!====================================================!!
+!!!  SHOULD MOVE IN OTHER FILE THE BELOW SUBROUTINES   !!
+!!!====================================================!!
+!!!====================================================!!
+subroutine build_field_params(veloc, sigma, vp, vs, rho, nbdof)
+ 
+  implicit none
+  real(kind=fp), dimension(:,:), allocatable, intent(out) :: veloc, sigma
+  real(kind=fp), dimension(:)  , allocatable, intent(out) :: vp, vs, rho
+  integer nbdof
+
+  call alloc_(veloc,1,3,1,nbdof,'veloc')
+  call alloc_(sigma,1,6,1,nbdof,'sigma')
+  
+  veloc(:,:) = 0._fp
+  sigma(:,:) = 0._fp
+
+  call alloc_(vp,1,nbdof,'vp')
+  call alloc_(vs,1,nbdof,'vs')
+  call alloc_(rho,1,nbdof,'rho')
+  
+  ! tests values with constants physical parameters 
+  vp(:)  = 4000._fp
+  vs(:)  = 2600._fp
+  rho(:) = 3000._fp
+
+end subroutine build_field_params
+
+end module glob_dof_mod

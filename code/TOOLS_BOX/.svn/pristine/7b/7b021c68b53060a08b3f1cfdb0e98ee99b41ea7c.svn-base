@@ -1,0 +1,72 @@
+!*****************************************************!
+!*          SEISCOPE OPTIMIZATION TOOLBOX            *!
+!*****************************************************!
+! This routine is used for the restart of the         !
+! reverse communication mode preconditioned steepest  !
+! descent algorithm from the TOOLBOX.                 !
+!-----------------------------------------------------!
+! INPUT : integer n, dimension of the problem         !
+!       : real fcost                                  !
+!       : real,dimension(n) x,grad,grad_preco         !
+!                           initial guess, gradient,  !
+!                           preconditioned gradient   !
+! INPUT/OUTPUT : optim_type optim data structure      ! 
+!-----------------------------------------------------!
+subroutine restart_PSTD(n,x,fcost,grad,grad_preco,optim)
+  
+  implicit none
+  include 'optim_type.h'  
+
+  integer,           intent(in) :: n
+  real,              intent(in) :: fcost
+  real,dimension(n), intent(in) :: x, grad, grad_preco
+
+  type(optim_type),  intent(inout) :: optim !data structure   
+
+  !---------------------------------------!
+  ! set counters                          !
+  !---------------------------------------!
+  !optim%cpt_iter=0
+  !optim%f0=fcost
+  !optim%nfwd_pb=0  
+
+  !---------------------------------------!
+  ! initialize linesearch parameters      !
+  ! by default, the max number of         !
+  ! linesearch iteration is set to 20     !
+  ! and the initial steplength is set to 1!
+  !---------------------------------------! 
+  !optim%m1=1e-4 ! Wolfe conditions parameter 1 (Nocedal value)
+  !optim%m2=0.9  ! Wolfe conditions parameter 2 (Nocedal value)
+  !optim%mult_factor=10 ! Bracketting parameter (Gilbert value)
+  optim%fk=fcost
+  !optim%nls_max=20 ! max number of linesearch
+  optim%cpt_ls=0
+  optim%first_ls=.true.
+  !optim%alpha=1. ! first value for the linesearch steplength
+  !---------------------------------------!
+  ! memory allocations                    !
+  !---------------------------------------!
+  !allocate(optim%xk(n))
+  optim%xk(:)=x(:)
+  !allocate(optim%grad(n))
+  optim%grad(:)=grad(:)
+  !allocate(optim%descent(n))
+
+  !---------------------------------------!
+  ! first descent direction               !
+  !---------------------------------------!
+  !optim%descent(:) = -1.0*grad(:)
+  optim%descent(:)  = -1.0*grad_preco(:)
+contains
+  subroutine dump(i) 
+    integer, intent(in) :: i
+    write (*,*) "init_PSTD", i
+    write (*,*) "n:", n
+    write (*,*) "size(x):", size(x)
+    write (*,*) "fcost:", fcost
+    write (*,*) "grad:", size(grad)
+    write (*,*) "grad_preco:", size(grad_preco)
+    !optim
+  end subroutine dump
+end subroutine restart_PSTD

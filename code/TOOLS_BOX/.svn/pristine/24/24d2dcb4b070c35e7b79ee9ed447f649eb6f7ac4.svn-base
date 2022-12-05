@@ -1,0 +1,118 @@
+!!-- Header --!!
+
+module ugrid_mod
+
+  use dd_common_mod
+  use grid_mod
+  use mpi, only: mpi_proc_null
+
+  implicit none
+
+  !=========================================================
+  type, extends(grid_type), public :: ugrid_type
+
+    ! Data members
+
+  contains
+
+    procedure, pass :: ugrid_constructor
+    procedure, pass :: grid_read_config => ugrid_read_config
+    procedure, pass :: grid_init        => ugrid_init
+    procedure, pass :: grid_destructor  => ugrid_destructor
+
+  end type ugrid_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_ugrid_type
+
+  contains
+
+
+    function as_ugrid_type(grid)
+      class(grid_type), target, intent(in) :: grid
+      type(ugrid_type),         pointer    :: as_ugrid_type
+      character(len=*),         parameter  :: proc_name = "as_ugrid_type"
+
+      grid_selector: select type(grid)
+      type is (ugrid_type)
+        as_ugrid_type => grid
+      class default
+        write(*,*) myid, " : ", proc_name, " :: ERROR : Wrong grid type. Attempted: ugrid_type"
+        stop
+      end select grid_selector
+
+    end function as_ugrid_type
+
+
+    subroutine ugrid_constructor(this)
+      class(ugrid_type),          intent(in out) :: this
+      character(len=*),                parameter :: proc_name = "ugrid_constructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call grid_constructor(this)
+
+      !! BODY ++
+
+      !! BODY --
+
+    end subroutine ugrid_constructor
+
+
+    subroutine ugrid_destructor(this)
+      class(ugrid_type), intent(in out) :: this
+      character(len=*),  parameter      :: proc_name = "ugrid_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call grid_destructor(this)
+
+    end subroutine ugrid_destructor
+
+
+    subroutine ugrid_init(this)
+      class(ugrid_type),  intent(in out) :: this
+      character(len = *),      parameter :: proc_name = "ugrid_init"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+    end subroutine ugrid_init
+
+ 
+    subroutine ugrid_set_overlap(this, novlp)
+      class(ugrid_type), intent(in out) :: this
+      integer,               intent(in) :: novlp
+      character(len=*),       parameter :: proc_name = 'ugrid_set_overlap'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+    end subroutine ugrid_set_overlap
+
+
+    subroutine ugrid_read_config(this, config_file)
+      class(ugrid_type), intent(in out) :: this
+      character(len = *),  intent(in) :: config_file
+      character(len = *),     parameter :: proc_name = "ugrid_read_config"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+    end subroutine ugrid_read_config
+
+end module ugrid_mod

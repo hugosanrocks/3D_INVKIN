@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Before launching the current shell,
+# edit it and adapt the following parameters:
+# - set your compilation options,
+# - set the correct path to metis library
+# Then create a build directory at the same level than the current script,
+# go inside and type
+# my_build_dir > sh ../cmake_intel.sh
+
+FC='mpiifort' \
+cmake \
+-DCMAKE_Fortran_FLAGS='-assume byterecl -align -openmp' \
+-DCMAKE_Fortran_FLAGS_DEBUG='-g -C -CB -CU -fpe0 -ftrapuv -fp-model precise' \
+-DCMAKE_Fortran_FLAGS_RELEASE='-O3 -xHost' \
+-DMETIS_LIB_DIR='/applis/site/stow/gcc_4.4.6/metis_5.1.0/lib' \
+-DMETIS_LIB_NAME='metis' \
+..
+

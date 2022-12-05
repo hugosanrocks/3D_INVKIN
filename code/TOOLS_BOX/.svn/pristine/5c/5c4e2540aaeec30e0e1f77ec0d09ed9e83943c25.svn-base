@@ -1,0 +1,73 @@
+module mat_csr_mod
+
+  use dd_common_mod
+
+  implicit none
+
+  ! matrix defined by a compressed row storage format
+  type mat_csr_t
+    sequence
+    integer,       dimension(:),   allocatable :: JA        !      [nnz], the column indices corresponding to the values
+    integer,       dimension(:),   allocatable :: IA        !      [n+1], the list of value indices where each row starts in icol and val
+    integer                                    :: nnz   = 0 ! total number of nonzero term in the matrix
+    integer                                    :: n     = 0 ! number of rows of the matrix
+!   real(kind=FP), dimension(:),   allocatable :: A         ! [nvar*nnz], array of the nonzero values vector of the matrix
+!   integer                                    :: nvar  = 0 ! total number of variables defining the aij vector size
+  end type mat_csr_t
+
+  ! Following the mat_csr_t structure, a matrix of data must have the following shape:
+  !
+  ! real(kind=FP), dimension(nvar,nnz) :: A
+  ! where the integer nvar is total number of variables defining the aij vector size
+  !
+  ! It is possible to associate several matrix of data to a mat_csr_t structure
+  ! for example one for stress components and another one for velocity components
+
+
+  contains
+
+  ! Add contribution aij in A CSR matrix
+  subroutine add_csr_mat(mat, A, aij, iin, jin, nvar, nnz)
+    integer,                             intent(in)     :: iin, jin, nvar, nnz
+    type(mat_csr_t),                     intent(in)     :: mat
+    real(kind=FP), dimension(nvar*nnz),  intent(in out) :: A
+    real(kind=FP), dimension(nvar),      intent(in)     :: aij
+    character(len=*),                    parameter      :: proc_name = "add_csr_mat"
+    integer                                             :: i1, iend, is, ifound
+
+    i1   = mat%IA(iin)
+    iend = mat%IA(iin + 1) -1
+    ifound = -1
+    do is = i1, iend
+      if (mat%JA(is) == jin) then
+        ifound = is
+        exit
+      end if
+    end do
+    if (ifound == -1) then
+      write(error_message,*) proc_name, ' :: ERROR : aij location not found in CSR matrix for i, j: ', iin, jin
+      call stop_mpi()
+    else
+      A((ifound-1)*nvar+1:ifound*nvar) = A((ifound-1)*nvar+1:ifound*nvar) + aij(:)
+    end if
+  end subroutine add_csr_mat
+
+  ! Set diagonal block to identity and zero elsewhere in the row
+  subroutine set_ident_blokline(mat, A, iin, nvar, nnz)
+    integer,                             intent(in)     :: iin, nvar, nnz
+    type(mat_csr_t),                     intent(in)     :: mat
+    real(kind=FP), dimension(nvar*nnz),  intent(in out) :: A
+    character(len=*),                    parameter      :: mod_name = "set_ident_blokline"
+    integer                                             :: i1, iend, is
+
+    i1    = mat%IA(Iin)
+    iend  = mat%IA(Iin + 1) -1
+    do is = i1, iend
+      A((is-1)*nvar+1:is*nvar) = 0.0_FP
+      if (iin == mat%JA(is)) then
+        A((is-1)*nvar+1:is*nvar) = 1.0_FP
+      end if
+    end do
+  end subroutine set_ident_blokline
+
+end module mat_csr_mod

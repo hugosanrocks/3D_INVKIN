@@ -1,0 +1,1339 @@
+module ref_dof_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+
+  implicit none
+
+  type ref_dof_t
+
+     sequence
+
+     integer                                    :: np  = 0 ! number of dof of an element of Pk order
+     integer                                    :: npf = 0 ! number of dof on each tetrahedron face
+     real(kind=FP), dimension(:,:), allocatable :: coor
+     integer,       dimension(:,:), allocatable :: doftoF ! mapping dof (ref) ->  tetrahedron face (ref)
+     integer,       dimension(:,:), allocatable :: Ftodof ! mapping dof (ref) <-  tetrahedron face (ref)
+
+  end type ref_dof_t
+
+  type ref_matrix_t
+
+     sequence
+
+     integer                                    :: np  = 0         ! number of dof of an element of Pk order
+     integer                                    :: npf = 0         ! number of dof on each tetrahedron face
+
+     !! 3D matrices (matrices defined in whole tetra volume)
+     real(kind=FP), dimension(:,:), allocatable :: invMassVolume
+     real(kind=FP), dimension(:,:), allocatable :: MassVolume
+     real(kind=FP), dimension(:,:), allocatable :: Vandermonde     ! Vandermonde matrix
+     real(kind=FP), dimension(:,:), allocatable :: InvVandermonde  ! inverse Vandermonde matrix
+     real(kind=FP), dimension(:,:), allocatable :: V3Dr,V3Ds,V3Dt  ! Vandermonde derivative matrix  
+     real(kind=FP), dimension(:,:), allocatable :: Dr,Ds,Dt        ! derivative matrix 
+     real(kind=FP), dimension(:,:), allocatable :: miSr,miSs,miSt  ! invMass*Stifness
+
+     !! 2D matrices (matrices defined in tetra faces (fluxes))
+     real(kind=FP), dimension(:,:,:), allocatable :: Vandermonde2D
+     real(kind=FP), dimension(:,:),   allocatable :: InvV2D
+     real(kind=FP), dimension(:,:)  , allocatable :: MassFace
+     real(kind=FP), dimension(:,:)  , allocatable :: MassTriangle
+
+  end type ref_matrix_t
+
+  type surf_funct
+     
+     sequence
+
+     integer                                    :: npf = 0         ! number of dof on each tetrahedron face
+     real(kind=FP), dimension(:), allocatable   :: Jacobi_2D       ! modal ploynomial basis
+     real(kind=FP), dimension(:), allocatable   :: Lagrange2D      ! nodal polynomial basis
+
+  end type surf_funct
+
+  type permu_tri
+
+     integer                                      :: npf
+     integer, dimension(:,:), allocatable         :: perm 
+     real(kind=FP), dimension(:,:), allocatable   :: coor_bary      ! baricentric coordinate
+  end type permu_tri
+
+  type dof_conect 
+     integer                                      :: npf
+     integer, dimension(:,:), allocatable         :: my_dof,nei_dof, my_local_dof, nei_local_dof
+     integer, dimension(:),   allocatable         :: id 
+  end type dof_conect
+
+  contains
+
+  subroutine  allocate_surf_basis_function(Pkmax, surface_basis_function)
+
+    integer,                                        intent(in) :: Pkmax
+    type(surf_funct), dimension(:), allocatable, intent(inout) :: surface_basis_function
+    integer norder
+    
+    allocate(surface_basis_function(0:Pkmax))
+
+    do norder = 1, Pkmax
+       surface_basis_function(norder)%npf=(norder+1)*(norder+2)/2
+       allocate(surface_basis_function(norder)%Jacobi_2D(surface_basis_function(norder)%npf))
+       allocate(surface_basis_function(norder)%Lagrange2D(surface_basis_function(norder)%npf))
+    end do
+
+  end subroutine allocate_surf_basis_function
+
+  !! Build all surfacic  matrices in ref tetra need to implement DG folowing Hesthaven's book
+
+  subroutine build_ref_matrix2D(Pkmax, ref_matrix, ref_dof)
+
+    integer,                                       intent(in)    :: Pkmax
+    type(ref_matrix_t), dimension(:), allocatable, intent(inout) :: ref_matrix
+    type(ref_dof_t)   , dimension(:), allocatable, intent(in)    :: ref_dof
+    integer norder
+
+    
+    !TODO : 
+    !! cas norder = 0 a prendre en compte ici
+    !! (...)
+    
+    do norder = 1, Pkmax
+
+       ref_matrix(norder)%npf = ref_dof(norder)%npf
+       allocate(ref_matrix(norder)%Vandermonde2D( ref_matrix(norder)%npf , ref_matrix(norder)%npf ,4))
+       allocate(ref_matrix(norder)%MassFace(ref_matrix(norder)%np,4*ref_matrix(norder)%npf))
+       allocate(ref_matrix(norder)%InvV2D(ref_matrix(norder)%npf , ref_matrix(norder)%npf))
+       allocate(ref_matrix(norder)%MassTriangle(ref_matrix(norder)%npf , ref_matrix(norder)%npf))
+
+       call Vandermonde2D( norder, ref_dof(norder)%npf, ref_dof(norder)%np, ref_dof(norder)%coor, &
+            ref_matrix(norder)%Vandermonde2D, ref_matrix(norder)%InvV2D, ref_matrix(norder)%MassFace,&
+            ref_matrix(norder)%MassTriangle, ref_dof(norder)%doftoF, ref_dof(norder)%Ftodof)
+             
+    end do
+
+
+  end subroutine build_ref_matrix2D
+
+  !! Build all volumic matrices in ref tetra need to implement DG folowing Hesthaven's book
+  
+  subroutine build_ref_matrix3D(Pkmax, ref_matrix, ref_dof)
+
+    integer,                                       intent(in)  :: Pkmax
+    type(ref_matrix_t), dimension(:), allocatable, intent(out) :: ref_matrix
+    type(ref_dof_t)   , dimension(:), allocatable, intent(in)  :: ref_dof
+    integer norder
+
+
+    allocate(ref_matrix(0:Pkmax))
+
+
+    !! BUILD LOCAL 3D MATRICES
+
+    !TODO : 
+    !! cas norder = 0 a prendre en compte ici
+    !! (...)
+    
+    do norder = 1, Pkmax
+
+       !! allocation de Vandermonde a faire en utilisant les routines de Laure
+       ref_matrix(norder)%np = ref_dof(norder)%np
+       ref_matrix(norder)%npf = ref_dof(norder)%npf
+       allocate(ref_matrix(norder)%Vandermonde(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%InvVandermonde(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%invMassVolume(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%MassVolume(ref_matrix(norder)%np,ref_matrix(norder)%np))
+
+       allocate(ref_matrix(norder)%V3Dr(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%V3Ds(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%V3Dt(ref_matrix(norder)%np,ref_matrix(norder)%np))
+
+       allocate(ref_matrix(norder)%Dr(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%Ds(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%Dt(ref_matrix(norder)%np,ref_matrix(norder)%np))
+
+       allocate(ref_matrix(norder)%miSr(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%miSs(ref_matrix(norder)%np,ref_matrix(norder)%np))
+       allocate(ref_matrix(norder)%miSt(ref_matrix(norder)%np,ref_matrix(norder)%np))
+
+       call vandermonde3D( norder, ref_matrix(norder)%np, ref_dof(norder)%coor , &
+            ref_matrix(norder)%Vandermonde, ref_matrix(norder)%InvVandermonde)
+       
+    
+       call GradVandermonde(norder, ref_matrix(norder)%np, ref_dof(norder)%coor, &
+            ref_matrix(norder)%V3Dr, ref_matrix(norder)%V3Ds, ref_matrix(norder)%V3Dt)
+
+       
+       call Dmatrices(ref_matrix(norder)%Vandermonde, &
+            ref_matrix(norder)%V3Dr, ref_matrix(norder)%V3Ds, ref_matrix(norder)%V3Dt,&
+            ref_matrix(norder)%Dr, ref_matrix(norder)%Ds, ref_matrix(norder)%Dt, ref_matrix(norder)%np)
+
+       !! mass matrix
+       write(*,*) 'compute mass matrix ', norder
+       call mass_matrix_volume(ref_matrix(norder)%invMassVolume, ref_matrix(norder)%MassVolume, &
+            ref_matrix(norder)%Vandermonde,ref_matrix(norder)%np)
+       
+       !! invmass * stifness 
+       call invmass_time_stiffness(ref_matrix(norder)%invMassVolume, ref_matrix(norder)%MassVolume, &
+            ref_matrix(norder)%miSr, ref_matrix(norder)%miSs, ref_matrix(norder)%miSt, &
+            ref_matrix(norder)%Dr  , ref_matrix(norder)%Ds  , ref_matrix(norder)%Dt  ,ref_matrix(norder)%np)
+
+    end do
+    
+    
+
+  end subroutine build_ref_matrix3D
+
+
+!! Build dof in ref tetra folowing blend and warp approach descrided in Hesthaven book
+
+  subroutine build_ref_dof(Pkmax, ref_dof)
+    integer,                                    intent(in)  :: Pkmax
+    type(ref_dof_t), dimension(:), allocatable, intent(out) :: ref_dof
+
+    character(len = *),                         parameter   :: mod_name = "build_ref_dof"
+    integer                                                 :: k, npFmax, ifac, idof, i
+    integer,         dimension(:), allocatable              :: cpt_Ftodof
+    character(len=3)                                        :: str1
+    character(len=20)                                       :: fmt1
+
+    allocate(ref_dof(0:Pkmax))
+
+    ! order 0 (npF = 0 => empty Ftodof table)
+    ref_dof(0)%nP  = 1
+    ref_dof(0)%npF = 0
+    call alloc_(ref_dof(0)%coor,   1, 3, 1, 1, 'ref_dof(0)%coor')
+    call alloc_(ref_dof(0)%doftoF, 1, 3, 1, 1, 'ref_dof(0)%doftoF')
+
+    npFmax = int((Pkmax+1) * (Pkmax+2) / 2)
+    call alloc_(cpt_Ftodof, 1, npFmax, 'cpt_Ftodof')
+    
+   
+    do k = 1, Pkmax
+
+      ref_dof(k)%nP  = int((k+1) * (k+2) * (k+3) / 6)
+      ref_dof(k)%npF = int((k+1) * (k+2) / 2)
+
+      call alloc_(ref_dof(k)%coor,   1, 3, 1, ref_dof(k)%np, 'ref_dof(k)%coor')
+      call alloc_(ref_dof(k)%doftoF, 1, 3, 1, ref_dof(k)%np, 'ref_dof(k)%doftoF')
+      call alloc_(ref_dof(k)%Ftodof, 1, ref_dof(k)%npF, 1, 4, 'ref_dof(k)%Ftodof')
+
+      call equi_nodes3d(k,               &
+      &                 ref_dof(k)%np,   &
+      &                 ref_dof(k)%coor, &
+      &                 ref_dof(k)%doftoF)
+
+      if (k > 2) then
+
+         !! Hesthaven approach to compute nodal position in ref tetra according to order k
+         ! 1. compute nodes in euqilateral tetra
+         call  Hest_nodes_in_equi_tetra(k,   &
+              &            ref_dof(k)%np,   &
+              &            ref_dof(k)%coor)
+
+         ! 2. apply mapping from equilateral tetra to reference tetra
+         call Hest_nodes_in_ref_tetra(k,   &
+              &            ref_dof(k)%np,   &
+              &            ref_dof(k)%coor)
+ 
+
+      end if
+     
+
+      ! Build Ftodof table
+      cpt_Ftodof(:) = 0
+      do idof = 1, ref_dof(k)%nP
+        do i = 1, 3
+          ifac = ref_dof(k)%doftoF(i, idof)
+          if (ifac > 0) then
+            cpt_Ftodof(ifac) = cpt_Ftodof(ifac) + 1
+            ref_dof(k)%Ftodof(cpt_Ftodof(ifac), ifac) = idof
+            
+          end if
+        end do
+      end do
+    end do
+
+    if (debug_graph > 3) then
+      write(*,*)
+      write(*,*) 'Pk order reference dof info:'
+      write(*,*)
+      do k = 0, Pkmax
+        write(*,'(3(A,I3))') ' order =', k, ' np =', ref_dof(k)%np, ' npf =', ref_dof(k)%npf
+        write(*,*)
+        do idof = 1, ref_dof(k)%np
+          write(*,'(A,I3,A,3F8.4)') ' idof = ', idof, ' coor =', ref_dof(k)%coor(:,idof)
+        end do
+        write(*,*)
+        do idof = 1, ref_dof(k)%np
+          write(*,'(A,I3,A,3I2)') ' idof = ', idof, ' doftoF =', ref_dof(k)%doftoF(:,idof)
+        end do
+        write(*,*)
+        if (k > 0) then
+          write(str1,'(I3)') ref_dof(k)%npf
+          fmt1 = '(A,I3,A,' // str1 // 'I3)'
+          do ifac = 1, 4
+            write(*,fmt1) ' ifac = ', ifac, ' Ftodof =', ref_dof(k)%Ftodof(:,ifac)
+          end do
+          write(*,*)
+        end if
+      end do
+    end if
+
+    call dealloc_(cpt_Ftodof, 'cpt_Ftodof')
+
+  end subroutine build_ref_dof
+
+
+  subroutine equi_nodes3d(n, np, coor, doftoF)
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor(3,np)
+    integer,       intent(in out) :: doftoF(3,np)
+
+    integer                       :: sk,i,j,k,cptf
+    
+    sk = 0
+    doftoF(:,:) = 0
+    do k = 1, n + 1
+       do j = 1, n + 2 - k
+          do i = 1, n + 3 - j - k
+
+            sk = sk + 1
+
+            coor(1,sk) = -1._FP + (real(i,FP) - 1._FP) * 2._FP / real(n,FP)
+            coor(2,sk) = -1._FP + (real(j,FP) - 1._FP) * 2._FP / real(n,FP)
+            coor(3,sk) = -1._FP + (real(k,FP) - 1._FP) * 2._FP / real(n,FP)
+            
+            cptf =  0
+            if (i == 1) then
+               cptf = cptf + 1
+               doftoF(cptf,sk) = 2
+            end if
+
+            if (j == 1) then
+               cptf = cptf + 1
+               doftoF(cptf,sk) = 3
+            end if
+
+            if (k == 1) then
+               cptf = cptf + 1
+               doftoF(cptf,sk) = 4
+            end if
+
+            if (i + j + k == n + 3) then
+               cptf = cptf + 1
+               doftoF(cptf,sk) = 1
+            end if
+
+          end do
+       end do
+    end do
+
+  end subroutine equi_nodes3d
+
+
+  subroutine rsttoxyz(coor_dof,jacobian_dof, &
+              drdx, drdy, drdz, dsdx, dsdy, dsdz, dtdx, dtdy, dtdz, &
+              normal, jacobian_2D, coor_ref_dof, coor_vert, np, n,nvert, idofpt, npk)
+
+    ! mapping and jacobian from reference element to physical element
+    ! (form Hestaven & Warburton : Nodal Discontinuous Galerkin Methods Springer)  
+    ! (Chapiter 10, p409-410) 
+
+    integer,       intent(in)     :: n, np,nvert         ! order, nb dof, nb vertices
+    real(kind=FP), intent(in)     :: coor_ref_dof(3,np)  ! dof coor in ref tetra 
+    real(kind=FP), intent(in)     :: coor_vert(3,nvert)  ! vertex coordinate in real tetra
+    real(kind=FP), intent(in out) :: coor_dof(3,np)      ! dof coor in real tetra
+    real(kind=FP), intent(in out) :: jacobian_dof(np)    ! jacobian of mapping
+
+    ! mapping derivatives 
+    real(kind=FP), intent(in out) :: drdx(np), drdy(np), drdz(np)
+    real(kind=FP), intent(in out) :: dsdx(np), dsdy(np), dsdz(np)
+    real(kind=FP), intent(in out) :: dtdx(np), dtdy(np), dtdz(np)
+    real(kind=FP), allocatable, intent(in out) :: jacobian_2D(:,:)
+    real(kind=FP), allocatable, intent(in out) :: normal(:,:,:)
+    integer, intent(in) :: idofpt, npk
+
+    integer       :: idof,icoor,il,jl,kl,ifacref(3), kfaces,ifaces
+    real(kind=FP) :: r,s,t
+    real(kind=FP) :: xr,yr,zr
+    real(kind=FP) :: xs,ys,zs
+    real(kind=FP) :: xt,yt,zt
+    real(kind=FP) :: n1(3),n2(3),n3(3)
+    real(kind=FP) :: J,J2D,nrm
+    
+
+   
+    
+    do idof=1,np
+
+       r = coor_ref_dof(1,idof)
+       s = coor_ref_dof(2,idof)
+       t = coor_ref_dof(3,idof)
+
+       do icoor=1,3
+          coor_dof(icoor,idof) = - 0.5_fp*(r+s+t+1._fp)*coor_vert(icoor,1) &
+                                 + 0.5_fp*(r+    1._fp)*coor_vert(icoor,2) &
+                                 + 0.5_fp*(  s+  1._fp)*coor_vert(icoor,3) &
+                                 + 0.5_fp*(    t+1._fp)*coor_vert(icoor,4)
+       end do
+       
+
+    end do
+
+    ! jacobian is constant because of linear mapping. But we store it for every dof in order to 
+    ! be able to consider non-linear mapping in the future
+    
+    xr = 0.5_fp*(coor_vert(1,2) - coor_vert(1,1))
+    xs = 0.5_fp*(coor_vert(1,3) - coor_vert(1,1))
+    xt = 0.5_fp*(coor_vert(1,4) - coor_vert(1,1))
+    
+    yr = 0.5_fp*(coor_vert(2,2) - coor_vert(2,1))
+    ys = 0.5_fp*(coor_vert(2,3) - coor_vert(2,1))
+    yt = 0.5_fp*(coor_vert(2,4) - coor_vert(2,1))
+
+    zr = 0.5_fp*(coor_vert(3,2) - coor_vert(3,1))
+    zs = 0.5_fp*(coor_vert(3,3) - coor_vert(3,1))
+    zt = 0.5_fp*(coor_vert(3,4) - coor_vert(3,1))
+    
+    J = xr*(ys*zt-zs*yt) - yr*(xs*zt-zs*xt) + zr*(xs*yt-ys*xt)
+
+    jacobian_dof(:)=J
+
+    drdx(:) =  (ys*zt - zs*yt)/J
+    drdy(:) = -(xs*zt - zs*xt)/J
+    drdz(:) =  (xs*yt - ys*xt)/J
+
+    dsdx(:) = -(yr*zt - zr*yt)/J
+    dsdy(:) =  (xr*zt - zr*xt)/J
+    dsdz(:) = -(xr*yt - yr*xt)/J
+
+    dtdx(:) =  (yr*zs - zr*ys)/J
+    dtdy(:) = -(xr*zs - zr*xs)/J
+    dtdz(:) =  (xr*ys - yr*xs)/J
+
+    ! define normal and jacobian 2D for each dof situated on the faces
+    
+    idof = 0
+    do kl = 0, n
+       do jl = 0, n -kl 
+          do il = 0, n -kl -jl
+
+             idof = idof + 1
+             kfaces = 0
+             if (il==0) then ! face 2
+                kfaces=kfaces+1
+                n1(kfaces)=-drdx(idof)
+                n2(kfaces)=-drdy(idof)
+                n3(kfaces)=-drdz(idof)
+                ifacref(kfaces) = 2
+             end if
+
+             if (jl==0) then ! face 3
+                kfaces=kfaces+1
+                n1(kfaces)=-dsdx(idof)
+                n2(kfaces)=-dsdy(idof)
+                n3(kfaces)=-dsdz(idof)
+               ifacref(kfaces) = 3
+             end if
+
+             if (kl==0) then ! face 4
+                kfaces=kfaces+1
+                n1(kfaces)=-dtdx(idof)
+                n2(kfaces)=-dtdy(idof)
+                n3(kfaces)=-dtdz(idof)
+                ifacref(kfaces) = 4 
+             end if
+             
+             if (il+jl+kl==n) then ! face 1
+                kfaces=kfaces+1
+                n1(kfaces)=drdx(idof)+dsdx(idof)+dtdx(idof)
+                n2(kfaces)=drdy(idof)+dsdy(idof)+dtdy(idof)
+                n3(kfaces)=drdz(idof)+dsdz(idof)+dtdz(idof)
+                ifacref(kfaces) = 1
+             end if
+             
+!!$             write(*,*) ' idof ', idof
+             do ifaces=1,kfaces
+!!$                write(*,*) ' ifaces ', ifaces 
+!!$                
+!!$                write(*,*) 
+
+                nrm=sqrt( n1(ifaces)**2 + n2(ifaces)**2 + n3(ifaces)**2 )
+                n1(ifaces)=n1(ifaces)/nrm
+                n2(ifaces)=n2(ifaces)/nrm
+                n3(ifaces)=n3(ifaces)/nrm
+                J2D = nrm*jacobian_dof(idof)
+          
+                !! la normale depend de la face
+                normal(1, idofpt+idof, ifacref(ifaces))=n1(ifaces)
+                normal(2, idofpt+idof, ifacref(ifaces))=n2(ifaces)
+                normal(3, idofpt+idof, ifacref(ifaces))=n3(ifaces)
+
+                ! le jacobien 2D depend de la face
+                jacobian_2D(idof+idofpt,ifacref(ifaces)) = J2D
+
+             end do
+
+          end do
+       end do
+    end do
+
+  end subroutine rsttoxyz
+  
+
+  subroutine xyztorst(x,y,z,r,s,t,M,b,ndof)
+
+    integer                    :: ndof,idof,i,k
+    real(kind=FP)              :: M(3,3),b(3)
+    real(kind=FP)              :: x(ndof),y(ndof),z(ndof)
+    real(kind=FP)              :: r(ndof),s(ndof),t(ndof)
+    real(kind=FP)              :: c(3),d(3)
+
+    do idof=1,ndof
+       
+       c(:) = 0._FP
+       d(1) = x(idof) - b(1)
+       d(2) = y(idof) - b(2)
+       d(3) = z(idof) - b(3)
+
+       do i=1,3
+          do k=1,3
+             c(i) = c(i) + M(i,k)*d(k)
+          end do
+       end do
+       r(idof) = c(1)
+       s(idof) = c(2)
+       t(idof) = c(3)
+
+    end do
+
+  end subroutine xyztorst
+
+  subroutine mapping_matrix_equi_to_ref(invA,Rhs)
+
+! Purpose : compute mapping matrix from (x,y,z) in equilateral tetrahedron
+!           to (r,s,t) coordinates in standard tetrahedron
+
+    real(kind=FP)              :: v1(3),v2(3),v3(3),v4(3),Rhs(3)
+    real(kind=FP)              :: A(3,3), invA(3,3)
+    real(kind=FP)              :: det
+    integer                    :: i
+
+    v1(1) = -1._fp
+    v1(2) = -1._fp/sqrt(3._fp)
+    v1(3) = -1._fp/sqrt(6._fp)
+
+    v2(1) =  1._fp
+    v2(2) = -1._fp/sqrt(3._fp)
+    v2(3) = -1._fp/sqrt(6._fp)
+
+    v3(1) =  0._fp
+    v3(2) =  2._fp/sqrt(3._fp)
+    v3(3) = -1._fp/sqrt(6._fp)
+
+    v4(1) = 0._fp
+    v4(2) = 0._fp
+    v4(3) = 3._fp/sqrt(6._fp)
+    
+    
+   
+
+    do i=1,3
+       Rhs(i) = 0.5_fp * (v2(i) + v3(i) + v4(i) - v1(i)) 
+       A(i,1) = 0.5_fp * (v2(i)-v1(i))
+       A(i,2) = 0.5_fp * (v3(i)-v1(i))
+       A(i,3) = 0.5_fp * (v4(i)-v1(i))
+    end do
+
+    invA(1,1) = A(2,2)*A(3,3) - A(2,3)*A(3,2)
+    invA(1,2) = A(1,3)*A(3,2) - A(1,2)*A(3,3)
+    invA(1,3) = A(1,2)*A(2,3) - A(1,3)*A(2,2)
+
+    invA(2,1) = A(2,3)*A(3,1) - A(2,1)*A(3,3)
+    invA(2,2) = A(1,1)*A(3,3) - A(1,3)*A(3,1)
+    invA(2,3) = A(1,3)*A(2,1) - A(1,1)*A(2,3)
+
+    invA(3,1) = A(2,1)*A(3,2) - A(2,2)*A(3,1)
+    invA(3,2) = A(1,2)*A(3,1) - A(1,1)*A(3,2)
+    invA(3,3) = A(1,1)*A(2,2) - A(1,2)*A(2,1)
+
+    det =  A(1,1)*A(2,2)*A(3,3) + A(2,1)*A(3,2)*A(1,3) +  A(3,1)*A(1,2)*A(2,3) &
+         - A(1,1)*A(3,2)*A(2,3) - A(3,1)*A(2,2)*A(1,3) -  A(2,1)*A(1,2)*A(3,3)
+
+    invA(:,:)=invA(:,:) / det
+
+  end subroutine mapping_matrix_equi_to_ref
+
+
+  subroutine Hest_nodes_in_ref_tetra(n, np, coor)
+    !!
+    !! compute Hestahven nodes in referencee tetrahedron
+    !! (checked for norder==5 1e-8 error with respect to Hestaven's matlab codes)
+    implicit none
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor(3,np)
+    
+    real(kind=FP)                 :: Map(3,3), Rhs(3)
+    
+    real(kind=FP), allocatable    :: x(:),y(:),z(:),r(:),s(:),t(:)
+
+    integer i
+
+    allocate(x(np),y(np),z(np),r(np),s(np),t(np))
+
+    call mapping_matrix_equi_to_ref(Map,Rhs)
+
+    x(:) = coor(1,:)
+    y(:) = coor(2,:)
+    z(:) = coor(3,:)
+
+    call  xyztorst(x,y,z,r,s,t,Map,Rhs,np)
+    
+    coor(1,:) = r(:)
+    coor(2,:) = s(:)
+    coor(3,:) = t(:)
+
+
+  end subroutine Hest_nodes_in_ref_tetra
+
+
+  subroutine Hest_nodes_in_equi_tetra(n, np, coor)
+
+    !!
+    !! compute Hestahven nodes in equilateral tetrahedron
+    !!
+
+    implicit none
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor(3,np)
+ 
+   
+    !! local arrays 
+    real(kind=FP), dimension(15)                     :: alphastore
+    real(kind=FP), dimension(3)                      :: v1,v2,v3,v4
+    real(kind=FP), dimension(4,3)                    :: t1,t2
+    
+    real(kind=FP), dimension(:),     allocatable     :: L1,L2,L3,L4,La,Lb,Lc,Ld 
+    real(kind=FP), dimension(:),     allocatable     :: warp1,warp2,blend,denom
+    real(kind=FP), dimension(:,:),   allocatable     :: shift, XYZ
+    
+    integer,       dimension(:),     allocatable     :: ids  
+     
+    integer                                          :: nvalues, iface, i, idof 
+    integer                                          :: icomp, iidof
+  
+    real(kind=FP)                                    :: alpha
+    real(kind=FP)                                    :: xtol
+  
+    integer iii
+    
+
+    !! 
+    allocate(L1(np),L2(np),L3(np),L4(np),La(np),Lb(np),Lc(np),Ld(np))
+    allocate(warp1(np),warp2(np),blend(np),denom(np))
+    allocate(shift(np,3),XYZ(np,3))
+    allocate(ids(np))
+    
+    !! define alphastore constant up to degre 15 
+    !! it's a constant to make an optimaization of dof position
+    !! P414, Hestahaven  & Warburton for the values
+    alphastore(1)=0._FP
+    alphastore(2)=0._FP
+    alphastore(3)=0._FP
+    alphastore(4)=0.1002_FP
+    alphastore(5)=1.1332_FP
+    alphastore(6)=1.5608_FP
+    alphastore(7)=1.3413_FP
+    alphastore(8)=1.2577_FP
+    alphastore(9)=1.1603_FP
+    alphastore(10)=1.10153_FP
+    alphastore(11)=0.608_FP
+    alphastore(12)=0.4523_FP
+    alphastore(13)=0.8856_FP
+    alphastore(14)=0.8717_FP
+    alphastore(15)=0.9655_FP
+
+    xtol=1.e-10
+    
+    if (n <= 15) then
+       alpha = alphastore(n)
+    else
+       alpha = 1._FP
+    end if
+
+    call nodes_in_ref_tetra(n, np, coor)  !!! rst
+
+    L1(:) =   (1._FP + coor(3,:)) / 2._FP
+    L2(:) =   (1._FP + coor(2,:)) / 2._FP
+    L3(:) = - (1._FP + coor(1,:) + coor(2,:) + coor(3,:)) / 2._FP
+    L4(:) =   (1._FP + coor(1,:)) / 2._FP
+    
+
+    ! vertices of thetra
+    v1(1) = -1._FP
+    v1(2) = -1._FP/sqrt(3._fp)
+    v1(3) = -1._FP/sqrt(6._fp)
+   
+
+    v2(1) =  1._FP
+    v2(2) = -1._FP/sqrt(3._FP)
+    v2(3) = -1._FP/sqrt(6._FP)
+   
+
+    v3(1) =  0._FP
+    v3(2) =  2._FP/sqrt(3._FP)
+    v3(3) = -1._FP/sqrt(6._FP)
+  
+
+    v4(1) = 0._FP
+    v4(2) = 0._FP
+    v4(3) = 3._FP/sqrt(6._FP) 
+  
+  
+    ! orthogonal axis tangent on faces 1-4 
+    t1(1,:) = v2(:) - v1(:)
+    t1(2,:) = v2(:) - v1(:)
+    t1(3,:) = v3(:) - v2(:)
+    t1(4,:) = v3(:) - v1(:)
+    t2(1,:) = v3(:) - 0.5_FP*(v1(:)+v2(:))
+    t2(2,:) = v4(:) - 0.5_FP*(v1(:)+v2(:))
+    t2(3,:) = v4(:) - 0.5_FP*(V2(:)+v3(:))
+    t2(4,:) = v4(:) - 0.5_FP*(V1(:)+V3(:))
+    
+    ! normalise tangents
+    do i=1,4
+       t1(i,:) = t1(i,:) / sqrt(sum(t1(i,:)**2))
+       t2(i,:) = t2(i,:) / sqrt(sum(t2(i,:)**2))
+    end do
+
+
+    XYZ(:,:)=0._FP
+    do idof = 1, np
+       do i=1,3
+         XYZ(idof,i) =  L3(idof) * v1(i) + L4(idof) * v2(i) + L2(idof) * v3(i) + L1(idof) * v4(i)
+      end do
+    end do
+
+    shift(:,:) = 0._FP
+
+    do iface = 1, 4   
+
+       if (iface == 1) then
+          La = L1
+          Lb = L2 
+          Lc = L3
+          Ld = L4
+       end if
+
+       if (iface == 2) then
+          La = L2
+          Lb = L1 
+          Lc = L3
+          Ld = L4
+       end if
+       
+       if (iface == 3) then
+          La = L3
+          Lb = L1 
+          Lc = L4
+          Ld = L2
+       end if
+
+       if (iface == 4) then
+          La = L4
+          Lb = L1 
+          Lc = L3
+          Ld = L2
+       end if
+      
+       call WrapShiftFace3D(n, np, alpha, La, Lb, Lc, Ld, warp1, warp2)
+
+       blend(:) = Lb(:)*Lc(:)*Ld(:)
+       
+       denom(:) = (Lb(:)+0.5_FP*La(:))*(Lc(:)+0.5_FP*La(:))*(Ld(:)+0.5_FP*La(:))
+       
+       call find_non_central_values(denom, np, xtol,ids,nvalues)
+       
+       blend(ids(1:nvalues)) = (1._FP+(alpha*La(ids(1:nvalues)))**2)*blend(ids(1:nvalues)) /denom(ids(1:nvalues))
+
+       
+       ! compute warp & blend
+       do icomp = 1,3
+          do iidof = 1,np
+             shift(iidof,icomp) = shift(iidof,icomp)+(blend(iidof)*warp1(iidof))*t1(iface,icomp) &
+             &                  + (blend(iidof)*warp2(iidof))*t2(iface,icomp)
+!
+            
+          end do
+       end do
+ 
+       call find_point_to_warp(La,Lb,Lc,Ld,np,xtol,ids,nvalues)
+       
+       do icomp=1,3
+          do iidof=1,nvalues
+             shift(ids(iidof),icomp) =  warp1(ids(iidof))*t1(iface,icomp) + warp2(ids(iidof))*t2(iface,icomp)
+             
+          end do
+          
+       end do
+
+    end do
+    
+   
+    XYZ(:,:) = XYZ(:,:) + shift(:,:)
+
+
+    coor(1,:)=XYZ(:,1)
+    coor(2,:)=XYZ(:,2)
+    coor(3,:)=XYZ(:,3)
+
+    deallocate(L1,L2,L3,L4,La,Lb,Lc,Ld)
+    deallocate(warp1,warp2,blend,denom)
+    deallocate(shift,XYZ)
+    deallocate(ids)
+
+  end subroutine Hest_nodes_in_equi_tetra
+  
+  subroutine find_non_central_values(denom, np, xtol,ids,nvalues)
+    implicit none
+
+    integer,       intent(in)              :: np   ! number of dof associated to an element of order n
+    integer,       intent(in out)          :: nvalues
+    integer, dimension(np),intent(in out)  :: ids 
+    real(kind=FP),  intent(in)             :: xtol !
+    real(kind=FP),dimension(np),intent(in) :: denom
+    integer  :: i
+
+
+    nvalues=0
+    ids(:)=0
+    do i=1,np
+       if (denom(i) > xtol) then
+          nvalues = nvalues + 1
+          ids(nvalues) = i
+       end if
+    end do
+
+  end subroutine find_non_central_values
+
+  subroutine find_point_to_warp(La,Lb,Lc,Ld,np,xtol,ids,nvalues)
+    implicit none
+    integer,       intent(in)                   :: np   ! number of dof associated to an element of order n
+    integer,       intent(in out)               :: nvalues
+    integer, dimension(np),intent(in out)       :: ids 
+    real(kind=FP), intent(in)                   :: xtol !
+    real(kind=FP),dimension(np),intent(in out)  :: La,Lb,Lc,Ld
+
+    integer :: i,itest
+    
+    ids(:)=0
+    nvalues=0
+    
+    do i=1,np
+       itest=0
+       if (La(i) < xtol) then
+          if (Lb(i) > xtol) itest=itest+1
+          if (Lc(i) > xtol) itest=itest+1
+          if (Ld(i) > xtol) itest=itest+1
+          
+          if (itest < 3)  then
+             nvalues = nvalues + 1
+             ids(nvalues) = i            
+          end if
+
+       end if
+    end do
+
+  end subroutine find_point_to_warp
+
+  subroutine  WrapShiftFace3D(n,np,  alpha, L1, L2, L3, L4, dx, dy)
+    implicit none
+    integer,       intent(in)                   :: n  ! element (tetrahedron) order
+    integer,       intent(in)                   :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in)                   :: alpha
+    real(kind=FP),dimension(np),intent(in out)  :: L1, L2, L3, L4
+    real(kind=FP),dimension(np),intent(in out)  :: dx, dy
+    
+    real(kind=FP),    dimension(:), allocatable :: blend1, blend2, blend3
+    real(kind=FP),    dimension(:), allocatable :: warp1, warp2, warp3
+    real(kind=FP),    dimension(:), allocatable :: warpf1, warpf2, warpf3
+    real(kind=FP),    parameter                 :: pi=3.14159265359
+    double precision, dimension(:), allocatable :: xigll, wxgll
+    double precision                            :: alp, bet
+    
+    integer ii
+    !! double precision 
+    alp=0.d0
+    bet=0.d0
+    allocate(xigll(n+1),wxgll(n+1))
+ 
+    allocate(blend1(np),blend2(np),blend3(np))
+    allocate(warp1(np),warp2(np),warp3(np))
+    allocate(warpf1(np),warpf2(np),warpf3(np))
+
+    ! n+1 GLL point in reference segment [-1 1]
+    call zwgljd(xigll,wxgll,n+1,alp,bet)
+    xigll(:) = -xigll(:) !! to folow Hesthven, but may be confusing
+    ! 
+    blend1(:) = L3(:)* L4(:)
+    blend2(:) = L2(:)* L4(:)
+    blend3(:) = L2(:)* L3(:)
+ 
+   
+    call evalwarp(n, np, xigll, L4-L3, warpf1)
+    call evalwarp(n, np, xigll, L2-L4, warpf2)
+    call evalwarp(n, np, xigll, L3-L2, warpf3)
+   
+
+
+    warp1(:) = blend1(:)*warpf1(:)*(1._FP + (alpha*L2(:))**2)
+    warp2(:) = blend2(:)*warpf2(:)*(1._FP + (alpha*L3(:))**2)
+    warp3(:) = blend3(:)*warpf3(:)*(1._FP + (alpha*L4(:))**2)
+   
+
+
+    ! evaluate shift in equilateral triangle
+    dx(:) = 1._FP*warp1(:) + cos(2._FP*pi/3._FP)*warp2(:) + cos(4._FP*pi/3._FP)*warp3(:)
+    dy(:) = 0._FP*warp1(:) + sin(2._FP*pi/3._FP)*warp2(:) + sin(4._FP*pi/3._FP)*warp3(:)
+   
+    deallocate(xigll,wxgll)
+    deallocate(blend1,blend2,blend3)
+    deallocate(warp1,warp2,warp3)
+    deallocate(warpf1,warpf2,warpf3)
+
+  end subroutine WrapShiftFace3D
+
+
+  subroutine evalwarp(n, np, xnodes, xout, warp)
+    implicit none
+    integer,                      intent(in)      :: n  ! element (tetrahedron) order
+    integer,                      intent(in)      :: np ! number of dof associated to an element of order n
+    real(kind=FP), dimension(np), intent(in)      :: xout
+    real(kind=FP), dimension(np), intent(in out)  :: warp
+    double precision, dimension(n+1), intent(in)  :: xnodes
+    
+    real(kind=FP), dimension(:), allocatable :: xeq,d
+    real(kind=FP)                            :: delta
+    
+    integer :: i, j
+
+    warp=0._FP
+    allocate(xeq(n+1),d(np))
+    
+    ! equidistants nodes
+    do i=1,n+1
+       xeq(i) = -1._FP + 2._FP*(n+1-i)/n
+    end do
+
+    do i=1,n+1
+       delta = xnodes(i)-xeq(i)
+       d(:)=delta
+       
+       do j=2,n
+          if (i .ne. j) then
+             
+             d(:) = d(:) * ( xout(:) - xeq(j) ) / (xeq(i) - xeq(j))    
+             
+          end if
+       end do
+       
+       if (i .ne. 1 ) then
+          d(:) = -d(:) / (xeq(i)-xeq(1))
+       end if
+          
+       if (i .ne. n+1) then
+          d(:) = d(:)/(xeq(i)-xeq(n+1));
+       end if
+      
+       warp(:) = warp(:) + d(:)
+
+    end do
+    
+    warp(:) = 4._FP * warp(:)
+   
+    deallocate(xeq)
+    deallocate(d)
+
+
+  end subroutine evalwarp
+
+
+  subroutine nodes_in_ref_tetra(n, np, coor)
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor(3,np)
+    integer                       :: i,j,k,sk
+
+    sk=0
+    ! equidistants dof in reference tetrahedron
+    do k = 1, n + 1
+       do j = 1, n + 2 - k
+          do i = 1, n + 3 - j - k
+             sk = sk + 1
+             coor(1,sk) = -1._FP + (real(i,FP) - 1._FP) * 2._FP / real(n,FP)
+             coor(2,sk) = -1._FP + (real(j,FP) - 1._FP) * 2._FP / real(n,FP)
+             coor(3,sk) = -1._FP + (real(k,FP) - 1._FP) * 2._FP / real(n,FP)
+             
+          end do
+       end do
+    end do
+
+  end subroutine nodes_in_ref_tetra
+
+!!!----------------------- DOFs NUMEROTATION IN TRIANGLE ----------------
+
+  subroutine build_permutation_on_triangle(Pkmax, perm)
+
+    integer,                                       intent(in)  :: Pkmax
+    type(permu_tri),    dimension(:), allocatable, intent(out) :: perm
+
+    integer                                                    :: norder
+    integer i
+    allocate(perm(0:Pkmax))
+   
+    do norder = 1, Pkmax
+       perm(norder)%npf=(norder+1)*(norder+2)/2
+       allocate(perm(norder)%perm(6,perm(norder)%npf))
+       allocate(perm(norder)%coor_bary(3,perm(norder)%npf))
+       call nodes_in_ref_triangle_bary(norder, perm(norder)%npf,perm(norder)%coor_bary)
+       call permutation_dof_triangle(norder, perm(norder)%npf,perm(norder)%coor_bary,perm(norder)%perm)
+!!$       write(*,*)
+!!$       do i=1,perm(norder)%npf
+!!$          write(*,'(6i3)') perm(norder)%perm(:,i)
+!!$       end do
+    end do
+   
+  end subroutine build_permutation_on_triangle
+
+
+  subroutine nodes_in_ref_triangle(n,np,coor)
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor(2,np)
+    integer                       :: i,j,sk
+
+    sk=0
+    ! equidistants dof in reference triangle
+    do j = 1, n + 1
+       do i = 1, n + 2 - j
+        
+          sk = sk + 1
+          coor(1,sk) = -1._FP + (real(i,FP) - 1._FP) * 2._FP / real(n,FP)
+          coor(2,sk) = -1._FP + (real(j,FP) - 1._FP) * 2._FP / real(n,FP)
+           
+       end do
+    end do
+
+  end subroutine nodes_in_ref_triangle
+
+
+  subroutine nodes_in_ref_triangle_bary(n,np,coor_bary)
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in out) :: coor_bary(3,np)
+    integer                       :: i,j,sk
+
+    sk=0
+    ! equidistants dof in reference triangle
+    do j = 0, n 
+       do i = 0, n - j
+        
+          sk = sk + 1
+          coor_bary(1,sk)=real(i,FP)/real(n,FP)
+          coor_bary(3,sk)=real(j,FP)/real(n,FP)
+          coor_bary(2,sk)=1._FP- coor_bary(1,sk) - coor_bary(3,sk)
+
+       end do
+    end do
+  end subroutine nodes_in_ref_triangle_bary
+
+  subroutine permutation_dof_triangle(n,np,coor_bary,perm)
+    integer,       intent(in)     :: n  ! element (tetrahedron) order
+    integer,       intent(in)     :: np ! number of dof associated to an element of order n
+    real(kind=FP), intent(in)     :: coor_bary(3,np)
+    integer,       intent(in out) :: perm(6,np)
+    integer                       :: i,j,sk,id
+    real(kind=FP)                 :: l1,l2,l3
+
+    
+    !! barycentric coordinate Hesthaven's Book p176
+   
+    perm(:,:)=0
+
+    ! ABC
+    do i=1,np
+       perm(1,i)=i
+    end do
+
+    ! ACB
+    sk=0
+    do j = 0, n
+       do i = 0, n -j
+          sk=sk+1
+          l1= real(j,FP)/real(n,FP)
+          l3= real(i,FP)/real(n,FP)
+          l2=1._FP-l1-l3
+          call find_index(id,l1,l2,l3,coor_bary,np)
+          perm(2,sk)=id
+       end do
+    end do
+
+    ! CBA
+    sk=0
+    do j = 0, n
+       do i = 0, n -j
+          sk=sk+1
+          l1=real(i,FP)/real(n,FP)
+          l2=real(j,FP)/real(n,FP)
+          l3=1._FP-l1-l2
+          call find_index(id,l1,l2,l3,coor_bary,np)
+          perm(6,sk)=id
+       end do
+    end do
+
+    ! CAB
+    sk=0
+    do j = 0, n
+       do i = 0, n -j
+          sk=sk+1
+          l1=real(j,FP)/real(n,FP)
+          l2=real(i,FP)/real(n,FP)
+          l3=1._FP-l1-l2
+          call find_index(id,l1,l2,l3,coor_bary,np)
+          perm(5,sk)=id
+       end do
+    end do
+    
+
+    ! BCA
+    sk=0
+    do j = 0, n
+       do i = 0, n -j
+          sk=sk+1
+          l2=real(j,FP)/real(n,FP)
+          l3=real(i,FP)/real(n,FP)
+          l1=1._FP-l2-l3
+          call find_index(id,l1,l2,l3,coor_bary,np)
+          perm(4,sk)=id
+       end do
+    end do
+    
+    ! BAC
+    sk=0
+    do j = 0, n
+       do i = 0, n -j
+          sk=sk+1
+          l2=real(i,FP)/real(n,FP)
+          l3=real(j,FP)/real(n,FP)
+          l1=1._FP-l2-l3
+          call find_index(id,l1,l2,l3,coor_bary,np)
+          perm(3,sk)=id
+       end do
+    end do
+    
+
+    
+
+  end subroutine permutation_dof_triangle
+ 
+  subroutine find_index(id,l1,l2,l3,coor_bary,np)
+
+    integer              :: i,id,np
+    real(kind=FP)        :: l1,l2,l3
+    real(kind=FP)        :: coor_bary(3,np)
+    real(kind=FP)        :: eps=1.e-6
+    id = 0
+
+    
+    do i = 1, np
+
+       if (  sqrt( (l1 - coor_bary(1,i))**2 + (l2 - coor_bary(2,i))**2 + (l3 - coor_bary(3,i))**2) <= eps) then
+          id = i
+
+          return
+       end if
+    end do
+
+    if (id == 0 ) then 
+       write(*,*) 'WARNING : not found permutation (ref_dof.f90 l1559) ',l1,l2,l3
+       write(*,*) coor_bary
+       stop
+    end if
+
+  end subroutine find_index
+
+  !! ---- in case of uniform polynomial order, compute connection between dofs on shared face by 2 thetrahedra
+
+  subroutine connect_dof_dof(nE, PkE, ref_matrix, ref_dof, perm, dof_dof, EtoF, FtoE, EtoFtag, Etodof_adj, EtoV, FtoV, coordof)
+
+    type(ref_matrix_t),  dimension(:),   allocatable, intent(in)     :: ref_matrix
+    type(ref_dof_t),     dimension(:),   allocatable, intent(in)     :: ref_dof
+    type(permu_tri),     dimension(:),   allocatable, intent(in)     :: perm
+
+    integer,             dimension(:,:), allocatable, intent(in)     :: EtoF, FtoE, EtoFtag, EtoV, FtoV
+    integer,             dimension(:),   allocatable, intent(in)     :: PkE
+        
+    integer,             dimension(:),   allocatable, intent(in)     :: Etodof_adj
+   
+    type(dof_conect),    dimension(:),   allocatable, intent(in out) :: dof_dof
+    integer,                                          intent(in)     :: nE
+    real(kind=FP),       dimension(:,:), allocatable, intent(in)     :: coordof
+    
+    integer                                                          :: ifacref, ifac, ie_nghb, ivertex, ifac_nghb, ifacref_nghb
+    integer                                                          :: k_nghb, l, ldof, ldof_local, npf_nghb
+    integer                                                          :: lvdof, lvdof_local
+    integer                                                          :: k, i, idof, idof_local, npf, np, id, ie
+    logical                                                          :: free_surface
+    real(kind=fp),       dimension(3,4)                              :: coor_vert
+    integer,             dimension(4,3)                              :: index_vertex_face
+    integer,             dimension(3)                                :: IV0,IV1,face_1,face_2
+    integer,             dimension(10000)                            :: num0,num1
+    integer                                                          :: iiv0,iiv1,kface,ivertex_tmp 
+    integer,             dimension(4)                                :: ie_nghb_store
+
+
+    allocate(dof_dof(nE))
+
+    do ie=1, nE
+
+       k=PkE(ie)
+       npf=ref_dof(k)%npf
+
+       allocate(dof_dof(ie)%my_dof(npf,4))
+       allocate(dof_dof(ie)%nei_dof(npf,4))
+       allocate(dof_dof(ie)%my_local_dof(npf,4))
+       allocate(dof_dof(ie)%nei_local_dof(npf,4))
+       allocate(dof_dof(ie)%id(4))
+
+       do ifacref = 1, 4
+          
+          ! global face numerotation
+          ifac = EtoF(ifacref, ie)
+          free_surface=.false.
+          if(EtoFtag(ifacref, ie) == -1) free_surface=.true.
+
+          !! extract face in initial order (my face)
+          kface=0;face_1(:)=0
+          do ivertex=1,4
+             iiv0= EtoV(ivertex,ie)
+             do ivertex_tmp=1,3
+                iiv1 = FtoV(ivertex_tmp,ifac)
+                if (iiv0==iiv1) then
+                   kface=kface+1
+                   face_1(kface)=iiv0
+                end if
+             end do
+          end do
+
+
+          ! Retrieve the neighbour element index  ----- info voisin -------------------
+          ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+          if (ie_nghb > 0) then
+             k_nghb=PkE(ie_nghb)
+             npf_nghb=ref_dof(k_nghb)%npf
+
+             if (npf_nghb .ne. npf) then
+                write(*,*) ' P adaptivity not implemented yet '
+                stop
+             end if
+
+             ie_nghb_store(ifacref) = ie_nghb
+             ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref  !! local face number 
+             ifac_nghb=EtoF(ifacref_nghb, ie_nghb)
+
+             !! extract face in initial order (neighb face)
+             kface=0;face_2(:)=0
+             do ivertex=1,4
+                iiv0= EtoV(ivertex,ie_nghb)
+                do ivertex_tmp=1,3
+                   iiv1 = FtoV(ivertex_tmp,ifac_nghb)
+                   if (iiv0==iiv1) then
+                      kface=kface+1
+                      face_2(kface)=iiv0
+                   end if
+                end do
+             end do
+
+             call find_right_permutation(id,face_1,face_2)
+
+             !! dof _ dof connextion known now
+             do l=1,npf_nghb
+                !! permutted dof in neighbour face (order k_nghb should be k)
+                
+                ldof_local =  ref_dof(k_nghb)%Ftodof(perm(k_nghb)%perm(id,l),ifacref_nghb)
+                ldof =  Etodof_adj(ie_nghb) + ldof_local - 1
+
+                !! dof in reference face
+                lvdof_local =  ref_dof(k)%Ftodof(l,ifacref)
+                lvdof =  Etodof_adj(ie) + lvdof_local - 1
+
+               
+
+                ! numerotation locale a chaque element
+                dof_dof(ie)%my_dof(l,ifacref)=lvdof !! le dof sur ma face
+                dof_dof(ie)%nei_dof(l,ifacref)=ldof  !! le meme dof sur la face du voisin
+                
+                !numerotation globale
+                dof_dof(ie)%my_local_dof(l,ifacref)=lvdof_local !! le dof sur ma face
+                dof_dof(ie)%nei_local_dof(l,ifacref)=ldof_local  !! le meme dof sur la face du voisin
+                dof_dof(ie)%id(ifacref)=id
+
+                
+
+             end do
+          end if
+
+
+       end do
+
+    end do
+
+  end subroutine connect_dof_dof 
+
+
+  subroutine find_right_permutation(id,IV0,IV1)
+
+    integer, dimension(3) :: IV0,IV1
+    integer id
+
+    id = 0
+
+
+    if ( IV1(1) == IV1(1) .and. &
+         IV1(2) == IV1(2) .and. &
+         IV1(3) == IV1(3)   )  id = 1
+
+    if ( IV0(1) == IV1(1) .and. &
+         IV0(2) == IV1(3) .and. &
+         IV0(3) == IV1(2)   )  id = 2
+
+    if ( IV0(1) == IV1(2) .and. &
+         IV0(2) == IV1(1) .and. &
+         IV0(3) == IV1(3)   ) id = 3
+
+    if ( IV0(1) == IV1(2) .and. &
+         IV0(2) == IV1(3) .and. &
+         IV0(3) == IV1(1)   ) id = 4
+
+    if ( IV0(1) == IV1(3) .and. &
+         IV0(2) == IV1(1) .and. &
+         IV0(3) == IV1(2)   ) id = 5
+
+    if ( IV0(1) == IV1(3) .and. &
+         IV0(2) == IV1(2) .and. &
+         IV0(3) == IV1(1)   ) id = 6
+
+    
+    if (id==0) then
+       write(*,*) 'PERMUTATION DOES NOT EXIST'
+       stop
+    end if
+    
+  end subroutine find_right_permutation
+
+
+end module ref_dof_mod
+

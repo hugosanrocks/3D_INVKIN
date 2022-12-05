@@ -1,0 +1,119 @@
+!!-- Header --!!
+
+module tetra_comm_mod
+
+  use comm_engine_mod
+  use tetra_mesh_mod
+  use tetra_comm_struct_mod
+  use mpi
+
+  implicit none
+
+  !=========================================================
+  type, extends(comm_engine_type), public :: tetra_comm_type
+
+    ! Data members
+    type(tetra_comm_struct_type) :: pComm_struct
+
+  contains
+
+    procedure, pass :: create_mpi_types     => tetra_comm_create_mpi_types
+    procedure, pass :: comm_engine_free_mem => tetra_comm_free_mem
+
+    procedure, pass :: tetra_comm_communicate_field
+
+  end type tetra_comm_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_tetra_comm_type
+
+  contains
+
+
+    function as_tetra_comm_type(comm_engine)
+      class(comm_engine_type), target, intent(in) :: comm_engine
+      type(tetra_comm_type),           pointer    :: as_tetra_comm_type
+      character(len=*),                parameter  :: proc_name = "as_tetra_comm_type"
+
+      comm_engine_selector: select type(comm_engine)
+      type is (tetra_comm_type)
+        as_tetra_comm_type => comm_engine
+      class default
+        write(*,*) myid_1, " : ", proc_name, " :: ERROR : Wrong comm_engine type. Attempted: tetra_comm_type"
+        stop
+      end select comm_engine_selector
+
+    end function as_tetra_comm_type
+
+
+    subroutine tetra_comm_create_mpi_types(this, grid)
+      class(tetra_comm_type), intent(in out) :: this
+      class(grid_type),       intent(in)     :: grid
+      character(len = *),     parameter      :: proc_name = "tetra_comm_create_mpi_types"
+      character(len=4)                       :: str4
+      character(len=250)                     :: iCommFileName
+      type(tetra_mesh_type),  pointer        :: pMesh => Null()
+      integer                                :: mpierr
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, " : ", proc_name
+      end if
+
+      pMesh => as_tetra_mesh_type(grid)
+
+      ! Read data to build communication structure
+      write(str4,'(I4)') myid_1+1
+      iCommFileName = trim(adjustl(pMesh%rootName)) // '_' // trim(adjustl(str4)) // '.comm_struct'
+      if (dd_debug_level > 0) then
+        write(*,*) trim(adjustl(str4)), ' ', trim(adjustl(iCommFileName))
+      end if
+
+      call read_tetra_comm_struct(this%pComm_struct, iCommFileName)
+
+      ! Build communication structure
+      !...
+
+    end subroutine tetra_comm_create_mpi_types
+
+
+    subroutine tetra_comm_free_mem(this)
+      class(tetra_comm_type), intent(in out) :: this
+      integer                                :: mpierr
+      character(len=*),       parameter      :: proc_name = 'tetra_comm_free_mem'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+      !if (this%ntasks == 1) return
+
+      call mpi_barrier(this%mpi_comm_1, mpierr)
+      if (mpierr < 0) then
+        print *, proc_name, ' :: ERROR : mpi_barrier: ', mpierr
+        stop
+      end if
+
+      ! Free all derived MPI types
+
+      call free_tetra_comm_struct(this%pComm_struct)
+
+      ! simulate up-casting towards parent comm_engine class to delete communicators and close MPI
+      call comm_engine_free_mem(this)
+
+    end subroutine tetra_comm_free_mem
+
+
+    subroutine tetra_comm_communicate_field(this, V, grid)
+      class(tetra_comm_type),          intent(in out) :: this
+      real, dimension(:), allocatable, intent(in out) :: V
+      class(grid_type),                intent(in)     :: grid
+      character(len=*),                parameter      :: proc_name = 'tetra_comm_communicate_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+    end subroutine tetra_comm_communicate_field
+
+end module tetra_comm_mod

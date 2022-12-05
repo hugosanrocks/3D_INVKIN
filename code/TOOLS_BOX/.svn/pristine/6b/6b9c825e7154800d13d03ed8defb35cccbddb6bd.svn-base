@@ -1,0 +1,29 @@
+include ../../../Makefile.inc
+
+COMMON_SRC = ../../src/
+COMMON_DEMO = ../common
+LIB_DIR = ../../lib
+SOURCES =  test_ksinc_3d.f90 $(COMMON_DEMO)/fd3d.f90
+OBJECTS = $(SOURCES:.f90=.o) 
+TARGET = test.x
+
+LIB =  -L$(LIB_DIR) -lSEISCOPE_INTERP
+
+$(TARGET): $(OBJECTS) 
+	$(FC) $(FFLAGS) $(OBJECTS) -o $(TARGET) $(LIB)
+
+%.o : %.f90
+	$(FC) $(FFLAGS) -c -o $@ $<
+
+clean :
+	$(RM) -r *.bin Fig
+	$(RM) -f *.o *~ *backup *.mod *genmod*
+	$(RM) $(COMMON_SRC)/*.o $(LIB_DIR)/*.a
+
+test : testclean
+	$(MAKE) ; ./$(TARGET)
+
+testclean:
+	$(RM) -f *.o $(COMMON_DEMO)/*.o $(TARGET) *.bin
+
+distclean : clean testclean

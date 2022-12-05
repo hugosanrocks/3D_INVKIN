@@ -1,0 +1,3 @@
+1         !Filter stress time functions: 1=yes, 2=no
+1.        !Corner frequency of low pass filter [0-x]
+1         !Order of filter

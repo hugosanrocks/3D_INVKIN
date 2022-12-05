@@ -1,0 +1,40 @@
+set(TEST_UGRID_TETRA ug_test_tetra)
+
+add_executable(
+        ${TEST_UGRID_TETRA}_seq${suffix}
+        ug_test_tetra_seq.f90
+)
+
+target_link_libraries(
+        ${TEST_UGRID_TETRA}_seq${suffix}
+        ${DOMDECOMP_LIB_NAME}_static
+)
+
+add_executable(
+        ${TEST_UGRID_TETRA}_par${suffix}
+        ug_test_tetra_par.f90
+)
+
+set(METIS_LIBRARY             ${METIS_LIB_DIR}/lib${METIS_LIB_NAME}.a)
+
+target_link_libraries(
+        ${TEST_UGRID_TETRA}_par${suffix}
+        ${DOMDECOMP_LIB_NAME}_static
+        ${METIS_LIBRARY}
+)
+
+include_directories(
+        ${DD_INCLUDE_PATH}
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+install(
+        TARGETS ${TEST_UGRID_TETRA}_seq${suffix} ${TEST_UGRID_TETRA}_par${suffix}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT TEST_UGRID_TETRA${suffix}
+)
+

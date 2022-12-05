@@ -1,0 +1,46 @@
+
+set(CHECKP_LIB_NAME checkpointing)
+
+# Build checkpointing library
+
+add_library(
+       ${CHECKP_LIB_NAME}_shared
+       SHARED
+       CPP/revolve.h
+       CPP/revolve.cpp
+       CPPWrapper/cppwrapper.cpp
+       FortranInterface/fintfc.f90
+)
+
+add_library(
+       ${CHECKP_LIB_NAME}_static
+       STATIC
+       CPP/revolve.h
+       CPP/revolve.cpp
+       CPPWrapper/cppwrapper.cpp
+       FortranInterface/fintfc.f90
+)
+
+# Install
+
+install(
+        TARGETS ${CHECKP_LIB_NAME}_static ${CHECKP_LIB_NAME}_shared
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin${suffix}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT CheckPointingLib
+)
+
+set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/src)
+
+# For the complete directory
+#install(DIRECTORY ${CMAKE_Fortran_MODULE_DIRECTORY}/ DESTINATION ${PROJECT_SOURCE_DIR}/include)
+
+# For selected fortran modules
+install(FILES
+          ${CMAKE_Fortran_MODULE_DIRECTORY}/fintfc_mod.mod
+        DESTINATION 
+          ${PROJECT_SOURCE_DIR}/lib${suffix}
+        COMPONENT
+          CheckpointingFortranModules
+)

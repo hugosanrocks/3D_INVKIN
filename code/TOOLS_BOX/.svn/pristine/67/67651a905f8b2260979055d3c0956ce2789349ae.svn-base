@@ -1,0 +1,26 @@
+set(TEST_DD_SGRID test_dd_sgrid${suffix})
+
+add_executable(
+        ${TEST_DD_SGRID}
+        test_dd_sgrid.f90
+)
+
+target_link_libraries(
+        ${TEST_DD_SGRID}
+        ${DD_LIB_NAME}_static
+)
+
+include_directories(
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+install(
+        TARGETS ${TEST_DD_SGRID}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT TEST_DD
+)
+

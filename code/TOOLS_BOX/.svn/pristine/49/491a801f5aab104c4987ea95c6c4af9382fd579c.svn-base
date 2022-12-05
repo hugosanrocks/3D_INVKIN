@@ -1,0 +1,9 @@
+rm output_bin_*.vtk P P.dat
+
+mpirun -np 8 ../../bin/test_dd_sg_ac_iso_o4 
+#-am /home/laure/.openmpi/mca-params.conf
+
+# valgrind --tool=cachegrind ../../bin/./test_dd_sg_ac_iso_o4
+#../../bin/test_dd_sg_ac_iso_o4
+rm vp rho
+

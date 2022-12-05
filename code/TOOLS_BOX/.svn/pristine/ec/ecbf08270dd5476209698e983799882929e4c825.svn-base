@@ -1,0 +1,283 @@
+module zone_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+
+  implicit none
+
+  integer, parameter, public :: SG_GRID_POINTS_ZONE_KIND      = 1 ! Points collocated with grid points identified by (i,j,k) indices in the global grid
+  integer, parameter, public :: SG_CONTINUUM_POINTS_ZONE_KIND = 2 ! Points identified by (x,y,z) coordinates
+
+  !=========================================================
+  type, public :: glob_zone_type
+    integer    :: nsub_zone = 0
+
+    contains
+
+    procedure, pass :: glob_zone_constructor
+    procedure, pass :: glob_zone_destructor
+  end type glob_zone_type
+  !=========================================================
+
+
+  !=========================================================
+  type, public :: loc_zone_type
+
+    contains
+
+    procedure, pass :: loc_zone_constructor
+    procedure, pass :: loc_zone_destructor
+  end type loc_zone_type
+  !=========================================================
+
+
+  !=========================================================
+  type, extends(glob_zone_type), public :: points_glob_zone_type
+
+    ! Number of points defining the global zone
+    integer                              :: npt_glob = 0
+
+    ! Global coordinates of the points in the grid
+    ! coor(1:3,1:npt_glob) = (x,y,z) in the subdomain
+    real,    dimension(:,:), allocatable :: coor
+
+    ! Partition data
+    !=======================================================
+    ! Array defining the starting and after_ending index in the next tab for each point
+    ! pt_nproc_tab(1:npt_glob+1) = i1, iEnd
+    integer, dimension(:),   allocatable :: pt_nproc_tab
+
+    ! Array defining which subdomain (= iproc) is assigned to each point of the zone
+    ! pt_proc_tab(i) = iproc
+    integer, dimension(:),   allocatable :: pt_proc_tab
+
+    ! Accessing to proc(s) assigned to each point:
+    ! do ipt = 1, npt_glob
+    !   i1   = pt_nproc_tab(ipt)
+    !   iEnd = pt_nproc_tab(ipt+1) - 1
+    !   do i = i1, iEnd
+    !     iproc = pt_proc_tab(i)
+    !   end do
+    ! end do
+
+    ! Array defining the starting and after_ending index in the next tab for each subdomain
+    ! proc_npt_tab(0:nproc) = i1, iEnd
+    integer, dimension(:),   allocatable :: proc_npt_tab
+
+    ! Array defining the list of points distributed to each subdomain
+    ! proc_pt_tab(i) = ipt_glob
+    integer, dimension(:),   allocatable :: proc_pt_tab
+
+    ! Accessing to data assigned to each subdomain:
+    ! do iproc = 0, nproc-1
+    !   i1   = proc_npt_tab(iproc)
+    !   iEnd = proc_npt_tab(iproc+1) - 1
+    !   do i = i1, iEnd
+    !     ipt = proc_pt_tab(i)
+    !   end do
+    ! end do
+
+    ! some buffers for communications between a global zone and its associated local zones
+    integer, dimension(:),   allocatable :: data_snd_si ! scalar integer data
+    real,    dimension(:),   allocatable :: data_snd_sr ! scalar real data
+    real,    dimension(:,:), allocatable :: data_snd_vr ! vector real data
+    real,    dimension(:),   allocatable :: data_rcv_sr ! scalar real data
+    real,    dimension(:,:), allocatable :: data_rcv_vr ! scalar integer data
+
+    ! size of the greatest partition associated to this global zone (used to allocate buffers)
+    integer                              :: max_npt_proc = 0
+
+    contains
+
+    procedure, pass :: points_glob_zone_constructor
+    procedure, pass :: glob_zone_destructor  => points_glob_zone_destructor
+  end type points_glob_zone_type
+  !=========================================================
+
+
+  !=========================================================
+  type, extends(loc_zone_type), public :: points_loc_zone_type
+
+    ! Number of points defining the local zone
+    integer                              :: npt_loc = 0
+
+    ! Global coordinates of the points in the grid
+    ! coor(1:3,1:npt_loc) = (x,y,z) in the subdomain
+    real,    dimension(:,:), allocatable :: coor
+
+    ! List of points assigned to the current local zone
+    ! pts(1:npt_loc) = ipt_glob
+    integer, dimension(:),   allocatable :: pts
+
+    contains
+
+    procedure, pass :: points_loc_zone_constructor
+    procedure, pass :: points_loc_zone_constructor_empty
+    procedure, pass :: loc_zone_destructor  => points_loc_zone_destructor
+  end type points_loc_zone_type
+  !=========================================================
+
+
+  contains
+
+
+    subroutine glob_zone_constructor(this)
+      class(glob_zone_type), intent(in out) :: this
+      character(len=*),      parameter      :: proc_name = "glob_zone_constructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      !! BODY --
+
+    end subroutine glob_zone_constructor
+
+
+    subroutine glob_zone_destructor(this)
+      class(glob_zone_type), intent(in out) :: this
+      character(len=*),      parameter      :: proc_name = "glob_zone_destructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      !! BODY --
+
+    end subroutine glob_zone_destructor
+
+
+    subroutine loc_zone_constructor(this)
+      class(loc_zone_type), intent(in out) :: this
+      character(len=*),     parameter      :: proc_name = "loc_zone_constructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      !! BODY --
+
+    end subroutine loc_zone_constructor
+
+
+    subroutine loc_zone_destructor(this)
+      class(loc_zone_type), intent(in out) :: this
+      character(len=*),     parameter      :: proc_name = "loc_zone_destructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      !! BODY --
+
+    end subroutine loc_zone_destructor
+
+
+    subroutine points_glob_zone_constructor(this, npt_glob, coor)
+      class(points_glob_zone_type),      intent(in out) :: this
+      integer,                           intent(in)     :: npt_glob
+      real, dimension(:,:), allocatable, intent(in)     :: coor 
+      character(len=*),                  parameter      :: proc_name = "points_glob_zone_constructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      ! Propagate object creation on parent class
+      call glob_zone_constructor(this)
+
+      !! BODY ++
+      this%npt_glob = npt_glob
+
+      if (npt_glob > 0 .and. allocated(coor)) then
+        ! Allocate and copy the array
+        call alloc_(this%coor, 1, 3, 1, npt_glob, "coor")
+        this%coor = coor
+      end if
+      !! BODY --
+
+    end subroutine points_glob_zone_constructor
+
+
+    subroutine points_glob_zone_destructor(this)
+      class(points_glob_zone_type), intent(in out) :: this
+      character(len=*),                  parameter :: proc_name = "points_glob_zone_destructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      call dealloc_(this%coor,         "coor")
+      call dealloc_(this%pt_nproc_tab, "pt_nproc_tab")
+      call dealloc_(this%pt_proc_tab,  "pt_proc_tab")
+      call dealloc_(this%proc_npt_tab, "proc_npt_tab")
+      call dealloc_(this%proc_pt_tab,  "proc_pt_tab")
+      call dealloc_(this%data_snd_si,  "data_snd_si")
+      call dealloc_(this%data_snd_sr,  "data_snd_sr")
+      call dealloc_(this%data_snd_vr,  "data_snd_vr")
+      call dealloc_(this%data_rcv_sr,  "data_rcv_sr")
+      call dealloc_(this%data_rcv_vr,  "data_rcv_vr")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call glob_zone_destructor(this)
+
+    end subroutine points_glob_zone_destructor
+
+
+    subroutine points_loc_zone_constructor(this, npt_loc, pts, coor)
+      class(points_loc_zone_type),        intent(in out) :: this
+      integer,                            intent(in)     :: npt_loc
+      integer, dimension(:), allocatable, intent(in)     :: pts 
+      real,  dimension(:,:), allocatable, intent(in)     :: coor 
+      character(len=*),                   parameter      :: proc_name = "points_loc_zone_constructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      ! Propagate object creation on parent class
+      call loc_zone_constructor(this)
+
+      !! BODY ++
+      this%npt_loc = npt_loc
+      if (npt_loc > 0 .and. allocated(coor)) then
+        call alloc_(this%coor, 1, 3, 1, npt_loc, "coor")
+        this%coor = coor
+      end if
+
+      if (npt_loc > 0 .and. allocated(pts)) then
+        ! Allocate and copy the arrays
+        call alloc_(this%pts, 1, npt_loc, "pts")
+        this%pts = pts
+      end if
+     !! BODY --
+
+    end subroutine points_loc_zone_constructor
+
+
+    subroutine points_loc_zone_constructor_empty(this)
+      class(points_loc_zone_type),        intent(in out) :: this
+      character(len=*),                   parameter      :: proc_name = "points_loc_zone_constructor_empty"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      ! Propagate object creation on parent class
+      call loc_zone_constructor(this)
+
+      !! BODY ++
+      this%npt_loc = 0
+      call dealloc_(this%coor, "coor")
+     !! BODY --
+
+    end subroutine points_loc_zone_constructor_empty
+
+
+    subroutine points_loc_zone_destructor(this)
+      class(points_loc_zone_type), intent(in out) :: this
+      character(len=*),            parameter      :: proc_name = "points_loc_zone_destructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      call dealloc_(this%pts, "pts")
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call loc_zone_destructor(this)
+
+    end subroutine points_loc_zone_destructor
+
+end module zone_mod
+  

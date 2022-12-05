@@ -1,0 +1,42 @@
+# --- MASTER Makefile for the TOOLBOX
+
+SUBDIRS=SU_IO INTERPOLATION OPTIMIZATION CARFS #DOMAIN_DECOMP/build_mk  CHECK_POINTING/build_mk
+
+SUBCLEAN = $(addsuffix .clean, $(SUBDIRS))
+SUBTEST = $(addsuffix .test, $(SUBDIRS))
+
+all: subdirs test
+
+
+.PHONY: subdirs $(SUBDIRS) clean $(SUBCLEAN) test $(SUBTEST)
+
+subdirs: $(SUBDIRS)
+
+test : $(SUBTEST)
+
+clean: $(SUBCLEAN)
+
+$(SUBDIRS):
+	$(MAKE) -C $@
+
+$(SUBCLEAN): %.clean:
+	$(MAKE) -C $* distclean
+
+$(SUBTEST): %.test:
+	@echo '===================================================='
+	@echo '=== Run the demos : [$*] LIBRARY'
+	@echo '===================================================='
+	@if [ "$(shell ls  $(wildcard $*/lib/*.a) | wc -l)" -gt "0" ]; then\
+		$(MAKE) -C $* test; else\
+		echo "$* library does not exist";\
+		exit 1;\
+	fi
+	@echo '===================================================='
+	@echo '===  End of the demos : [$*] LIBRARY'
+	@echo '===================================================='
+	@echo
+
+help : 
+	@echo 'Usage: make all [GNU=1]'
+	@echo '       make clean [GNU=1]'
+

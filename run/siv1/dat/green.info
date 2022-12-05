@@ -1,0 +1,4 @@
+1           !file with stress functions: 1=dat/TRACT_time.bin 2=dat/TRACT_time_interp.bin, 3=dat/TRACT_time_triang.bin 
+36 18       !#nodes along strike, #nodes along dip
+2 3         !if file option=3, order of gauss points and n_gauss points
+595         !if file option=3, assign msub=#nodes

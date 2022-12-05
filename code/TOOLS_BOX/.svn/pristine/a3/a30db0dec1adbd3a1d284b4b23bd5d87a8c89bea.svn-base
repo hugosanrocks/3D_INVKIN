@@ -1,0 +1,97 @@
+!!-- Header --!!
+
+module ug_comm_mod
+
+  use comm_engine_mod
+  use ugrid_mod
+  use mpi
+
+  implicit none
+
+  !=========================================================
+  type, extends(comm_engine_type), public :: ug_comm_type
+
+    ! Data members
+
+  contains
+
+    procedure, pass :: create_mpi_types => ug_comm_create_mpi_types
+    procedure, pass :: end_mpi          => ug_comm_end_mpi
+
+    procedure, pass :: ug_comm_communicate_field
+
+  end type ug_comm_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_ug_comm_type
+
+  contains
+
+
+    function as_ug_comm_type(comm_engine)
+      class(comm_engine_type), target, intent(in) :: comm_engine
+      type(ug_comm_type),     pointer             :: as_ug_comm_type
+      character(len=*),       parameter           :: proc_name = "as_ug_comm_type"
+
+      comm_engine_selector: select type(comm_engine)
+      type is (ug_comm_type)
+        as_ug_comm_type => comm_engine
+      class default
+        write(*,*) myid, " : ", proc_name, " :: ERROR : Wrong grid type. Attempted: ug_comm_type"
+        stop
+      end select comm_engine_selector
+
+    end function as_ug_comm_type
+
+
+    subroutine ug_comm_create_mpi_types(this, grid)
+      class(ug_comm_type), intent(in out) :: this
+      class(grid_type),        intent(in) :: grid
+      character(len = *),      parameter  :: proc_name = "ug_comm_create_mpi_types"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+    end subroutine ug_comm_create_mpi_types
+
+
+    subroutine ug_comm_end_mpi(this)
+      class(ug_comm_type), intent(in out) :: this
+      integer                             :: mpierr
+      character(len=*),         parameter :: proc_name = 'ug_comm_end_mpi'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      !if (this%ntasks == 1) return
+
+      call mpi_barrier(this%mpi_comm_1, mpierr)
+      if (mpierr < 0) then
+        print *, proc_name, ' :: ERROR : mpi_barrier: ', mpierr
+        stop
+      end if
+
+      ! Free all derived MPI types
+
+      ! simulate up-casting towards parent comm_engine class to delete communicators and close MPI
+      call end_mpi(this)
+
+    end subroutine ug_comm_end_mpi
+
+
+    subroutine ug_comm_communicate_field(this, V, grid)
+      class(ug_comm_type),             intent(in out) :: this
+      real, dimension(:), allocatable, intent(in out) :: V
+      class(grid_type),                intent(in)     :: grid
+      character(len=*),                parameter      :: proc_name = 'ug_comm_communicate_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+    end subroutine ug_comm_communicate_field
+
+end module ug_comm_mod

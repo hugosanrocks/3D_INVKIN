@@ -1,0 +1,648 @@
+module hexa_mesh_struct_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+
+  implicit none
+
+  type, public :: VtoE_adj_list_type
+    integer                                 :: nV     = 0
+
+    ! Total length of the adjacency list
+    integer                                 :: length = 0
+
+    ! Array containing for each vertex the starting index in ie array
+    integer, dimension(:),      allocatable :: i1
+
+    ! Array containing the list of elements connected to each vertex
+    integer, dimension(:),      allocatable :: ie
+  end type VtoE_adj_list_type
+
+
+  type, public :: EdgetoE_adj_list_type
+    integer                                 :: nEdge  = 0
+
+    ! Total length of the adjacency list
+    integer                                 :: length = 0
+
+    ! Array containing for each edge the starting index in ie array
+    integer, dimension(:),      allocatable :: i1
+
+    ! Array containing the list of elements connected to each edge
+    integer, dimension(:),      allocatable :: ie
+
+    ! Array containing the list of elements connected to each edge
+    integer, dimension(:),      allocatable :: edgeref
+  end type EdgetoE_adj_list_type
+
+
+  type, public :: entity_loctoglob_type
+    integer                            :: n = 0
+    integer, dimension(:), allocatable :: tab
+  end type entity_loctoglob_type
+
+
+  type, public :: hexa_mesh_struct_type
+    integer                                   :: hexa_type = 0
+    integer                                   :: nEdeg  = 0, nEtoCP_deg = 0, nFdeg = 0, nFtoCP_deg = 0
+    integer                                   :: nV     = 0, nEdge = 0, nF = 0, nE = 0
+    integer                                   :: nCP    = 0
+    integer                                   :: nFtag  = 0, nEtag = 0
+    integer                                   :: ngll1D = 0, ndof  = 0
+
+    integer, dimension(:,:),      allocatable :: EtoV, EtoEdge, EtoF, EtoE, EtoCP
+    integer, dimension(:,:),      allocatable :: EdgetoV, FtoV, FtoCP, FtoE
+
+    integer, dimension(:),        allocatable :: FtagtoF, Ftag
+    integer, dimension(:),        allocatable :: EtagtoE, Etag
+    real,    dimension(:,:),      allocatable :: coorV,   coorCP
+
+    type(VtoE_adj_list_type)                  :: VtoE, CPtoE
+    type(EdgetoE_adj_list_type)               :: EdgetoE
+
+    type(entity_loctoglob_type)               :: Eloctoglob, Vloctoglob, CPloctoglob, Edgeloctoglob, Floctoglob
+    type(entity_loctoglob_type)               :: Ftagloctoglob, Etagloctoglob
+
+    integer, dimension(:,:,:,:),  allocatable :: gllelemtoglob ! (i,j,k,ie)
+    real(kind=FP), dimension(:,:),allocatable :: coordof
+  end type hexa_mesh_struct_type
+
+
+  public :: read_hexa_mesh_struct
+  public :: write_hexa_mesh_struct
+  public :: free_hexa_mesh_struct
+
+  type, public :: hexa_master_struct_type
+    integer                                                :: npart    = 0
+    integer                                                :: nEglob   = 0
+    integer                                                :: ndofglob = 0
+    type(entity_loctoglob_type), dimension(:), allocatable :: Eloctoglob
+  end type hexa_master_struct_type
+
+
+  public :: read_hexa_master_struct
+  public :: write_hexa_master_struct
+  public :: free_hexa_master_struct
+
+contains
+
+  subroutine read_hexa_mesh_struct(mesh, filename)
+    type(hexa_mesh_struct_type), intent(in out) :: mesh
+    character(len=*),            intent(in)     :: filename
+    character(len = *),          parameter      :: proc_name = "read_hexa_mesh_struct"
+    integer                                     :: funit, istat
+    integer                                     :: nEtoEdge_deg, nEtoF_deg, nEtoE_deg, nEdgetoV_deg, nFtoE_deg
+    logical                                     :: exist
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    end if
+
+    nEtoEdge_deg = 12
+    nEtoF_deg    = 6
+    nEtoE_deg    = 6
+    nEdgetoV_deg = 2
+    nFtoE_deg    = 8
+
+    inquire(file = trim(adjustl(filename)), exist = exist)
+    if (.not. exist) then
+      write(*,*) proc_name, " :: ERROR : unexisting file ", trim(adjustl(filename))
+      stop
+    end if
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', action='read', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    read(funit) mesh%hexa_type
+    read(funit) mesh%nV, mesh%nEdge, mesh%nF, mesh%nE
+    read(funit) mesh%nCP
+    read(funit) mesh%nFtag, mesh%nEtag
+    !read(funit) mesh%ngll1D, mesh%ndof
+
+    if (dd_debug_level > 3) then
+      write(*,*) mesh%hexa_type
+      write(*,*) mesh%nV, mesh%nEdge, mesh%nF, mesh%nE
+      write(*,*) mesh%nCP
+      write(*,*) mesh%nFtag, mesh%nEtag
+      write(*,*) mesh%ngll1D, mesh%ndof
+    end if
+
+    if (mesh%hexa_type /= HEXA_8 .and. mesh%hexa_type /= HEXA_27) then
+      write(*,*) 'hexa_type =', mesh%hexa_type
+      stop proc_name // ' :: ERROR : hexahedra expected'
+    else if (mesh%hexa_type == HEXA_8) then
+      mesh%nEdeg      = 8
+      mesh%nEtoCP_deg = 0
+      mesh%nFtoCP_deg = 0
+    else if (mesh%hexa_type == HEXA_27) then
+      mesh%nEdeg      = 8
+      mesh%nEtoCP_deg = 19
+      mesh%nFtoCP_deg = 5
+    end if
+    mesh%nFdeg        = 4
+
+    if (mesh%nE > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read EtoV'
+      call alloc_(mesh%EtoV, 1, mesh%nEdeg, 1, mesh%nE, 'mesh%EtoV')
+      read(funit) mesh%EtoV(1:mesh%nEdeg, 1:mesh%nE)
+
+      if (dd_debug_level > 3) write(*,*) 'read EtoEdge'
+      call alloc_(mesh%EtoEdge, 1, nEtoEdge_deg, 1, mesh%nE, 'mesh%EtoEdge')
+      read(funit) mesh%EtoEdge(1:nEtoEdge_deg, 1:mesh%nE)
+
+      if (dd_debug_level > 3) write(*,*) 'read EtoF'
+      call alloc_(mesh%EtoF, 1, nEtoF_deg, 1, mesh%nE, 'mesh%EtoF')
+      read(funit) mesh%EtoF(1:nEtoF_deg, 1:mesh%nE)
+
+      ! EtoE not built on partitions
+      !if (dd_debug_level > 3) write(*,*) 'read EtoE'
+      !call alloc_(mesh%EtoE, 1, nEtoE_deg, 1, mesh%nE, 'mesh%EtoE')
+      !read(funit) mesh%EtoE(1:nEtoE_deg, 1:mesh%nE)
+
+      if (mesh%nEtoCP_deg > 0 .and. mesh%nCP > 0) then
+        if (dd_debug_level > 3) write(*,*) 'read EtoCP'
+        call alloc_(mesh%EtoCP, 1, mesh%nEtoCP_deg, 1, mesh%nE, 'mesh%EtoCP')
+        read(funit) mesh%EtoCP(1:mesh%nEtoCP_deg, 1:mesh%nE)
+      end if
+
+      if (dd_debug_level > 3) write(*,*) 'read Eloctoglob'
+      call alloc_(mesh%Eloctoglob%tab, 1, mesh%nE, 'mesh%Eloctoglob%tab')
+      read(funit) mesh%Eloctoglob%tab(1:mesh%nE)
+      mesh%Eloctoglob%n = mesh%nE
+    end if
+
+    if (mesh%nEdge > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read EdgetoV'
+      call alloc_(mesh%EdgetoV, 1, nEdgetoV_deg, 1, mesh%nEdge, 'mesh%EdgetoV')
+      read(funit) mesh%EdgetoV(1:nEdgetoV_deg, 1:mesh%nEdge)
+    end if
+
+    if (mesh%nF > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read FtoV'
+      call alloc_(mesh%FtoV, 1, mesh%nFdeg, 1, mesh%nF, 'mesh%FtoV')
+      read(funit) mesh%FtoV(1:mesh%nFdeg, 1:mesh%nF)
+
+      if (mesh%nFtoCP_deg > 0) then
+        if (dd_debug_level > 3) write(*,*) 'read FtoCP'
+        call alloc_(mesh%FtoCP, 1, mesh%nFtoCP_deg, 1, mesh%nF, 'mesh%FtoCP')
+        read(funit) mesh%FtoCP(1:mesh%nFtoCP_deg, 1:mesh%nF)
+      end if
+
+      ! FtoE not built on partitions
+      !if (dd_debug_level > 3) write(*,*) 'read FtoE'
+      !call alloc_(mesh%FtoE, 1, nFtoE_deg, 1, mesh%nF, 'mesh%FtoE')
+      !read(funit) mesh%FtoE(1:nFtoE_deg, 1:mesh%nF)
+    end if
+
+    if (mesh%nFtag > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read FtagtoF'
+      call alloc_(mesh%FtagtoF, 1, mesh%nFtag, 'mesh%FtagtoF')
+      read(funit) mesh%FtagtoF(1:mesh%nFtag)
+
+      if (dd_debug_level > 3) write(*,*) 'read Ftag'
+      call alloc_(mesh%Ftag, 1, mesh%nFtag, 'mesh%Ftag')
+      read(funit) mesh%Ftag(1:mesh%nFtag)
+    end if
+
+    if (mesh%nEtag > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read EtagtoE'
+      call alloc_(mesh%EtagtoE, 1, mesh%nEtag, 'mesh%EtagtoE')
+      read(funit) mesh%EtagtoE(1:mesh%nEtag)
+
+      if (dd_debug_level > 3) write(*,*) 'read Etag'
+      call alloc_(mesh%Etag, 1, mesh%nEtag, 'mesh%Etag')
+      read(funit) mesh%Etag(1:mesh%nEtag)
+    end if
+
+    if (mesh%nV > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read coorV'
+      call alloc_(mesh%coorV, 1, 3, 1, mesh%nV, 'mesh%coorV')
+      read(funit) mesh%coorV(1:3, 1:mesh%nV)
+    end if
+
+    if (mesh%nCP > 0) then
+      if (dd_debug_level > 3) write(*,*) 'read coorCP'
+      call alloc_(mesh%coorCP, 1, 3, 1, mesh%nCP, 'mesh%coorCP')
+      read(funit) mesh%coorCP(1:3, 1:mesh%nCP)
+    end if
+
+    ! The other data are not saved (used to build the communication structure or dof data)
+
+    close(funit)
+
+  end subroutine read_hexa_mesh_struct
+
+
+  subroutine write_hexa_mesh_struct(mesh, filename)
+    type(hexa_mesh_struct_type), intent(in) :: mesh
+    character(len=*),            intent(in) :: filename
+    character(len = *),          parameter  :: proc_name = "write_hexa_mesh_struct"
+    integer                                 :: funit, istat
+    integer                                 :: nEtoEdge_deg, nEtoF_deg, nEtoE_deg, nEdgetoV_deg, nFtoE_deg
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    end if
+
+    if (mesh%hexa_type /= 8 .and. mesh%hexa_type /= 27) then
+      write(*,*) 'hexa_type =', mesh%hexa_type
+      stop proc_name // ' :: ERROR : hexahedra 8 or 27 expected'
+    end if
+
+    write(*,*)
+    write(*,*) "Write mesh struct ... ", trim(adjustl(filename))
+
+    nEtoEdge_deg = 12
+    nEtoF_deg    = 6
+    nEtoE_deg    = 6
+    nEdgetoV_deg = 2
+    nFtoE_deg    = 8
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', status = 'replace', action='write', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    write(funit) mesh%hexa_type
+    write(funit) mesh%nV, mesh%nEdge, mesh%nF, mesh%nE
+    write(funit) mesh%nCP
+    write(funit) mesh%nFtag, mesh%nEtag
+    !write(funit) mesh%ngll1D, mesh%ndof
+
+    if (dd_debug_level > 1) then
+      write(*,*) 'nEdeg, nFdeg      =', mesh%nEdeg, mesh%nFdeg
+      write(*,*) 'nV, nEdge, nF, nE =', mesh%nV, mesh%nEdge, mesh%nF, mesh%nE
+      write(*,*) 'nFtag, nEtag      =', mesh%nFtag, mesh%nEtag
+      !write(*,*) 'ngll1D, ndof      =', mesh%ngll1D, mesh%ndof
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoV'
+      write(funit) mesh%EtoV(1:mesh%nEdeg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoV ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoEdge)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoEdge'
+      write(funit) mesh%EtoEdge(1:nEtoEdge_deg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoEdge ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoF)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoF'
+      write(funit) mesh%EtoF(1:nEtoF_deg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoF ok'
+    end if
+
+    ! EtoE not built on partitions
+    !if (mesh%nE > 0 .and. allocated(mesh%EtoE)) then
+    !  if (dd_debug_level > 1) write(*,*) 'write EtoE'
+    !  write(funit) mesh%EtoE(1:nEtoE_deg, 1:mesh%nE)
+    !  write(*,*) 'EtoE ok'
+    !end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%EtoCP)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtoCP'
+      write(funit) mesh%EtoCP(1:mesh%nEtoCP_deg, 1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'EtoCP ok'
+    end if
+
+    if (mesh%nE > 0 .and. allocated(mesh%Eloctoglob%tab)) then
+      if (dd_debug_level > 1) write(*,*) 'write Eloctoglob'
+      write(funit) mesh%Eloctoglob%tab(1:mesh%nE)
+      if (dd_debug_level > 1) write(*,*) 'Eloctoglob ok'
+    end if
+
+    if (mesh%nEdge > 0 .and. allocated(mesh%EdgetoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write EdgetoV'
+      write(funit) mesh%EdgetoV(1:nEdgetoV_deg, 1:mesh%nEdge)
+      if (dd_debug_level > 1) write(*,*) 'EdgetoV ok'
+    end if
+
+    if (mesh%nF > 0 .and. allocated(mesh%FtoV)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtoV'
+      write(funit) mesh%FtoV(1:mesh%nFdeg, 1:mesh%nF)
+      if (dd_debug_level > 1) write(*,*) 'FtoV ok'
+    end if
+
+    if (mesh%nF > 0 .and. allocated(mesh%FtoCP)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtoCP'
+      write(funit) mesh%FtoCP(1:mesh%nFtoCP_deg, 1:mesh%nF)
+      if (dd_debug_level > 1) write(*,*) 'FtoCP ok'
+    end if
+
+    ! FtoE not built on partitions
+    !if (mesh%nF > 0 .and. allocated(mesh%FtoE)) then
+    !  if (dd_debug_level > 1) write(*,*) 'write FtoE'
+    !  write(funit) mesh%FtoE(1:nFtoE_deg, 1:mesh%nF)
+    !  if (dd_debug_level > 1) write(*,*) 'FtoE ok'
+    !end if
+
+    if (mesh%nFtag > 0 .and. allocated(mesh%FtagtoF)) then
+      if (dd_debug_level > 1) write(*,*) 'write FtagtoF'
+      write(funit) mesh%FtagtoF(1:mesh%nFtag)
+      if (dd_debug_level > 1) write(*,*) 'FtagtoF ok'
+    end if
+
+    if (mesh%nFtag > 0 .and. allocated(mesh%Ftag)) then
+      if (dd_debug_level > 1) write(*,*) 'write Ftag'
+      write(funit) mesh%Ftag(1:mesh%nFtag)
+      if (dd_debug_level > 1) write(*,*) 'Ftag ok'
+    end if
+
+    if (mesh%nEtag > 0 .and. allocated(mesh%EtagtoE)) then
+      if (dd_debug_level > 1) write(*,*) 'write EtagtoE'
+      write(funit) mesh%EtagtoE(1:mesh%nEtag)
+      if (dd_debug_level > 1) write(*,*) 'EtagtoE ok'
+    end if
+
+    if (mesh%nEtag > 0 .and. allocated(mesh%Etag)) then
+      if (dd_debug_level > 1) write(*,*) 'write Etag'
+      write(funit) mesh%Etag(1:mesh%nEtag)
+      if (dd_debug_level > 1) write(*,*) 'Etag ok'
+    end if
+
+    if (mesh%nV > 0 .and. allocated(mesh%coorV)) then
+      if (dd_debug_level > 1) write(*,*) 'write coorV'
+      write(funit) mesh%coorV(1:3, 1:mesh%nV)
+      if (dd_debug_level > 1) write(*,*) 'coorV ok'
+    end if
+
+    if (mesh%nCP > 0 .and. allocated(mesh%coorCP)) then
+      if (dd_debug_level > 1) write(*,*) 'write coorCP'
+      write(funit) mesh%coorCP(1:3, 1:mesh%nCP)
+      if (dd_debug_level > 1) write(*,*) 'coorCP ok'
+    end if
+
+    ! The other data are not saved (used to build the communication structure or dof data)
+
+    close(funit)
+
+  end subroutine write_hexa_mesh_struct
+
+
+  subroutine free_hexa_mesh_struct(mesh)
+    type(hexa_mesh_struct_type), intent(in out) :: mesh
+    character(len = *),          parameter      :: proc_name = "free_hexa_mesh_struct"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    call dealloc_(mesh%EtoV,              'mesh%EtoV')
+    call dealloc_(mesh%EtoEdge,           'mesh%EtoEdge')
+    call dealloc_(mesh%EtoF,              'mesh%EtoF')
+    call dealloc_(mesh%EtoE,              'mesh%EtoE')
+    call dealloc_(mesh%EtoCP,             'mesh%EtoCP')
+    call dealloc_(mesh%EdgetoV,           'mesh%EdgetoV')
+    call dealloc_(mesh%FtoV,              'mesh%FtoV')
+    call dealloc_(mesh%FtoCP,             'mesh%FtoCP')
+    call dealloc_(mesh%FtoE,              'mesh%FtoE')
+    call dealloc_(mesh%FtagtoF,           'mesh%FtagtoF')
+    call dealloc_(mesh%Ftag,              'mesh%Ftag')
+    call dealloc_(mesh%EtagtoE,           'mesh%EtagtoE')
+    call dealloc_(mesh%Etag,              'mesh%Etag')
+    call dealloc_(mesh%coorV,             'mesh%coorV')
+    call dealloc_(mesh%coorCP,            'mesh%coorCP')
+    call dealloc_(mesh%VtoE%i1,           'mesh%VtoE%i1')
+    call dealloc_(mesh%VtoE%ie,           'mesh%VtoE%ie')
+    call dealloc_(mesh%CPtoE%i1,          'mesh%CPtoE%i1')
+    call dealloc_(mesh%CPtoE%ie,          'mesh%CPtoE%ie')
+    call dealloc_(mesh%EdgetoE%i1,        'mesh%EdgetoE%i1')
+    call dealloc_(mesh%EdgetoE%ie,        'mesh%EdgetoE%ie')
+    call dealloc_(mesh%EdgetoE%edgeref,   'mesh%EdgetoE%edgeref')
+    call dealloc_(mesh%Eloctoglob%tab,    'mesh%Eloctoglob%tab')
+    call dealloc_(mesh%Vloctoglob%tab,    'mesh%Vloctoglob%tab')
+    call dealloc_(mesh%Edgeloctoglob%tab, 'mesh%Edgeloctoglob%tab')
+    call dealloc_(mesh%Floctoglob%tab,    'mesh%Floctoglob%tab')
+    call dealloc_(mesh%Ftagloctoglob%tab, 'mesh%Ftagloctoglob%tab')
+    call dealloc_(mesh%Etagloctoglob%tab, 'mesh%Etagloctoglob%tab')
+    call dealloc_(mesh%gllelemtoglob,     'mesh%gllelemtoglob')
+    call dealloc_(mesh%coordof,           'mesh%coordof')
+
+  end subroutine free_hexa_mesh_struct
+
+
+  subroutine read_hexa_master_struct(master_struct, filename)
+    type(hexa_master_struct_type), intent(in out) :: master_struct
+    character(len=*),              intent(in)     :: filename
+    character(len = *),            parameter      :: proc_name = "read_hexa_master_struct"
+    integer                                       :: funit, istat
+    integer                                       :: ipart, npart, nEloc
+    logical                                       :: exist
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    end if
+
+    inquire(file = trim(adjustl(filename)), exist = exist)
+    if (.not. exist) then
+      write(*,*) proc_name, " :: ERROR : unexisting file ", trim(adjustl(filename))
+      stop
+    end if
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', action='read', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    read(funit) npart
+    master_struct%npart = npart
+
+    ! Eloctoglob data are needed by master to gather discontinuous fields (expanded dof)
+    allocate(master_struct%Eloctoglob(1:npart))
+    do ipart = 1, npart
+      read(funit) nEloc
+      master_struct%Eloctoglob(ipart)%n = nEloc
+      call alloc_(master_struct%Eloctoglob(ipart)%tab, 1, nEloc, 'Eloctoglob%tab')
+      read(funit) master_struct%Eloctoglob(ipart)%tab(:)
+    end do
+
+    close(funit)
+
+  end subroutine read_hexa_master_struct
+
+
+  subroutine write_hexa_master_struct(filename, npart, mesh_part)
+    integer,                                       intent(in) :: npart
+    type(hexa_mesh_struct_type), dimension(npart), intent(in) :: mesh_part
+    character(len=*),                              intent(in) :: filename
+    character(len = *),                            parameter  :: proc_name = "write_hexa_master_struct"
+    integer                                                   :: funit, istat
+    integer                                                   :: ipart
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    end if
+
+    write(*,*)
+    write(*,*) "Write master mesh struct ... ", trim(adjustl(filename))
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', status = 'replace', action='write', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    ! Eloctoglob data are needed by master to gather discontinuous fields (expanded dof)
+    write(funit) npart
+    do ipart = 1, npart
+      write(funit) mesh_part(ipart)%Eloctoglob%n
+      write(funit) mesh_part(ipart)%Eloctoglob%tab(1:mesh_part(ipart)%Eloctoglob%n)
+    end do
+
+    close(funit)
+
+  end subroutine write_hexa_master_struct
+
+
+  subroutine free_hexa_master_struct(master_struct)
+    type(hexa_master_struct_type), intent(in out) :: master_struct
+    character(len = *),            parameter      :: proc_name = "free_hexa_master_struct"
+    integer                                       :: ipart
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    do ipart = 1, master_struct%npart
+      call dealloc_(master_struct%Eloctoglob(ipart)%tab, 'master_struct%Eloctoglob%tab')
+    end do
+    deallocate(master_struct%Eloctoglob)
+
+  end subroutine free_hexa_master_struct
+
+
+  subroutine hexa27_renumbering_vertex_and_control_points(nP, nE, nF, coorP, EtoP, FtoP, &
+  &                                                       nV, nCP, coorV, coorCP, EtoV, EtoCP, FtoV)
+    integer,                                    intent(in)  :: nP, nE, nF
+    real,    dimension(1: 3,1:nP),              intent(in)  :: coorP
+    integer, dimension(1:27,1:nE),              intent(in)  :: EtoP
+    integer, dimension(1: 4,1:nF),              intent(in)  :: FtoP
+    integer,                                    intent(out) :: nV, nCP
+    real,    dimension( :  , :  ), allocatable, intent(out) :: coorV, coorCP
+    integer, dimension(1: 8,1:nE),              intent(out) :: EtoV
+    integer, dimension(1:19,1:nE),              intent(out) :: EtoCP
+    integer, dimension(1: 4,1:nF),              intent(out) :: FtoV
+    character(len = *),                         parameter   :: proc_name = "hexa27_renumbering_vertex_and_control_points"
+    integer                                                 :: i, ipt, ie, iv, icp, ifac
+    integer, dimension(1:nP)                                :: PtoV, PtoCP
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    PtoV(:) = 0; PtoCP(:) = 0
+    nV      = 0; nCP      = 0
+
+    ! split vertices and control points numbering
+    do ie = 1, nE
+
+      ! vertices
+      do i = 1, 8
+
+        ipt = EtoP(i,ie)
+
+        if (PtoV(ipt) == 0) then
+          ! this vertex has not been already registered, add it
+
+          if (PtoCP(ipt) /= 0) then 
+            ! the point is already registered as a control point!!!
+            write(*,*) proc_name, ' :: ERROR : the point ', ipt, ' must be either a vertex either a control point'
+            stop
+          end if
+
+          ! register now
+          nV        = nV + 1
+          PtoV(ipt) = nV
+
+        end if ! (PtoV(ipt) == 0)
+        ! nothing to do in else case
+
+      end do ! ipt = 1, 8
+
+      ! control points
+      do i = 9, 27
+
+        ipt = EtoP(i,ie)
+
+        if (PtoCP(ipt) == 0) then
+          ! this control point has not been already registered, add it
+
+          if (PtoV(ipt) /= 0) then 
+            ! the point is already registered as a vertex!!!
+            write(*,*) proc_name, ' :: ERROR : the point ', ipt, ' must be either a vertex either a control point'
+            stop
+          end if
+
+          ! register now
+          nCP        = nCP + 1
+          PtoCP(ipt) = nCP
+
+        end if ! (PtoCP(ipt) == 0)
+        ! nothing to do in else case
+        
+      end do ! ipt = 9, 27
+
+    end do ! ie = 1, nE
+
+    write(*,*) ' np = ', nP, ' Computed nV, nCP = ', nV, nCP
+
+    if (nV + nCP /= nP) then
+      write(*,*) proc_name, ' :: ERROR : the point ', ipt, ' must be either a vertex either a control point'
+      stop
+    end if
+
+    ! Compute coorV and coorCP
+    call alloc_(coorV,  1, 3, 1, nV,  'coorV')
+    call alloc_(coorCP, 1, 3, 1, nCP, 'coorCP')
+
+    do ipt = 1, nP
+      iv  = PtoV (ipt)
+      icp = PtoCP(ipt)
+      if      (iv /= 0)  then
+        coorV (:,iv)  = coorP(:,ipt)
+      else if (icp /= 0) then
+        coorCP(:,icp) = coorP(:,ipt)
+      else
+        stop proc_name // ': What the fuck!!!'
+      end if
+    end do ! ipt = 1, nP
+
+    ! Compute EtoV and EtoCP
+    do ie = 1, nE
+      do i = 1, 8 ! vertices
+        ipt            = EtoP(i,ie)
+        EtoV(i,ie)     = PtoV(ipt)
+      end do
+      do i = 9, 27 ! control points
+        ipt            = EtoP(i,ie)
+        EtoCP(i-8, ie) = PtoCP(ipt)
+      end do
+    end do
+
+    ! Compute FtoV
+    do ifac = 1, nF
+      do i = 1, 4
+        ipt            = FtoP(i,ifac)
+        FtoV(i, ifac)  = PtoV(ipt)
+      end do
+    end do
+
+  end subroutine hexa27_renumbering_vertex_and_control_points
+
+
+end module hexa_mesh_struct_mod

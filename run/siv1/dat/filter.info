@@ -1,0 +1,7 @@
+2 2 2        !1=yes 2=no: time filter: observations, synthetics, gradient
+0.25 0.25 1. !Corner frequencies for low pass filter: [0-X]
+1            !Order of time filter
+1            !1=yes 2=no: filter gradient along 2D (fault) snapshots
+2 1 2        !r1=dip, r2=strike, repeat: distances given in nodes (not in km)
+1            !2D Gaussian-shape filter: 1=local filter, 2=general filter
+21 15

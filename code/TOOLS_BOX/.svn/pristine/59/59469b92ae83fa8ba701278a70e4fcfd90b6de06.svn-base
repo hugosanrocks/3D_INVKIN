@@ -1,0 +1,15 @@
+subroutine get_ns(u,fname,ns)
+
+  implicit none
+  !definition of the su_header structure
+  include 'su.h'
+  integer :: u,ns
+  CHARACTER*(*) :: fname
+  TYPE(su_header) :: suhdr_tmp
+  OPEN(12,file=fname,access='direct',recl=4*60)
+  READ(12,rec=1)suhdr_tmp
+  CLOSE(12)
+
+ ns = suhdr_tmp%ns
+
+end subroutine get_ns

@@ -1,0 +1,2 @@
+rm ${1}.tgz
+tar -zcf ${1}.tgz --exclude '.svn' $1

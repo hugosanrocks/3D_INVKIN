@@ -1,0 +1,49 @@
+module sg_grid_comm_copy_constructor_mod
+
+  use dd_common_mod
+  use sgrid_mod
+  use sg_comm_mod
+
+  public :: sg_grid_comm_copy_constructor
+
+  contains
+
+    subroutine sg_grid_comm_copy_constructor(igrid, icomm, ogrid, ocomm, novlp_request, with_diag)
+      type(sgrid_type),      pointer, intent(in)     :: igrid
+      type(sg_comm_type),    pointer, intent(in)     :: icomm
+      type(sgrid_type),      pointer, intent(in out) :: ogrid
+      type(sg_comm_type),    pointer, intent(in out) :: ocomm
+      integer, dimension(3),          intent(in)     :: novlp_request
+      logical,                        intent(in)     :: with_diag
+      character(len=*),               parameter      :: proc_name = 'sg_grid_comm_copy_constructor'
+      integer                                        :: i
+
+      allocate(sgrid_type::ogrid)
+      call ogrid%sgrid_constructor()
+      call ogrid%sgrid_set_parameters(igrid%nnodes_glob, igrid%nd, igrid%npml_glob, igrid%h, igrid%origin_glob)
+
+      allocate(sg_comm_type::ocomm)
+      call ocomm%create_mpi_communicators(icomm%mpi_comm_0)
+
+      ! restore "dd_common" communicators to those associated to the input grid
+      mpi_comm_0 = icomm%mpi_comm_0
+      mpi_comm_1 = icomm%mpi_comm_1
+      mpi_comm_2 = icomm%mpi_comm_2
+
+      call ogrid%grid_init(quiet_mode = .true.)
+      do i = 1, 3
+        if (novlp_request(i) > min(ogrid%nnodes_dom(i), ogrid%nnodes_dom_last(i))) then
+          write(error_message,*) proc_name, " :: ERROR : ", &
+          & "overlap size cannot be greater than the size of subdomains", &
+          & novlp_request(i), min(ogrid%nnodes_dom(i), ogrid%nnodes_dom_last(i))
+          call stop_mpi()
+        end if
+      end do
+      call ogrid%sgrid_set_overlap_vector(novlp_request)
+      call ogrid%sgrid_set_diag_neighbours(with_diag)
+
+      call ocomm%create_mpi_types(ogrid)
+
+    end subroutine sg_grid_comm_copy_constructor
+
+end module sg_grid_comm_copy_constructor_mod

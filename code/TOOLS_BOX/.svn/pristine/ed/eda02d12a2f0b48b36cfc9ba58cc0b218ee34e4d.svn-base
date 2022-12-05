@@ -1,0 +1,44 @@
+************************************
+* SEISCOPE OPTIMIZATION TOOLBOX    *
+************************************
+* 03/04/13
+* L.Metivier
+***********************************
+The directory OPTIMIZATION gathers all the 
+optimization routines developed within the 
+SEISCOPE CONSORTIUM. The architecture of the
+directory is as follows: 
+- lib : contains the global library resulting from 
+the compilation of all the optimization routines
+- COMMON : contains the source code and the data
+structures which are shared by all the optimization 
+routines.
+
+The directory contains 6 subdirectories associated
+with the following optimization routines: 
+PSTD (Preconditioned Steepest Descent)
+PNLCG (Preconditioned Nonlinear Conjugate Gradient)
+LBFGS (l-BFGS algorithm)
+PLBFGS (preconditioned version of the l-BFGS algorithm)
+TRN (truncated Newton method)
+PTRN (preconditioned truncated Newton method)
+
+To build the global library, type
+make lib
+To clean the global library, type 
+make clean
+
+The command make lib will create the static library
+libSEISCOPE_OPTIM.a in the directory lib which shall be linked
+using the compilation option
+-L $(PATH) -lSEISCOPE_OPTIM 
+where $(PATH) should give the path to the directory lib which 
+contains libSEISCOPE_OPTIM.a
+
+All the optimization routines are built on the 
+same reverse communication architecture. To see
+how they can be used, report to the test directories 
+of the particular optimization routines. 
+
+
+

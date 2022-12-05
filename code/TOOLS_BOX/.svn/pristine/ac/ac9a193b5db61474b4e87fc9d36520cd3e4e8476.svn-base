@@ -1,0 +1,119 @@
+program ug_test_hexa_seq
+
+  use dd_common_mod
+  use hexa_mesh_struct_mod
+  use mesh_readers_mod
+  use mesh_writers_mod
+  use hexa_mesh_graphs_mod
+  use hexa_ref_dof_mod
+  use hexa_glob_dof_mod
+
+  implicit none
+
+  character(len=100)                               :: iFileName, oFileName
+  character(len=1024)                              :: exec
+  type(hexa_mesh_struct_type)                      :: mesh
+  integer,         dimension(:,:),     allocatable :: FtagtoV
+  integer,         dimension(:),       allocatable :: Ftag, Etag
+  type(hexa_ref_dof_t)                             :: hexa_ref_dof
+  integer                                          :: nb_args
+  real                                             :: time_end = 0., time_begin = 0., time0 = 0.
+  character(len=3)                                 :: buffer
+  integer(4)                                       :: iargc ! declare function for xlf compiler
+  real, dimension(:),                  allocatable :: F
+  integer                                          :: i
+
+  dd_debug_level   = 0
+  debug_graph      = 0
+
+  mesh%ngll1D      = 3
+
+  ! read parameters: input filename
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 2) then
+    write(6,*) "ERROR : bad number of arguments :", nb_args
+    write(6,*) "command line : ug_test_hexa_seq[_gnu] ngll1D meshfilename"
+    stop
+  end if
+  call getarg(1, buffer)
+  read(buffer,*) mesh%ngll1D
+  call getarg(2, iFileName)
+
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "Start ug_test_hexa_seq : "
+  write(6,*) "-----------------------------------------"
+  write(*,*) ' ngll1D       = ', mesh%ngll1D
+  write(*,*) ' meshfilename = ', iFileName
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+  !print *, selected_int_kind(8), huge(0_4)
+
+  call cpu_time(time_begin)
+  time0 = time_begin
+  !==============================================================================
+  call read_medit_mesh (iFileName, &
+  &                     mesh%nV, mesh%coorV, mesh%nE, mesh%nEdeg, mesh%EtoV, &
+  &                     Etag, mesh%nFtag, mesh%nFdeg, FtagtoV, Ftag)
+  mesh%hexa_type  = HEXA_8
+  mesh%nEtoCP_deg = 0
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'read_medit_mesh: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call build_hexa_mesh_graphs(mesh, FtagtoV, Ftag, Etag)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_hexa_mesh_graphs: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  !==============================================================================
+  call build_hexa_ref_dof(mesh%ngll1D, hexa_ref_dof)
+  !==============================================================================
+
+  call cpu_time(time_begin)
+  !==============================================================================
+  call assembly_hexa_glob_dof(hexa_ref_dof, mesh)
+  !==============================================================================
+  call cpu_time(time_end)
+  write(*,*)
+  write(*,*) 'build_hexa_glob_dof: Total time (seconds) = ', REAL(time_end - time_begin)
+  write(*,*)
+
+  oFileName = 'out.mesh'
+  !==============================================================================
+  call write_medit_mesh(oFileName, &
+  & mesh%nV, mesh%coorV, &
+  & mesh%nE, mesh%nEdeg, mesh%EtoV, mesh%Etag, &
+  & mesh%nF, mesh%nFdeg, mesh%FtoV, &
+  & mesh%nFtag, mesh%FtagtoF, mesh%Ftag)
+  !==============================================================================
+
+  ! Test paraview outputs
+  oFileName = 'out'
+  call alloc_(F, 1, mesh%nV, 'F')
+  F(:) = (/ (i, i = 1, mesh%nV) /)
+  call write_paraview_ascii_vtu_xml_format(oFileName, mesh%coorV, mesh%EtoV, F, mesh%nEdeg, mesh%nV, mesh%nE, POINT_DATA)
+  call write_paraview_binary_vtk_legacy_format(oFileName, mesh%coorV, mesh%EtoV, F, mesh%nEdeg, mesh%nV, mesh%nE, POINT_DATA)
+  call write_paraview_ascii_vtk_legacy_format(oFileName, mesh%coorV, mesh%EtoV, F, mesh%nEdeg, mesh%nV, mesh%nE, POINT_DATA)
+  call dealloc_(F, 'F')
+
+  ! Free memory
+  !------------
+  ! TO DO
+
+  call cpu_time(time_end)
+  write(6,*)
+  write(6,*) "-----------------------------------------"
+  write(6,*) "ug_test_hexa_seq successfully ended : "
+  write(*,*) 'Total time (seconds) = ', REAL(time_end - time0)
+  write(6,*) "-----------------------------------------"
+  write(6,*)
+
+end program ug_test_hexa_seq

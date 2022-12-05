@@ -1,0 +1,83 @@
+  ########### Allocation monitor ############ 
+ 54%rake_i  allo
+ 55%vnorm   allo
+ 56%vstk    allo
+ 57%vdip    allo
+ 58%vslip   allo
+ 59%vslip2  allo
+ 60%slipm   allo
+ 61%vnorm_i allo
+ 62%rake_li allo
+ 63%stk_i   allo
+ 64%dip_i   allo
+ 65%samp4wi allo
+ 1 %fault   allo
+ 2 %distcoo allo
+ 3 %obs     allo
+ 4 %cd      allo
+ 5 %ce      allo
+ 6 %ct      allo
+ 7 %rtimes  allo
+ 8 %rsamp   allo
+ 9 %tseries allo
+ 10%samwin  allo
+ 11%synsam  allo
+ 12%idsub   allo
+ 13%win     allo
+ 14%la      allo
+ 15%laplaci allo
+ 25%tractio allo
+ 26%res     allo
+ 27%tottrac allo
+ 28%syn     allo
+ 29%slipmod allo
+ 30%model3d allo
+ 31%modelin allo
+ 32%model2d allo
+ 33%grad2d  allo
+ 34%model1d allo
+ 35%grad1d  allo
+ 36%gradad1 allo
+ 37%target1 allo
+ 39%tracint allo
+ 40%slipr   allo
+ 41%slip    allo
+ 42%gradad2 allo
+ 43%slipr2  allo
+ 44%modelp  allo
+ 45%diag    allo
+ 46%rup     allo
+ 47%q_up    allo
+ 48%filter  allo
+ 49%resfil  allo
+ 50%rake_p  allo
+ 51%pmodel1 allo
+ 52%pmodel2 allo
+ 53%values  allo
+ 66%twin    allo
+ 27%tottrac deal
+ 28%syn     deal
+ 29%slipmod deal
+ 30%model3d deal
+ 31%modelin deal
+ 32%model2d deal
+ 33%grad2d  deal
+ 34%model1d deal
+ 35%grad1   deal
+ 36%gradad1 deal
+ 37/8target deal
+ 39%tracint deal
+ 40%slipr   deal
+ 41%slip    deal
+ 42%gradad2 deal
+ 43%slipr2  deal
+ 44%modelp  deal
+ 45%diag    deal
+ 46%rup     deal
+ 47%q_up    deal
+ 48%filter  deal
+ 49%resfil  deal
+ 50%rake_p  deal
+ 51%pmodel1 deal
+ 52%pmodel2 deal
+ 53%values  deal

@@ -1,0 +1,4 @@
+271 27.             	! #samples traction per node, window duration (s)
+1.06e19 2.8314e10       ! seismic moment (Nm), mu, (USED ONLY FOR POINT SOURCE)
+
+

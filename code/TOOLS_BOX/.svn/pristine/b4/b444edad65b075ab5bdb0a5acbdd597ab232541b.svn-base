@@ -1,0 +1,135 @@
+!*******************************************************!
+!*    SEISCOPE OPTIMIZATION TOOLBOX                    *!
+!*******************************************************!
+! This routine is used to generate formatted            !
+! ascii output files containing information             !
+! on the convergence history.                           !
+! The name of these files depend on the                 !
+! optimization routine used:                            !
+! - steepest descent                : iterate_ST.dat    !
+! - nonlinear conjugate gradient    : iterate_CG.dat    !
+! - l-BFGS                          : iterate_LB.dat    !
+! - preconditioned l-BFGS           : iterate_PLB.dat   !
+!                                                       !
+! The truncated Newton method and the preconditioned    ! 
+! truncated Newont method use their own printing        !
+! subroutines to generate their output files since      !
+! their format slightly differ.                         !
+!                                                       !
+! This printing routine is called basically at the      !
+! initialization of the optimization and then at each   !
+! iteration of the solver                               !
+!-------------------------------------------------------!
+! INPUT  : character*2 routine_type (solver)            !
+!          character*4 FLAG (phase of the solver:       !
+!                            initialization,            !
+!                            iteration,etc...           !
+!          integer n (dimension of the problem)         !
+!          optim_type optim (data structure)            !
+!-------------------------------------------------------!
+subroutine print_info(n,routine_type,optim,fcost,FLAG)
+
+  implicit none
+  include 'optim_type.h'  
+  
+  character*2, intent(in) :: routine_type
+  character*4, intent(in) :: FLAG
+  integer, intent(in) :: n
+  real, intent(in) :: fcost
+  type(optim_type), intent(in) :: optim 
+
+  integer :: unit
+  real :: ng
+
+  if(optim%print_flag.eq.1) then
+     call normL2(n,optim%grad,ng)
+     call open_file()
+     if(FLAG.eq.'INIT') then
+        if(routine_type.eq.'ST') then
+           call print_huge('         STEEEPEST DESCENT ALGORITHM         ')
+        elseif(routine_type.eq.'CG') then
+           call print_huge('     NONLINEAR CONJUGATE GRADIENT ALGORITHM  ')
+        elseif(routine_type.eq.'LB') then
+           call print_huge('             l-BFGS ALGORITHM                ')
+        elseif(routine_type.eq.'PL') then
+           call print_huge('             PRECONDITIONED l-BFGS ALGORITHM                ')
+        endif
+        write(unit,'(A30,ES10.2)') '     Convergence criterion  : ',optim%conv
+        write(unit,'(A30,I7)')     '     Niter_max              : ',optim%niter_max
+        write(unit,'(A30,ES10.2)') '     Initial cost is        : ',optim%f0
+        write(unit,'(A30,ES10.2)') '     Initial norm_grad is   : ',ng
+        call print_line()
+        write(unit,'(A10,A10,A10,A10,A12,A12,A12)')&
+             '   Niter   ' ,&
+             '   fk      ' ,&
+             '   ||gk||  ' ,&
+             '     fk/f0   ' ,&
+             '       alpha   ' ,&
+             '       nls     ',&
+             '   ngrad    '
+        call print_infos()
+     elseif(FLAG.eq.'CONV') then
+        call print_infos()
+        call print_line()
+        if(optim%cpt_iter.ge.optim%niter_max) then
+           write(unit,'(A50)') '  STOP: MAXIMUM NUMBER OF ITERATION REACHED    '
+        else
+           write(unit,'(A50)') '  STOP: CONVERGENCE CRITERION SATISFIED        '
+        endif
+        call print_line()
+     elseif(FLAG.eq.'FAIL') then
+        call print_line()
+        write(unit,'(A50)') '  STOP: LINESEARCH FAILURE    '
+        call print_line()
+     else
+        call print_infos()
+     endif
+     close(unit)
+  endif
+
+contains
+
+  subroutine open_file()
+    character (len=20) :: fname
+    
+    if(routine_type.eq.'ST') then
+       fname = 'iterate_ST.dat'
+    elseif(routine_type.eq.'CG') then
+       fname = 'iterate_CG.dat'
+    elseif(routine_type.eq.'LB') then
+       fname = 'iterate_LB.dat'
+    elseif(routine_type.eq.'PL') then
+       fname = 'iterate_PLB.dat'
+    endif
+    
+    if(FLAG.eq.'INIT') then
+       open(newunit=unit, file=fname, status='REPLACE', action='WRITE', access='SEQUENTIAL', position='APPEND')
+    else
+       open(newunit=unit, file=fname, status='OLD',     action='WRITE', access='SEQUENTIAL', position='APPEND')
+    end if
+  end subroutine open_file
+  
+  subroutine print_line()
+    write(unit,'(A70)') '**********************************************************************'
+  end subroutine print_line
+  
+  subroutine print_huge(label)
+    character (len=*), intent(in) :: label
+    call print_line()
+    write(unit,'(A50)') label
+    call print_line()
+  end subroutine print_huge
+  
+  subroutine print_infos()
+    write(unit,'(I6,ES12.2,ES12.2,ES12.2,ES12.2,I8,I8)') &
+         optim%cpt_iter,&          
+         fcost,&
+         ng,&
+         fcost/optim%f0,&
+         optim%alpha,&
+         optim%cpt_ls,&
+         optim%nfwd_pb
+  end subroutine print_infos
+  
+end subroutine print_info
+

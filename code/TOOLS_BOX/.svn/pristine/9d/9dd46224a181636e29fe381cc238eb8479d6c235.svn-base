@@ -1,0 +1,348 @@
+!------------------
+
+subroutine open_output_files
+
+  use global_parameters_mod
+  implicit none
+
+  !open(IOUT_SISMO,file='pressure.out')
+  open(IOUT_GATHER_P, file='Gather_P',  access='direct', recl=FP*acqui%nsta)
+  open(IOUT_GATHER_Vx,file='Gather_Vx', access='direct', recl=FP*acqui%nsta)
+  open(IOUT_GATHER_Vy,file='Gather_Vy', access='direct', recl=FP*acqui%nsta)
+  open(IOUT_GATHER_Vz,file='Gather_Vz', access='direct', recl=FP*acqui%nsta)
+
+end subroutine open_output_files
+
+!-----------------
+
+subroutine write_sismogram_ac(np)
+  use global_parameters_mod
+  implicit none
+  integer        :: i, np
+  integer        :: iele, ista
+
+  acqui%pressure_gather(:)=0._fp
+  acqui%veloc_x_gather(:)=0._fp
+  acqui%veloc_y_gather(:)=0._fp
+  acqui%veloc_z_gather(:)=0._fp
+
+  do ista=1, acqui%nsta
+     iele=acqui%iel_sta(ista)
+     do i = 1, np
+        acqui%pressure_gather(ista) = acqui%pressure_gather(ista) + &
+             acqui%sta_weig(i,ista)* stress(1,i,iele)
+
+        acqui%veloc_x_gather(ista) = acqui%veloc_x_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(1,i,iele)
+
+        acqui%veloc_y_gather(ista) = acqui%veloc_y_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(2,i,iele) 
+ 
+        acqui%veloc_z_gather(ista) = acqui%veloc_z_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(3,i,iele)
+     end do
+  end do
+
+  irec_gather_p = irec_gather_p + 1
+
+  write(IOUT_GATHER_P,  rec= irec_gather_p) acqui%pressure_gather
+  write(IOUT_GATHER_Vx, rec= irec_gather_p) acqui%veloc_x_gather
+  write(IOUT_GATHER_Vy, rec= irec_gather_p) acqui%veloc_y_gather
+  write(IOUT_GATHER_Vz, rec= irec_gather_p) acqui%veloc_z_gather
+
+end subroutine write_sismogram_ac
+
+!-----------------
+
+
+subroutine write_sismogram_el(np)
+  use global_parameters_mod
+  implicit none
+  integer        :: i, np
+  integer        :: iele, ista
+ 
+  acqui%pressure_gather(:)=0._fp
+  acqui%veloc_x_gather(:)=0._fp
+  acqui%veloc_y_gather(:)=0._fp
+  acqui%veloc_z_gather(:)=0._fp
+
+  do ista=1, acqui%nsta
+     iele=acqui%iel_sta(ista)
+     do i = 1, np
+
+        acqui%pressure_gather(ista) = acqui%pressure_gather(ista) + &
+             acqui%sta_weig(i,ista)* (stress(1,i,iele) + stress(2,i,iele) + stress(3,i,iele)) / 3._fp
+
+        acqui%veloc_x_gather(ista) = acqui%veloc_x_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(1,i,iele)
+
+        acqui%veloc_y_gather(ista) = acqui%veloc_y_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(2,i,iele) 
+ 
+        acqui%veloc_z_gather(ista) = acqui%veloc_z_gather(ista) + &
+             acqui%sta_weig(i,ista)* veloc(3,i,iele)
+
+     end do
+  end do
+
+  irec_gather_p = irec_gather_p + 1
+
+  write(IOUT_GATHER_P,  rec= irec_gather_p) acqui%pressure_gather
+  write(IOUT_GATHER_Vx, rec= irec_gather_p) acqui%veloc_x_gather
+  write(IOUT_GATHER_Vy, rec= irec_gather_p) acqui%veloc_y_gather
+  write(IOUT_GATHER_Vz, rec= irec_gather_p) acqui%veloc_z_gather
+
+end subroutine write_sismogram_el
+
+!------------------------------------
+
+subroutine initialize_snapshot_x()
+  use global_parameters_mod
+  implicit none
+  real(kind=fp) dys, dzs, xs, ys, zs
+  integer i,j, isnap 
+  integer iele_locate
+  real(kind=fp), dimension(:), allocatable ::  weight
+
+  !! hard coded for test
+  nb_snap_x=1
+  !step_snap=0.005
+  
+  dys = ymax_value - ymin_value 
+  dzs = zmax_value - zmin_value 
+  
+  ny_snap = dys / step_snap 
+  nz_snap = dzs / step_snap
+  
+  write(*,*) 
+  write(*,*) ' snapshot x :', ny_snap, nz_snap
+  write(*,*)
+  write(*,*) 
+  
+  allocate(weight(ndof_local))
+
+  allocate(snap_x(ny_snap,nz_snap,nb_snap_x),x_snap(nb_snap_x))
+  allocate(weight_snap_x(ndof_local,ny_snap,nz_snap,nb_snap_x))
+  allocate(iele_snap_x(ny_snap,nz_snap,nb_snap_x))
+
+  weight_snap_x(:,:,:,:)=0._fp
+
+  !! hard coded 
+  x_snap(nb_snap_x)=x_snap_tmp
+  
+
+  !! loop over grid snap
+  iele_locate=0
+  do isnap=1, nb_snap_x
+     xs = x_snap(isnap) 
+     do j=1, nz_snap
+        zs =  zmin_value + j * step_snap
+        do i=1, ny_snap
+           ys =  ymin_value + i * step_snap
+
+           weight(:)=0._fp
+!!$           call locate_and_compute_interpolation_weigth(xs, ys, zs, iele_locate, weight, ndof_local, &
+!!$                norder_simu, EtoV, coorV, nV, nE, ref_matrix(norder_simu)%InvVandermonde)
+!!$
+!!$           weight_snap_x(:,i,j,isnap)=weight(:)
+!!$           iele_snap_x(i,j,isnap) = iele_locate
+
+           call locate_point_in_mesh_v1(iele_locate, xs, ys, zs, EtoV,  EtoF, FtoE, coorV, nV, nE, nF)
+           !call locate_point_in_mesh(iele_locate, xs, ys, zs, EtoV,  coorV, nV, nE)
+           iele_snap_x(i,j,isnap) = iele_locate
+           if (iele_locate > 0) call compute_interpolation_weigth(xs, ys, zs,  coorV, EtoV, iele_locate, & 
+           & weight_snap_x(:,i,j,isnap), ref_matrix(norder_simu)%InvVandermonde, ndof_local, norder_simu, nV, nE)
+           !iele_locate=0  !! DEBUG
+        end do
+     end do
+  end do
+
+  irec_snap_x=0
+  open(IOUT_SNAP_X, file = 'pressure_x.snap', access='direct', recl=FP*ny_snap*nz_snap*nb_snap_x)
+
+  deallocate(weight)
+
+end subroutine initialize_snapshot_x
+   
+!-------------------------------------------------------------------------------------------------------------------------------
+
+subroutine initialize_snapshot_y()
+  use global_parameters_mod
+  implicit none
+  real(kind=fp) dxs, dzs, xs, ys, zs
+  integer i,j, isnap 
+  integer iele_locate
+  real(kind=fp), dimension(:), allocatable ::  weight
+
+  !! hard coded for test
+  nb_snap_y=1
+
+  
+  dxs = xmax_value - xmin_value 
+  dzs = zmax_value - zmin_value 
+  
+  nx_snap = dxs / step_snap 
+  nz_snap = dzs / step_snap
+  
+  write(*,*) 
+  write(*,*) ' snapshot y :', nx_snap, nz_snap
+  write(*,*)
+  write(*,*) 
+  
+  allocate(weight(ndof_local))
+
+  allocate(snap_y(nx_snap,nz_snap,nb_snap_y),y_snap(nb_snap_y))
+  allocate(weight_snap_y(ndof_local,nx_snap,nz_snap,nb_snap_y))
+  allocate(iele_snap_y(nx_snap,nz_snap,nb_snap_y))
+
+  weight_snap_y(:,:,:,:)=0._fp
+
+  !! hard coded 
+  y_snap(nb_snap_x)=y_snap_tmp
+
+
+
+  !! loop over grid snap
+  iele_locate=0
+  do isnap=1, nb_snap_x
+     ys = y_snap(isnap) 
+     do j=1, nz_snap
+        zs =  zmin_value + j * step_snap
+        do i=1, nx_snap
+           xs =  xmin_value + i * step_snap
+
+           weight(:)=0._fp
+ call locate_point_in_mesh_v1(iele_locate, xs, ys, zs, EtoV,  EtoF, FtoE, coorV, nV, nE, nF)
+           !call locate_point_in_mesh(iele_locate, xs, ys, zs, EtoV,  coorV, nV, nE)
+           iele_snap_y(i,j,isnap) = iele_locate
+           if (iele_locate > 0) call compute_interpolation_weigth(xs, ys, zs,  coorV, EtoV, iele_locate, & 
+           & weight_snap_y(:,i,j,isnap), ref_matrix(norder_simu)%InvVandermonde, ndof_local, norder_simu, nV, nE)
+           !iele_locate=0  !! DEBUG
+        end do
+     end do
+  end do
+
+  irec_snap_y=0
+  open(IOUT_SNAP_Y, file = 'pressure_y.snap', access='direct', recl=FP*nx_snap*nz_snap*nb_snap_y)
+
+  deallocate(weight)
+
+end subroutine initialize_snapshot_y
+
+
+!-------------------------------------------------------------------------------------------------------------------------------
+
+
+subroutine take_pressure_x_snapshot_ac()
+  
+  use global_parameters_mod
+  implicit none
+  integer i, j, isnap, iele
+  
+  snap_x(:,:,:)=0._fp
+  do isnap=1, nb_snap_x
+     do j=1, nz_snap
+        do i=1,  ny_snap
+           iele = iele_snap_x(i, j, isnap)  
+           if (iele > 0) then 
+              do idof = 1, ndof_local 
+                 snap_x(i,j,isnap) =  snap_x(i,j,isnap) + weight_snap_x( idof, i, j, isnap ) * stress(1, idof, iele)
+              end do
+           end if
+        end do
+     end do
+  end do
+  
+  irec_snap_x = irec_snap_x + 1
+  write(IOUT_SNAP_X, rec=irec_snap_x) snap_x
+  
+  
+end subroutine take_pressure_x_snapshot_ac
+
+!-----------------
+
+subroutine take_pressure_y_snapshot_ac()
+  
+  use global_parameters_mod
+  implicit none
+  integer i, j, isnap, iele
+  
+  snap_y(:,:,:)=0._fp
+  do isnap=1, nb_snap_y
+     do j=1, nz_snap
+        do i=1,  nx_snap
+           iele = iele_snap_y(i, j, isnap)  
+           if (iele > 0) then 
+              do idof = 1, ndof_local 
+                 snap_y(i,j,isnap) =  snap_y(i,j,isnap) + weight_snap_y( idof, i, j, isnap ) * stress(1, idof, iele)
+              end do
+           end if
+        end do
+     end do
+  end do
+  
+  irec_snap_y = irec_snap_y + 1
+  write(IOUT_SNAP_Y, rec=irec_snap_y) snap_y
+  
+  
+end subroutine take_pressure_y_snapshot_ac
+
+!-----------------
+
+subroutine take_pressure_y_snapshot_el()
+  
+  use global_parameters_mod
+  implicit none
+  integer i, j, isnap, iele
+  
+  snap_y(:,:,:)=0._fp
+  do isnap=1, nb_snap_y
+     do j=1, nz_snap
+        do i=1,  nx_snap
+           iele = iele_snap_y(i, j, isnap)  
+           if (iele > 0) then 
+              do idof = 1, ndof_local 
+                 !snap_y(i,j,isnap) =  snap_y(i,j,isnap) + weight_snap_y( idof, i, j, isnap ) * (stress(1, idof, iele) + stress(2, idof, iele) + stress(3, idof, iele)) / 3._fp
+                 snap_y(i,j,isnap) =  snap_y(i,j,isnap) + weight_snap_y( idof, i, j, isnap ) * veloc(3, idof, iele)
+              end do
+           end if
+        end do
+     end do
+  end do
+  
+  irec_snap_y = irec_snap_y + 1
+  write(IOUT_SNAP_Y, rec=irec_snap_y) snap_y
+  
+  
+end subroutine take_pressure_y_snapshot_el
+
+!-----------------
+
+subroutine take_pressure_x_snapshot_el()
+  
+  use global_parameters_mod
+  implicit none
+  integer i, j, isnap, iele
+  
+  snap_x(:,:,:)=0._fp
+  do isnap=1, nb_snap_x
+    do j=1, nz_snap
+      do i=1,  ny_snap
+        iele = iele_snap_x(i, j, isnap)  
+        if (iele > 0) then 
+          do idof = 1, ndof_local 
+            snap_x(i,j,isnap) =  snap_x(i,j,isnap) + weight_snap_x( idof, i, j, isnap ) &
+            &* (stress(1, idof, iele) + stress(2, idof, iele) + stress(3, idof, iele)) / 3._fp
+          end do
+        end if
+      end do
+    end do
+  end do
+  
+  irec_snap_x = irec_snap_x + 1
+  write(IOUT_SNAP_X, rec=irec_snap_x) snap_x
+  
+  
+end subroutine take_pressure_x_snapshot_el
+
+!-----------------

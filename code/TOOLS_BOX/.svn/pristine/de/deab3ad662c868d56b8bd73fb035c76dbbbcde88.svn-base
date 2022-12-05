@@ -1,0 +1,7 @@
+rm output_bin_*.vtk P P.dat
+
+mpirun -np 2 ../../bin/test_dd_sg_ac_iso_o4_gnu
+#-am /home/laure/.openmpi/mca-params.conf
+
+rm vp rho
+

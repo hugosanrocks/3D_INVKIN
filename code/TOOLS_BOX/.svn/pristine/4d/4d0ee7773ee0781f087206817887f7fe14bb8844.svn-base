@@ -1,0 +1,144 @@
+program proto_dg
+!
+!
+!
+!
+!                     Prototype code for
+!
+!  High Order Discontinuous Galerkin for acoustic/elastic wave equation
+!
+!    
+!
+! Change log : 
+!
+!  15/08/2015
+! 
+!   * Isotropic Elastic and acoustic
+!   * sequential version
+!   * point source (explosion)
+!   * ricker stf
+!   * absorbing boundary by fluxes
+!   * gather for P,Vx,Vy,Vz
+!   * snapshot x=cste, y=cste (Pressure)
+!   * constant properties in element
+!
+!
+!
+! 16/08/2015
+!   
+!  * tunnig thank to vtune amplifier (speed up x2)
+!  * add leapfrog time stepping in elastic case 
+!
+!
+!
+! TO DO LIST :
+!
+!   * PML
+!   * VTI
+!   * fluid/solid interface
+!   * moment tensor source
+!   * snapshot for all fields
+!   * multi-threading
+!
+!
+!
+! Authors : 
+!
+! Vadim Monteiller : vadim.monteiller@geoazur.unice.fr
+! Laure Combe      : laure.combe@geoazur.unice.fr
+!
+!
+   
+  use dd_common_mod
+  use global_parameters_mod
+
+!!$  !! NAIVE MPI
+!!$  call MPI_INIT(ierr)
+!!$  call MPI_COMM_RANK(MPI_COMM_WORLD,myrank,ierr)
+!!$  call MPI_COMM_SIZE(MPI_COMM_WORLD,nbrank,ierr)
+!!$  !!
+
+  write(*,*) 
+  write(*,*) 
+  write(*,*)  '        DG prototype code : acoustic or elastic  '
+  write(*,*)  '                  order up to 15  '  
+  write(*,*)  
+  write(*,*)
+
+  !! reading inputs files and parameters 
+  call read_input_dg()
+
+  !! preprocessing : mesh, graphs, dof, matrices ...  
+  call startup_DG_preprocessing()
+ 
+  ! Runge Kutta coefficients for low storage implementation 
+  call initialise_LSERK()
+
+  ! for results 
+!!$  if (myrank .eq.0) 
+  call open_output_files()
+!!$  call distrib_mpi_elements
+!!$  write(*,*) 'myrank ', myrank
+!!$  call MPI_Barrier(MPI_COMM_WORLD,ierr)
+!!$  !stop
+  !! 
+  select case (simu_type)
+     case ('acoustic')
+
+        write(*,*)
+        write(*,*) '        Acoustic simulation  '
+        write(*,*)
+
+        ! implementation for constant propeties in element, order norder_simu
+        call define_local_acoustic_DG_matrices(norder_simu)
+        call initialise_acoustic_fields()
+        call define_acoustic_material()
+
+        !! choose the time step according to cfl
+        call dtscale()
+
+        call Time_evol_acoustic()
+
+     case('elastic_RK')
+
+        write(*,*)
+        write(*,*) '         Elastic simulation + Rung Kutta  '
+        write(*,*)
+
+        ! implementation for constant propeties in element, order norder_simu
+        call define_local_elastic_DG_matrices(norder_simu)
+        call initialise_elastic_fields()
+        call define_elastic_material()
+        
+        !! choose the time step according to cfl
+        call dtscale()
+
+        call Time_evol_elastic()
+
+     case('elastic_LF')
+
+        write(*,*)
+        write(*,*) '         Elastic simulation + LeapFrog  '
+        write(*,*)
+
+        ! implementation for constant propeties in element, order norder_simu
+        call define_local_elastic_DG_matrices(norder_simu)
+        call initialise_elastic_fields()
+        call define_elastic_material()
+
+        !! choose the time step according to cfl
+        call dtscale_leapfrog() 
+        call Time_evol_elastic_leapfrog
+        
+!!$
+!!$     case('acoustic_vti')
+!!$
+!!$     case('elastic_vti')
+
+  end select
+
+!call close_all_file
+!call free_memmory
+!!$call MPI_FINALIZE(ierr)
+
+end program proto_dg

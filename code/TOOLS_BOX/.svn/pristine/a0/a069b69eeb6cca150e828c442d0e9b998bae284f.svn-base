@@ -1,0 +1,33 @@
+
+set(CHECKP_LIB_NAME checkpointing)
+
+set(TEST_REVOLVE_BINOMIAL test_revolve_binomial${suffix})
+
+add_executable(
+        ${TEST_REVOLVE_BINOMIAL}
+        test_revolve_binomial.f90
+)
+
+set_target_properties(${TEST_REVOLVE_BINOMIAL}
+PROPERTIES LINKER_LANGUAGE Fortran)
+
+target_link_libraries(
+        ${TEST_REVOLVE_BINOMIAL}
+        ${CHECKP_LIB_NAME}_static
+        ${LIBS}
+)
+
+include_directories(
+        ${CHECKP_INCLUDE_PATH}
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+install(
+        TARGETS ${TEST_REVOLVE_BINOMIAL}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT TEST_REVOLVE_BINOMIAL
+)

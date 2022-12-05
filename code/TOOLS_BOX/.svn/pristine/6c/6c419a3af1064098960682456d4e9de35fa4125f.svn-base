@@ -1,0 +1,607 @@
+program test_dd_sgrid
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use sgrid_mod
+  use sg_comm_mod
+  use sg_points_zone_mod
+
+  implicit none
+
+  type(sgrid_type),             target :: grid
+  type(sg_comm_type)                   :: comm
+
+  ! input parameters
+  integer, dimension(3)                :: nglobal, nsub_dom
+  real,    dimension(3)                :: spatial_step, grid_origin
+  integer                              :: novlp
+  ! zones definition
+  integer                              :: ngpt_glob, ncpt_glob
+  integer, dimension(:,:), allocatable :: mapping_glob
+  real,    dimension(:,:), allocatable :: coor
+
+  ! field
+  character(len=100)                   :: F_file = 'F'
+  real, dimension(:,:,:),  allocatable :: Fglob, F
+  real                                 :: valmin, valmax
+
+  real                                 :: val = -1.
+  integer, dimension(2,3)              :: npml_glob = 20
+  integer                              :: i1, i2, i3
+  character                            :: nstr*10
+
+  dd_debug_level = 0 ! declared in common_mod
+
+  call init_mpi()
+
+  call read_input_parameters0()
+
+  call grid%sgrid_constructor()
+  call grid%sgrid_set_parameters(nglobal, nsub_dom, npml_glob, spatial_step, grid_origin)
+
+  call comm%create_mpi_communicators()
+
+  call print_starting_banner()
+
+  ! Init domain decomposition----------------------------------------
+  call grid%sgrid_set_diag_neighbours(.True.) ! True if communication with diagonal neighbours processors is needed
+  call grid%grid_set_overlap(novlp)
+  call grid%grid_init()
+  !------------------------------------------------------------------
+
+  ! Create MPI types for communications------------------------------
+  call comm%create_mpi_types(grid)
+  !------------------------------------------------------------------
+
+  ! Read a global field and distribute it on each subdomain-----------
+  call build_global_homogeneous_parameter(F_file, val, nglobal)
+  call grid%sgrid_allocate_global_field(Fglob, "Fglob")
+  call grid%sgrid_allocate_field(F, "F")
+  call grid%sgrid_read_global_field(Fglob, F_file)
+  call comm%sg_comm_scatter_global_field(grid, Fglob, F)
+  valmin = comm%sg_comm_get_field_glob_min_value(grid, F)
+  valmax = comm%sg_comm_get_field_glob_max_value(grid, F)
+  !------------------------------------------------------------------
+
+  F = myid ! set a dummy value for test
+
+  ! Gather distributed values of F in Fglob -------------------------
+  if (myid == 0) then
+    write(*,*)
+    write(*,*) 'Test field gathering...'
+    write(*,*)
+  end if
+  call comm%sg_comm_gather_global_field(grid, Fglob, F)
+
+  ! Print the resulting global field
+  if (myid == 0) then
+    if (.False.) then
+      write(nstr,'(I8)') grid%n_glob(2)
+      do i3 = 1, grid%n_glob(3)
+        do i1 = 1, grid%n_glob(1)
+          write(*,'(A,' // trim(adjustl(nstr)) // 'F14.7)') "Fglob = ", (Fglob(i1,i2,i3), i2 = 1, grid%n_glob(2))
+        enddo
+        write(*,*)
+      enddo
+    end if
+  end if
+  !------------------------------------------------------------------
+
+  if (myid == 0) then
+    call grid%sgrid_deallocate_global_field(Fglob, "Fglob")
+  end if
+  call dealloc_(F, "F")
+
+  ! Zone partitioning, scattering and gathering functionalities -----
+  dd_debug_level = 0 ! declared in common_mod
+  call read_input_parameters1()
+  call write_input_parameters1()
+
+  call zone_partition_polymorphic_use_case_example()
+  call zone_partition_use_case_example()
+  if (myid == 0) then
+    call dealloc_(mapping_glob, 'mapping_glob')
+  end if
+
+  call continuum_points_zone_partition_polymorphic_use_case_example()
+  call continuum_points_zone_partition_use_case_example()
+  if (myid == 0) then
+    call dealloc_(coor, 'coor')
+  end if
+  dd_debug_level = 0 ! declared in common_mod
+  !------------------------------------------------------------------
+
+  ! Free memory------------------------------------------------------
+  call grid%grid_destructor()
+  call print_mem_alloc_stat()
+  call comm%end_mpi()
+  !------------------------------------------------------------------
+
+  call print_successfully_program_ended_banner()
+
+  contains
+
+
+  subroutine read_input_parameters0()
+    open(unit=1, FILE='test_dd_sgrid.config')
+    ! domain and sources distributions on processor
+    read(1,*)   nsub_dom
+    read(1,*)   novlp
+    ! grid
+    read(1,*)   nglobal
+    read(1,*)   spatial_step
+    read(1,*)   grid_origin
+  end subroutine read_input_parameters0
+
+
+  subroutine read_input_parameters1()
+    integer :: ipt
+    if (myid == 0) then
+      read(1,*)   ! skip comment line
+      ! grid points zone
+      read(1,*)   ngpt_glob
+      if (ngpt_glob > 0) then
+        call alloc_(mapping_glob, 1, 3, 1, ngpt_glob, 'mapping_glob')
+        do ipt = 1, ngpt_glob
+          read(1,*) mapping_glob(:, ipt)
+        end do
+      end if
+      ! continuum points zone
+      read(1,*)   ! skip comment line
+      read(1,*)   ncpt_glob
+      if (ncpt_glob > 0) then
+        call alloc_(coor, 1, 3, 1, ncpt_glob, 'coor')
+        do ipt = 1, ncpt_glob
+          read(1,*) coor(:, ipt)
+        end do
+      end if
+    end if
+  end subroutine read_input_parameters1
+
+
+  subroutine write_input_parameters1()
+    integer :: ipt
+    if (myid == 0) then
+      write(*,*) 'GRID POINTS ZONE'
+      write(*,*) 'ngpt_glob =', ngpt_glob
+      do ipt = 1, ngpt_glob
+        write(*,*) 'ipt=', ipt, ' mapping_glob =', mapping_glob(:, ipt)
+      end do
+      write(*,*) 'CONTINUUM POINTS ZONE'
+      write(*,*) 'ncpt_glob =', ncpt_glob
+      do ipt = 1, ncpt_glob
+        write(*,*) 'ipt=', ipt, ' coor =',coor(:, ipt)
+      end do
+    end if
+  end subroutine write_input_parameters1
+
+
+  subroutine build_global_homogeneous_parameter(filename, value, nglobal)
+    ! This subroutine stores on file an homogeneous parameter value on the global grid
+
+    integer, dimension(3), intent(in) :: nglobal
+    real,                  intent(in) :: value
+    character(len=100),    intent(in) :: filename
+    integer                           :: i1, i2, i3
+
+    if (myid == 0) then
+      write(6,*) '   build_homogeneous_param ', trim(adjustl(filename)), value
+
+      open (unit=11, file=trim(adjustl(filename)), access='direct', form='unformatted', status='unknown', &
+      & recl=product(nglobal)*kind(value))
+      write(unit=11, rec=1) (((value, i1=1,nglobal(1)), i2=1,nglobal(2)), i3=1,nglobal(3))
+      close(unit=11)
+    end if
+  end subroutine build_global_homogeneous_parameter
+
+
+  subroutine print_starting_banner()
+    if (myid_world == 0) then    
+      write(*,*) ''   
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      write(*,*) '                        3D Domain Decomposition Test'
+      write(*,*) '' 
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      call comm%print_info()
+      write(*,*) ' Number of threads :             ', nthreads
+    end if
+    end subroutine print_starting_banner
+
+
+  subroutine print_successfully_program_ended_banner()
+    if (myid_world == 0) then
+      write(*,*) ''
+      write(*,*) '======================================================================'
+      write(*,*) ''
+      write(*,*) '     End of the program                        '
+      write(*,*) ''
+      write(*,*) '======================================================================'
+    end if
+  end subroutine print_successfully_program_ended_banner
+
+
+  subroutine zone_partition_use_case_example()
+    integer                              :: ntbuf
+    integer                              :: iproc, i1, iEnd, ipt
+    type(sg_grid_points_glob_zone_type)  :: sg_grid_points_glob_zone
+    type(sg_grid_points_loc_zone_type)   :: sg_grid_points_loc_zone
+    real, dimension(:),      allocatable :: data_glob, data_loc
+    real, dimension(:,:),    allocatable :: data_buf_glob, data_buf_loc
+
+    ! Number of buffer shall be known by all processors
+    ntbuf = 2
+
+    ! Define global zone on master processor only
+    ! (in fact each master processor of communicator 1 dedicated to domain decomposition)
+    if (myid == 0) then
+      write(*,*)
+      write(*,*) 'Test grid points zone scattering...'
+      write(*,*)
+
+      ! Define non bufferized data
+      call alloc_(data_glob, 1, ngpt_glob, 'data_glob')
+      data_glob(:) = (/ (real(ipt), ipt = 1, ngpt_glob) /)
+
+      ! Define bufferized data
+      call alloc_(data_buf_glob, 1, ntbuf, 1, ngpt_glob, 'data_buf_glob')
+      data_buf_glob(:,:) = reshape((/ (real(ipt), ipt = 1, ngpt_glob*ntbuf) /), shape(data_buf_glob))
+
+      call sg_grid_points_glob_zone%sg_grid_points_glob_zone_constructor(ngpt_glob, mapping_glob)
+
+    end if
+
+    ! Perform partition of the global zone, return a local zone on each subdomain
+    call comm%sg_comm_partition_sg_grid_points_global_zone(grid, sg_grid_points_glob_zone, sg_grid_points_loc_zone)
+
+    ! print global zone data
+    if (myid == 0) then
+      if (sg_grid_points_glob_zone%npt_glob > 0) then
+        do iproc = 0, comm%nproc_1-1
+          i1   = sg_grid_points_glob_zone%proc_npt_tab(iproc)
+          iEnd = sg_grid_points_glob_zone%proc_npt_tab(iproc+1) - 1
+          write(*,*) ' global zone partition : proc = ', iproc, ' proc_pt_tab = ',  sg_grid_points_glob_zone%proc_pt_tab(i1:iEnd)
+        end do
+      end if
+      write(*,*) ' global zone partition : pt_proc_tab = ', sg_grid_points_glob_zone%pt_proc_tab
+      write(*,*)
+    end if
+
+    ! print local zone data
+    write(*,'(I5,A,I5)') myid, ' local zone : npt_loc = ', sg_grid_points_loc_zone%npt_loc
+    do ipt = 1, sg_grid_points_loc_zone%npt_loc
+      write(*,'(I5,A,I5,A,3I5,A,I5)') myid, ' local zone : ', ipt, ' mapping_loc_grid = ', &
+      & sg_grid_points_loc_zone%mapping_loc_grid(:,ipt), ' ipt_glob = ', sg_grid_points_loc_zone%pts(ipt)
+    end do
+    write(*,*)
+
+    ! Scatter non bufferized data
+    call comm%sg_comm_scatter_points_global_zone_data( &
+    & sg_grid_points_glob_zone, data_glob, sg_grid_points_loc_zone, data_loc)
+
+    ! print scattered data
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local data = ', data_loc(:)
+    end if
+
+    ! modify local values
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      data_loc(:) = data_loc(:) + 1000.
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_points_global_zone_data( &
+    & sg_grid_points_glob_zone, data_glob, sg_grid_points_loc_zone, data_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global data = ', data_glob(:)
+    end if
+
+    ! Scatter bufferized data
+    call comm%sg_comm_scatter_points_global_zone_buf_data(& 
+    & ntbuf, sg_grid_points_glob_zone, data_buf_glob, sg_grid_points_loc_zone, data_buf_loc)
+
+    ! print scattered bufferized data
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local buf data = ', data_buf_loc(:,:)
+    end if
+
+    ! modify local values
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      data_buf_loc(:,:) = data_buf_loc(:,:) + 1000.
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_points_global_zone_buf_data( &
+    & ntbuf, sg_grid_points_glob_zone, data_buf_glob, sg_grid_points_loc_zone, data_buf_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global buf data = ', data_buf_glob(:,:)
+    end if
+
+    if (myid == 0) then
+      call dealloc_(data_glob, 'data_glob')
+      call dealloc_(data_buf_glob, 'data_buf_glob')
+      call sg_grid_points_glob_zone%glob_zone_destructor()
+    end if
+    call dealloc_(data_loc, 'data_loc')
+    call dealloc_(data_buf_loc, 'data_buf_loc')
+    call sg_grid_points_loc_zone%loc_zone_destructor()
+
+  end subroutine zone_partition_use_case_example
+
+
+  subroutine zone_partition_polymorphic_use_case_example()
+    integer                                      :: iproc, i1, iEnd, ipt
+    class(glob_zone_type),               pointer :: glob_zone => Null()
+    class(loc_zone_type),                pointer :: loc_zone  => Null()
+    type(sg_grid_points_glob_zone_type),  target :: sg_grid_points_glob_zone
+    type(sg_grid_points_loc_zone_type),  pointer :: sg_grid_points_loc_zone => Null()
+    real, dimension(:),              allocatable :: data_glob, data_loc
+
+    if (myid == 0) then
+      write(*,*)
+      write(*,*) 'Test grid points zone scattering...'
+      write(*,*)
+
+      call alloc_(data_glob, 1, ngpt_glob, 'data_glob')
+
+      data_glob(:) = (/ (ipt, ipt = 1, ngpt_glob)   /)
+
+      call sg_grid_points_glob_zone%sg_grid_points_glob_zone_constructor(ngpt_glob, mapping_glob)
+      glob_zone => sg_grid_points_glob_zone
+
+    end if
+
+    ! Perform partition of the global zone, return a local zone on each subdomain
+    call comm%sg_comm_partition_global_zone(grid, SG_GRID_POINTS_ZONE_KIND, glob_zone, loc_zone)
+    sg_grid_points_loc_zone => as_sg_grid_points_loc_zone_type(loc_zone)
+
+    ! print global zone data
+    if (myid == 0) then
+      if (sg_grid_points_glob_zone%npt_glob > 0) then
+        do iproc = 0, comm%nproc_1-1
+          i1   = sg_grid_points_glob_zone%proc_npt_tab(iproc)
+          iEnd = sg_grid_points_glob_zone%proc_npt_tab(iproc+1) - 1
+          write(*,*) ' global zone partition : proc = ', iproc, ' proc_pt_tab = ',  sg_grid_points_glob_zone%proc_pt_tab(i1:iEnd)
+        end do
+      end if
+      write(*,*) ' global zone partition : pt_proc_tab = ', sg_grid_points_glob_zone%pt_proc_tab
+    end if
+
+    ! print local zone data
+    write(*,'(I5,A,I5)') myid, ' local zone : npt_loc = ', sg_grid_points_loc_zone%npt_loc
+    do ipt = 1, sg_grid_points_loc_zone%npt_loc
+      write(*,'(I5,A,I5,A,3I5,A,I5)') myid, ' local zone : ', ipt, ' mapping_loc_grid = ', &
+      & sg_grid_points_loc_zone%mapping_loc_grid(:,ipt), ' ipt_glob = ', sg_grid_points_loc_zone%pts(ipt)
+    end do
+    write(*,*)
+
+    call comm%sg_comm_scatter_global_zone_data(glob_zone, data_glob, loc_zone, data_loc)
+
+    sg_grid_points_loc_zone => as_sg_grid_points_loc_zone_type(loc_zone)
+
+    ! print scattered data
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local data = ', data_loc(:)
+    end if
+
+    ! modify local values
+    if (sg_grid_points_loc_zone%npt_loc > 0) then
+      data_loc(:) = data_loc(:) + 1000.
+      write(*,*) myid, ' modified local data = ', data_loc(:)
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_global_zone_data(glob_zone, data_glob, loc_zone, data_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global data = ', data_glob(:)
+    end if
+
+    if (myid == 0) then
+      call dealloc_(data_glob, 'data_glob')
+      call glob_zone%glob_zone_destructor()
+    end if
+    call dealloc_(data_loc, 'data_loc')
+    call loc_zone%loc_zone_destructor()
+
+  end subroutine zone_partition_polymorphic_use_case_example
+
+
+  subroutine continuum_points_zone_partition_use_case_example()
+    integer                                  :: ntbuf
+    integer                                  :: iproc, i1, iEnd, ipt
+    type(sg_continuum_points_glob_zone_type) :: sg_continuum_points_glob_zone
+    type(sg_continuum_points_loc_zone_type)  :: sg_continuum_points_loc_zone
+    real, dimension(:),          allocatable :: data_glob, data_loc
+    real, dimension(:,:),        allocatable :: data_buf_glob, data_buf_loc
+
+    ! Number of buffer shall be known by all processors
+    ntbuf = 2
+
+    ! Define global zone on master processor only
+    ! (in fact each master processor of communicator 1 dedicated to domain decomposition)
+    if (myid == 0) then
+      write(*,*)
+      write(*,*) 'Test continuum points zone scattering...'
+      write(*,*)
+
+      ! Define non bufferized data
+      call alloc_(data_glob, 1, ncpt_glob, 'data_glob')
+      data_glob(:) = (/ (real(ipt), ipt = 1, ncpt_glob) /)
+
+      ! Define bufferized data
+      call alloc_(data_buf_glob, 1, ntbuf, 1, ncpt_glob, 'data_buf_glob')
+      data_buf_glob(:,:) = reshape((/ (real(ipt), ipt = 1, ncpt_glob*ntbuf) /), shape(data_buf_glob))
+
+      call sg_continuum_points_glob_zone%sg_continuum_points_glob_zone_constructor(ncpt_glob, coor, 0)
+
+    end if
+
+    ! Perform partition of the global zone, return a local zone on each subdomain
+    call comm%sg_comm_partition_sg_continuum_points_global_zone(grid, sg_continuum_points_glob_zone, sg_continuum_points_loc_zone)
+
+    ! print global zone data
+    if (myid == 0) then
+      if (sg_continuum_points_glob_zone%npt_glob > 0) then
+        do iproc = 0, comm%nproc_1-1
+          i1   = sg_continuum_points_glob_zone%proc_npt_tab(iproc)
+          iEnd = sg_continuum_points_glob_zone%proc_npt_tab(iproc+1) - 1
+          write(*,*) ' global zone partition : proc = ', iproc, &
+          &          ' proc_pt_tab = ',  sg_continuum_points_glob_zone%proc_pt_tab(i1:iEnd)
+        end do
+      end if
+      write(*,*) ' global zone partition : pt_proc_tab = ', sg_continuum_points_glob_zone%pt_proc_tab
+      write(*,*)
+    end if
+
+    ! print local zone data
+    write(*,'(I5,A,I5)') myid, ' local zone : npt_loc = ', sg_continuum_points_loc_zone%npt_loc
+    do ipt = 1, sg_continuum_points_loc_zone%npt_loc
+      !write(*,'(I5,A,I5,A,3F8.4,A,I5)') myid, ' local zone : ', ipt, ' coor = ', &
+      write(*,*) myid, ' local zone : ', ipt, ' coor = ', &
+      & sg_continuum_points_loc_zone%coor(:,ipt), ' ipt_glob = ', sg_continuum_points_loc_zone%pts(ipt)
+    end do
+    write(*,*)
+
+    ! Scatter non bufferized data
+    call comm%sg_comm_scatter_points_global_zone_data( &
+    & sg_continuum_points_glob_zone, data_glob, sg_continuum_points_loc_zone, data_loc)
+
+    ! print scattered data
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local data = ', data_loc(:)
+    end if
+
+    ! modify local values
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      data_loc(:) = data_loc(:) + 1000.
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_points_global_zone_data( &
+    & sg_continuum_points_glob_zone, data_glob, sg_continuum_points_loc_zone, data_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global data = ', data_glob(:)
+    end if
+
+    ! Scatter bufferized data
+    call comm%sg_comm_scatter_points_global_zone_buf_data(& 
+    & ntbuf, sg_continuum_points_glob_zone, data_buf_glob, sg_continuum_points_loc_zone, data_buf_loc)
+
+    ! print scattered bufferized data
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local buf data = ', data_buf_loc(:,:)
+    end if
+
+    ! modify local values
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      data_buf_loc(:,:) = data_buf_loc(:,:) + 1000.
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_points_global_zone_buf_data( &
+    & ntbuf, sg_continuum_points_glob_zone, data_buf_glob, sg_continuum_points_loc_zone, data_buf_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global buf data = ', data_buf_glob(:,:)
+    end if
+
+    if (myid == 0) then
+      call dealloc_(data_glob, 'data_glob')
+      call dealloc_(data_buf_glob, 'data_buf_glob')
+      call sg_continuum_points_glob_zone%glob_zone_destructor()
+    end if
+    call dealloc_(data_loc, 'data_loc')
+    call dealloc_(data_buf_loc, 'data_buf_loc')
+    call sg_continuum_points_loc_zone%loc_zone_destructor()
+
+  end subroutine continuum_points_zone_partition_use_case_example
+
+
+  subroutine continuum_points_zone_partition_polymorphic_use_case_example()
+    integer                                           :: iproc, i1, iEnd, ipt
+    class(glob_zone_type),                    pointer :: glob_zone => Null()
+    class(loc_zone_type),                     pointer :: loc_zone  => Null()
+    type(sg_continuum_points_glob_zone_type),  target :: sg_continuum_points_glob_zone
+    type(sg_continuum_points_loc_zone_type),  pointer :: sg_continuum_points_loc_zone => Null()
+    real, dimension(:),                   allocatable :: data_glob, data_loc
+
+    if (myid == 0) then
+      write(*,*)
+      write(*,*) 'Test continuum points zone scattering...'
+      write(*,*)
+
+      call alloc_(data_glob, 1, ncpt_glob, 'data_glob')
+
+      data_glob(:) = (/ (ipt, ipt = 1, ncpt_glob)   /)
+
+      call sg_continuum_points_glob_zone%sg_continuum_points_glob_zone_constructor(ncpt_glob, coor, 0)
+      glob_zone => sg_continuum_points_glob_zone
+
+    end if
+
+    ! Perform partition of the global zone, return a local zone on each subdomain
+    call comm%sg_comm_partition_global_zone(grid, SG_CONTINUUM_POINTS_ZONE_KIND, glob_zone, loc_zone)
+    sg_continuum_points_loc_zone => as_sg_continuum_points_loc_zone_type(loc_zone)
+
+    ! print global zone data
+    if (myid == 0) then
+      if (sg_continuum_points_glob_zone%npt_glob > 0) then
+        do iproc = 0, comm%nproc_1-1
+          i1   = sg_continuum_points_glob_zone%proc_npt_tab(iproc)
+          iEnd = sg_continuum_points_glob_zone%proc_npt_tab(iproc+1) - 1
+          write(*,*) ' global zone partition : proc = ', iproc, &
+          &          ' proc_pt_tab = ',  sg_continuum_points_glob_zone%proc_pt_tab(i1:iEnd)
+        end do
+      end if
+      write(*,*) ' global zone partition : pt_proc_tab = ', sg_continuum_points_glob_zone%pt_proc_tab
+    end if
+
+    ! print local zone data
+    write(*,'(I5,A,I5)') myid, ' local zone : npt_loc = ', sg_continuum_points_loc_zone%npt_loc
+    do ipt = 1, sg_continuum_points_loc_zone%npt_loc
+      !write(*,'(I5,A,I5,A,3F8.4,A,I5)') myid, ' local zone : ', ipt, ' coor = ', &
+      write(*,*) myid, ' local zone : ', ipt, ' coor = ', &
+      & sg_continuum_points_loc_zone%coor(:,ipt), ' ipt_glob = ', sg_continuum_points_loc_zone%pts(ipt)
+    end do
+    write(*,*)
+
+    call comm%sg_comm_scatter_global_zone_data(glob_zone, data_glob, loc_zone, data_loc)
+
+    sg_continuum_points_loc_zone => as_sg_continuum_points_loc_zone_type(loc_zone)
+
+    ! print scattered data
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      write(*,*) myid, ' local data = ', data_loc(:)
+    end if
+
+    ! modify local values
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      data_loc(:) = data_loc(:) + 1000.
+      write(*,*) myid, ' modified local data = ', data_loc(:)
+    end if
+
+    ! Gather data
+    call comm%sg_comm_gather_global_zone_data(glob_zone, data_glob, loc_zone, data_loc)
+
+    if (myid == 0) then
+      write(*,*) ' gathered global data = ', data_glob(:)
+    end if
+
+    if (myid == 0) then
+      call dealloc_(data_glob, 'data_glob')
+      call glob_zone%glob_zone_destructor()
+    end if
+    if (sg_continuum_points_loc_zone%npt_loc > 0) then
+      call dealloc_(data_loc, 'data_loc')
+    end if
+    call loc_zone%loc_zone_destructor()
+
+  end subroutine continuum_points_zone_partition_polymorphic_use_case_example
+
+
+end program test_dd_sgrid

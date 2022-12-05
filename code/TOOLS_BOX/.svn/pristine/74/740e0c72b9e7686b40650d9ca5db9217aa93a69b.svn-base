@@ -1,0 +1,295 @@
+subroutine startup_DG_preprocessing()
+  use global_parameters_mod
+  use mesh_readers_mod
+  use tetra_mesh_graphs_mod
+  use glob_dof_mod
+  implicit none
+  integer :: ie
+
+  write(*,*) '*******************************************************************'
+  write(*,*)
+  write(*,*) '            PRE-PROCESSING  '   
+  !==============================================================================
+  !! 1.  define generic element
+  write(*,*) '            ... build generic element'
+  call build_ref_dof(Pkmax, ref_dof)
+  call build_permutation_on_triangle(Pkmax, perm)
+  !==============================================================================
+  !==============================================================================
+  ! 2. read mesh  
+  call read_medit_mesh (iFileName, &
+      &                     nV, coorV, nE, nEdeg, EtoV, Etag, nFtag, nFdeg, FtagtoV, Ftag)
+
+ 
+  !==============================================================================
+  ! Assign order to each element... Hard-coded for test
+  write(*,*) '            ... order ', Pkmax
+  call alloc_(nPk, 0, Pkmax, 'nPk')
+  call alloc_(PkE, 1, nE,    'PkE')
+  do ie = 1, nE
+     k=Pkmax
+     PkE(ie) = k ! fixed
+     nPk(k)  = nPk(k) + 1
+  end do
+  
+  norder_simu=k
+  ndof_local=((k+1)*(k+2)*(k+3))/6
+  ndof_local_face=((k+1)*(k+2))/2
+
+   !==============================================================================
+  ! 3. 
+  call build_tetra_face_graph(nV, nE, nEdeg, EtoV, nFtag, FtagtoV, Ftag, &
+       &                     nF, FtoV, FtoE, FtagtoF, FtagNew               )
+  !==============================================================================
+
+  !==============================================================================
+  ! 4.
+  call build_tetra_element_to_face_graph(nE, nEdeg, nF, FtoE, Etag, &
+       &                        EtoF, EtoE, nEtag, EtagtoE, EtagNew)
+  call build_EtoFtag(FtoE, FtagtoF, EtoFtag, Ftag, nE, nFtag)
+  !==============================================================================
+  ! 5.
+  call build_glob_dof(ref_dof, nV, nF, nFdeg, nE, nEdeg, coorV, EtoV, EtoE, PkE, &
+       &                   ndof, coordof, Etodof_adj, weight_vol, drdx, drdy, drdz,   &
+       &                                        dsdx, dsdy, dsdz, dtdx, dtdy, dtdz,   &
+       &                                                           normal, jacobian_2D)
+  !==============================================================================
+  !==============================================================================
+  ! 6. build all references matrices in ref tetra
+  write(*,*) '              ... build all references matrices in ref tetra'
+  call connect_dof_dof(nE, PkE, ref_matrix, ref_dof, perm, dof_dof, EtoF, FtoE, EtoFtag, Etodof_adj, EtoV, FtoV, coordof)
+  call build_ref_matrix3D(Pkmax, ref_matrix, ref_dof)
+  call build_ref_matrix2D(Pkmax, ref_matrix, ref_dof)
+  call allocate_surf_basis_function(Pkmax, surface_basis_function)
+  !==============================================================================
+  
+  !==============================================================================
+  ! 7 . define acquisition
+  write(*,*) '              ... read/build acquisition '
+  call build_acquisition(ref_matrix(Pkmax)%InvVandermonde )   !! hardcoded for test
+  call initialise_source_arrays
+  call initialise_station_arrays
+  
+  !==============================================================================
+  
+  
+  !=============================================================================
+  ! 8. initialise snapshot
+  write(*,*) '             ...initialise snapshots  '
+  call compute_bounding_box
+!!$ if (myrank == 0 ) then
+  call initialize_snapshot_x
+  call initialize_snapshot_y
+!!$ end if
+  !=============================================================================
+  
+  write(*,*) '****************    END OF PRE-PROCESSING  *****************'
+  write(*,*) 
+
+end subroutine startup_DG_preprocessing
+
+!=============================================================
+
+subroutine define_local_acoustic_DG_matrices(k)
+  implicit none
+  integer :: k 
+
+  call initialise_local_acoustic_matrices
+  call define_derivative_matrix
+  call define_lift_matrix(k)
+
+end subroutine define_local_acoustic_DG_matrices
+
+!------
+
+subroutine define_local_elastic_DG_matrices(k)
+  implicit none
+  integer :: k 
+
+  call initialise_local_elastic_matrices
+  call define_derivative_matrix
+  call define_lift_matrix(k)
+
+end subroutine define_local_elastic_DG_matrices
+
+
+!-----
+
+subroutine initialise_local_acoustic_matrices()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  write(*,*) 'initialise local acoustic matrices '
+
+
+
+  call alloc_(Drx,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / X (acosutic)')
+  call alloc_(Dry,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Y (acosutic)')
+  call alloc_(Drz,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Z (acosutic)')
+  call alloc_(Dr_x,    1,   ndof_local,  1,   ndof_local, 'local Derivative / X (acosutic)')
+  call alloc_(Dr_y,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Y (acosutic)')
+  call alloc_(Dr_z,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Z (acosutic)')
+
+  call alloc_(Lift,  1,   ndof_local, 1,  4*ndof_local_face, 'Lift for Stress equation (acoustic)')
+ 
+  Lift(:,:)=0._fp
+  Drx(:,:,:)=0._fp
+
+
+  !! Working arrays 
+  call alloc_(stress_jump,   1, 4*ndof_local_face, ' stress jump')
+  call alloc_(velocity_jump, 1, 4*ndof_local_face, ' velocity jump')
+  call alloc_(Jface, 1, 4*ndof_local_face, ' Jface')
+  call alloc_(TauP, 1, 4*ndof_local_face, ' TauP')
+  call alloc_(TauV, 1, 4*ndof_local_face, ' TauV')
+  call alloc_(nx, 1, 4*ndof_local_face, ' nx')
+  call alloc_(ny, 1, 4*ndof_local_face, ' ny')
+  call alloc_(nz, 1, 4*ndof_local_face, ' nz')
+  call alloc_(wksp, 1, ndof_local, ' wksp ')
+  
+  
+end subroutine initialise_local_acoustic_matrices
+
+!!---
+
+subroutine initialise_local_elastic_matrices()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  write(*,*) 'initialise local elastic matrices '
+
+
+
+  call alloc_(Drx,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / X (elastic)')
+  call alloc_(Dry,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Y (elastic)')
+  call alloc_(Drz,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Z (elastic)')
+  call alloc_(Dr_x,    1,   ndof_local,  1,   ndof_local, 'local Derivative / X (elastic)')
+  call alloc_(Dr_y,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Y (elastic)')
+  call alloc_(Dr_z,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Z (elastic)')
+
+  call alloc_(Lift,  1,   ndof_local, 1,  4*ndof_local_face, 'Lift for Stress equation (elastic)')
+ 
+  Lift(:,:)=0._fp
+  Drx(:,:,:)=0._fp
+
+
+  !! Working arrays 
+  call alloc_(stress_jump_el, 1, 6,   1, 4*ndof_local_face, ' stress jump')
+  call alloc_(velocity_jump_el, 1, 3, 1, 4*ndof_local_face, ' velocity jump')
+  call alloc_(Jface, 1, 4*ndof_local_face, ' Jface')
+!!$  call alloc_(TauP, 1, 4*ndof_local_face, ' TauP')
+!!$  call alloc_(TauV, 1, 4*ndof_local_face, ' TauV')
+  call alloc_(nx, 1, 4*ndof_local_face, ' nx')
+  call alloc_(ny, 1, 4*ndof_local_face, ' ny')
+  call alloc_(nz, 1, 4*ndof_local_face, ' nz')
+  call alloc_(wksp, 1, ndof_local, ' wksp ')
+  
+  
+end subroutine initialise_local_elastic_matrices
+
+!-----------------
+
+
+subroutine define_derivative_matrix()
+  use global_parameters_mod
+  implicit none
+  integer ie, jdof, idof_global
+
+
+  do ie=1, nE
+     k=PkE(ie)
+
+     idof_global = Etodof_adj(ie) - 1
+
+     do idof=1,ref_matrix(k)%np
+        idof_global = idof_global + 1 
+
+        do jdof=1,ref_matrix(k)%np
+
+
+           Drx(idof,jdof,ie) = drdx(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdx(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdx(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+           
+           Dry(idof,jdof,ie) = drdy(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdy(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdy(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+
+           
+           Drz(idof,jdof,ie) = drdz(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdz(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdz(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+        end do
+     end do
+  end do
+end subroutine define_derivative_matrix
+
+!-----------------
+
+
+subroutine define_lift_matrix(ik)
+  use global_parameters_mod
+  implicit none
+  integer :: i, j, jk, ik 
+    
+  LIFT(:,:)=0.
+  do i=1,ref_matrix(ik)%np
+     do j=1,4*ref_matrix(ik)%npf
+        do jk=1,ref_matrix(ik)%np
+           LIFT(i,j) =  LIFT(i,j) + ref_matrix(ik)%invMassVolume(i,jk)*ref_matrix(ik)%MassFace(jk,j)
+        end do
+     end do
+  end do
+  
+end subroutine define_lift_matrix
+
+  
+
+subroutine compute_bounding_box()
+  use global_parameters_mod
+  implicit none
+
+  xmin_value=minval(coorV(1,:))
+  xmax_value=maxval(coorV(1,:))
+
+  ymin_value=minval(coorV(2,:))
+  ymax_value=maxval(coorV(2,:))
+
+  zmin_value=minval(coorV(3,:))
+  zmax_value=maxval(coorV(3,:))
+
+  write(*,*)
+  write(*,*) '          bounding box '
+  write(*,*) 
+  write(*,*) 'X :', xmin_value, xmax_value
+  write(*,*) 'Y :', ymin_value, ymax_value
+  write(*,*) 'Z :', zmin_value, zmax_value
+  write(*,*) 
+
+end subroutine compute_bounding_box
+
+!-----------------------------------------
+!!$
+!!$subroutine distrib_mpi_elements
+!!$
+!!$  use global_parameters_mod
+!!$  implicit none
+!!$  integer  :: nb_by_pc,left
+!!$
+!!$  nb_by_pc=(nE/nbrank)
+!!$  left=nE-nb_by_pc*nbrank
+!!$  if (myrank < left) then
+!!$     irecmin = (myrank*(nb_by_pc+1)) + 1
+!!$     irecmax = irecmin + nb_by_pc
+!!$   else
+!!$      irecmin = myrank*(nb_by_pc) + left + 1
+!!$      irecmax = irecmin + nb_by_pc - 1
+!!$   endif
+!!$
+!!$   write(*,*) ' MYRANK ',   myrank, irecmin, irecmax
+!!$   
+!!$end subroutine distrib_mpi_elements

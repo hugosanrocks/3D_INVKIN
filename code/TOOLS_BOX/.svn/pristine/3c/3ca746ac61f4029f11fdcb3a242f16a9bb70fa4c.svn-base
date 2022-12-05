@@ -1,0 +1,27 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortium, All rights reserved.
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$==========================================================================
+!!$ References: 
+!!$[1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$[2]  Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$==========================================================================
+subroutine carfs_restart(carfs,it)
+  implicit none
+  include "carfs_type.h"
+
+  type(carfs_type)::carfs
+  integer::it
+
+  !then evenly distribute idle checkpoints between cpit(ic)+1:it
+  !the idle checkpoint are [ic:nc-1]
+  call checkpoint_relocate(carfs%verb,carfs%cpit,carfs%nc,carfs%ic,it)
+  carfs%j=1 !reset it to 1 in backward reconstruction before remodeling
+  carfs%itstart=carfs%cpit(carfs%ic)+1
+end subroutine carfs_restart

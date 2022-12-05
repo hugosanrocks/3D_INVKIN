@@ -1,0 +1,155 @@
+!*****************************************************!
+!*          SEISCOPE OPTIMIZATION TOOLBOX            *!
+!*****************************************************!
+! This routine is the reverse communication mode      !
+! preconditioned l-BFGS algorithm. This algorithm is  !
+! described in :                                      !
+! Numerical Optimization, Nocedal, 2nd edition, 2006  !
+! Algorithm 7.4 p. 178, Algorithm 7.5 p. 179          !
+!                                                     !
+! This routine performs an iterative                  !
+! minimization of a function f following the          !
+! recurrence                                          !
+!                                                     !
+! x_{0}=x0                                            !
+! x_{k+1}=x_k+\alpha_k d_k                            !
+!                                                     !
+! where the descent direction d_k is                  !
+!                                                     !
+! d_k=-Q_k \nabla f_k                                 !
+!                                                     !
+! with Q_k        : l-BFGS approximation of the       !
+!                   inverse Hessian at iteration k    !
+!                   including preconditioning info    !
+!\nabla f_k       : gradient of f in x_k              !
+!                                                     !
+! and alpha_k is the steplength computed through the  !
+! common linesearch algorithm of the TOOLBOX          !
+!                                                     !
+! The only difference with the l-BFGS algorithm is in !
+! the computation of the descent direction d_k which  !
+! can now include a prior information on the inverse  !
+! hessian operator.                                   !
+!                                                     !
+! The first call to the algorithm must be done with   !
+! FLAG='INIT'. For this first call, the initial point !
+! x0 is given through the variable x, and the input   !
+! variable fcost and grad must correspond respectively!
+! to the misfit and gradient at x0.                   !
+!                                                     !
+! The reverse communication with the user is          !
+! performed through the variable FLAG. This           !
+! variable indicates to the user on return what action! 
+! he has to do, or the state of the algorithm.        !
+! Possible values are                                 !
+! - FLAG='GRAD' => the user must compute the cost and !
+!                  (preconditioned) gradient at       !
+!                  current point x                    !
+! - FLAG='PREC' => the user must multiply the vector   !
+!                  optim%q_plb by its preconditioner  !
+! - FLAG='CONV' => a minimizer has been found         !
+! - FLAG='NSTE' => a new step is performed            !
+! - FLAG='FAIL' => the linesearch has failed          !
+!-----------------------------------------------------!
+! INPUT  : integer :: n (dimension)                   ! 
+!          real fcost (current cost)                  !
+!          real,dimension(n) grad                     !
+! INPUT/OUTPUT : real,dimension(n) x                  !
+!                optim_typ optim (data structure)     !
+!                character*4 FLAG (communication)     !
+!-----------------------------------------------------!
+subroutine PLBFGS(n,x,fcost,grad,grad_preco,optim,FLAG)
+  
+  implicit none
+  include 'optim_type.h'  
+  
+  !IN
+  integer  :: n                            !dimension of the problem
+  integer  :: l                            !number of stored pairs for the
+                                           !l-BFGS approximation of the
+                                           !inverse Hessian
+  real :: fcost                            !cost associated with x
+  real,dimension(n) :: grad                !associated gradient 
+  real,dimension(n) :: grad_preco          !preconditioned gradient (first iteration only) 
+  !IN/OUT  
+  character*4 :: FLAG  
+  real,dimension(n) :: x                   !current point
+  type(optim_type) :: optim                !data structure   
+  !Local variables
+  logical :: test_conv
+  real :: norm_grad
+  
+  if(FLAG.eq.'INIT') then
+     !-----------------------------------------------------!
+     ! if FLAG is INIT, call the dedicated initialization  !
+     ! subroutine to allocate data structure optim and     !
+     ! initialize the linesearch process                   !
+     !-----------------------------------------------------!
+     call init_PLBFGS(n,optim%l,x,fcost,grad,grad_preco,optim)
+     call std_linesearch(n,x,fcost,grad,optim)
+     call print_info(n,'PL',optim,fcost,FLAG)
+     FLAG='GRAD'     
+     optim%nfwd_pb=optim%nfwd_pb+1
+  elseif(FLAG.eq.'PREC') then
+     !-----------------------------------------------------!
+     ! if FLAG is PREC, we return from a call to the       !
+     ! user preconditioner, then we have to finish the     !
+     ! computation of the descent direction                !
+     !-----------------------------------------------------!
+     call descent2_PLBFGS(n,grad,optim%sk,optim%yk,optim%cpt_lbfgs,&
+          optim%l,optim,optim%descent)         
+     !LBFGS save
+     call save_LBFGS(n,optim%cpt_lbfgs,optim%l,x,grad,optim%sk,optim%yk)
+     optim%cpt_iter=optim%cpt_iter+1        
+     !-----------------------------------------------------!
+     ! before continuing we test for convergence           !
+     !-----------------------------------------------------!
+     call std_test_conv(optim,fcost,test_conv)
+     if(test_conv) then
+        FLAG='CONV'
+        !print info on current iteration
+        optim%grad(:)=grad(:)
+        call print_info(n,'PL',optim,fcost,FLAG)
+        call finalize_PLBFGS(optim)
+     else
+        FLAG='NSTE'
+        !print info on current iteration
+        optim%grad(:)=grad(:)
+        call print_info(n,'PL',optim,fcost,FLAG)
+     endif
+  else
+     !-----------------------------------------------------!
+     ! else call the linesearch process                    !  
+     !-----------------------------------------------------!
+     call std_linesearch(n,x,fcost,grad,optim)     
+     if(optim%task.eq.'NEW_STEP') then 
+        !LBFGS update        
+        call update_LBFGS(n,optim%cpt_lbfgs,optim%l,x,grad,optim%sk,optim%yk)
+        !Start the computation of the new descent direction
+        call descent1_PLBFGS(n,grad,optim%sk,optim%yk,optim%cpt_lbfgs,&
+             optim%l,optim)         
+        !Set FLAG to PREC for asking user to perform preconditioning 
+        FLAG='PREC'                        
+     elseif(optim%task.eq.'NEW_GRAD') then 
+        !-----------------------------------------------------!
+        ! if the linesearch needs a new gradient then ask the !  
+        ! user to provide it
+        !-----------------------------------------------------!
+        FLAG='GRAD'         
+        optim%nfwd_pb=optim%nfwd_pb+1
+     elseif(optim%task.eq.'FAILURE!') then        
+        !-----------------------------------------------------!
+        ! if the linesearch has failed, inform the user       !
+        !-----------------------------------------------------!
+        FLAG='FAIL'
+        !print info on current iteration
+        optim%grad(:)=grad(:)
+        call print_info(n,'PL',optim,fcost,FLAG)
+        call finalize_PLBFGS(optim)
+     endif
+  endif
+  
+end subroutine PLBFGS
+
+
+

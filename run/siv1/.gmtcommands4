@@ -1,0 +1,17 @@
+# GMT common arguments shelf
+-B7:Time (s):/S
+-JX8/1.5
+-R0.000000000000000E+000/35.00000/0/1
+-x2.2
+-Y6
+-y-2.5
+-jX8/1.5
+EOF
+
+-Y6
+-y-2.5
+-jX8/1.5
+EOF
+5
+-jX8/1.5
+EOF

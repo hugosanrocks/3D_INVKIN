@@ -1,0 +1,26 @@
+#OPTION FOR Makefile defined here
+
+CC =  icc
+FC =  ifort
+FL =  ifort
+
+#OPTIONS COMPILE
+#OPTF =  -C -g -DEBUG -check -assume byterecl -check all -gen_interfaces -traceback   -assume byterecl  -fpe0 -warn all 
+#OPTC =   
+#OPTL =    -C -g -DEBUG -check -assume byterecl -check all -gen_interfaces -traceback   -assume byterecl 
+
+OPTF =  -O3     -assume byterecl
+OPTC =  -O3  
+OPTL =  -O3      -assume byterecl
+
+#OPTF =  -O1
+#OPTC =  -O1  
+#OPTL =  -O1
+
+OPTFF = ${OPTF}
+
+# variables for librairies
+
+AR= ar
+ARFUNCT= cruv
+

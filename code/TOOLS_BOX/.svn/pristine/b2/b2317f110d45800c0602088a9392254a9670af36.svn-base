@@ -1,0 +1,27 @@
+set(TEST_DD_SG_AC_ISO_O4_OPTIM test_dd_sg_ac_iso_o4_optim${suffix})
+
+add_executable(
+        ${TEST_DD_SG_AC_ISO_O4_OPTIM}
+        test_dd_sg_ac_iso_o4_optim.f90
+)
+
+target_link_libraries(
+        ${TEST_DD_SG_AC_ISO_O4_OPTIM}
+        ${DOMDECOMP_LIB_NAME}_static
+)
+
+include_directories(
+        ${DD_INCLUDE_PATH}
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+install(
+        TARGETS ${TEST_DD_SG_AC_ISO_O4_OPTIM}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT TEST_DD_SG_AC_ISO_O4_OPTIM
+)
+

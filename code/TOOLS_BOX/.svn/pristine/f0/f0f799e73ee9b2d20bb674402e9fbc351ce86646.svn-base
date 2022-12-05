@@ -1,0 +1,5 @@
+add_subdirectory(test_dd_sg_ac_iso_o4)
+#add_subdirectory(test_dd_sg_ac_iso_o4_optim)
+add_subdirectory(test_dd_sgrid)
+add_subdirectory(ug_test_tetra)
+add_subdirectory(ug_test_hexa)

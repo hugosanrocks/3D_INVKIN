@@ -1,0 +1,17 @@
+To reproduce this example, you need to go into the subdirectory and:
+1. make [GNU=1 or XL=1] &&  ./test._carfs.x
+OR make [GNU=1 or XL=1] && make test [GNU=1 or XL=1]
+2. scons view (if you installed Madagascar, only for visualization)
+   ximage < forw.bin n1=301 (if you installed Seismic Unix)
+
+To remove all the intermediate files, you need:
+1. scons -c
+2. make testclean 
+
+We assume the Seiscope optimization toolbox and Madagascar have been installed.
+1). We use optimization toolbox to obtain Yl with least-squares minimization 
+using the exact expression of Q(w).
+2). Madagascar is used for the convenience of data I/O and visualization.
+
+The matlab script demo_lsQ.m provides a convenient way to output the Q based on
+the Yl  which is nearly a constant within the frequency band of interest.

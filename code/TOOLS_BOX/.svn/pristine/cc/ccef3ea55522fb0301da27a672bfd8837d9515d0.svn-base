@@ -1,0 +1,88 @@
+
+#=====================#
+#      compiler       #
+#=====================#
+include ../../Makefile.inc
+CXXFLAGS = $(OPTCXX)
+FFLAGS   = $(OPTF)
+
+# # Intel compilers (default ones)
+# CXX = icpc
+# FC = ifort
+# CXXFLAGS = -O3
+# FFLAGS = -O3
+# LD_LIB = -lifcore -lstdc++
+# AR=xiar
+# 
+# # gnu compilers (make GNU=1)
+# ifeq ($(GNU),1)
+#   CXX = gcc
+#   FC = gfortran
+#   SUFFIX=_gnu
+#   CXXFLAGS = -O3
+#   FFLAGS = -O3
+#   LD_LIB = -lstdc++
+#   AR=ar
+# endif
+
+#=====================#
+#     directories     #
+#=====================#
+
+CHECKP_DIR=..
+SRC_DIR=$(CHECKP_DIR)/src
+CPP_DIR=$(SRC_DIR)/CPP
+INC_DIR=$(SRC_DIR)/CPP
+CPPW_DIR=$(SRC_DIR)/CPPWrapper
+FINTF_DIR=$(SRC_DIR)/FortranInterface
+LIB_DIR=$(CHECKP_DIR)/lib$(SUFFIX)
+BIN_DIR=$(CHECKP_DIR)/bin
+TEST_DIR=$(CHECKP_DIR)/test
+
+#checkpointing library name
+CHECKP_LIB=checkpointing_static
+
+#Fortran module files needed to compile with the library
+INC_MOD=fintfc_mod.mod
+
+default: $(CHECKP_LIB)
+
+revolve.o : $(CPP_DIR)/revolve.cpp
+	$(CXX) -c $(CXXFLAGS) $(CPP_DIR)/revolve.cpp
+
+cppwrapper.o : $(CPPW_DIR)/cppwrapper.cpp revolve.o
+	$(CXX) -c $(CXXFLAGS) $(CPPW_DIR)/cppwrapper.cpp -I:$(INC_DIR)
+
+fintfc.o : $(FINTF_DIR)/fintfc.f90
+	$(FC) -c $(FFLAGS) $(FINTF_DIR)/fintfc.f90
+
+$(CHECKP_LIB): cppwrapper.o revolve.o fintfc.o | $(LIB_DIR)
+	echo
+	echo 'Create static library :$(CHECKP_LIB)'
+	$(AR) rcvfs $(LIB_DIR)/lib$(CHECKP_LIB).a cppwrapper.o revolve.o fintfc.o
+	for i in $(INC_MOD) ;  do \
+		#echo $$i ; \
+		cp $$i $(LIB_DIR)/. ; \
+	done
+
+$(LIB_DIR):
+	echo 'Create directory :$(LIB_DIR)'
+	mkdir -p $(LIB_DIR)
+
+test : test_revolve_binomial
+
+test_revolve_binomial.o: $(TEST_DIR)/test_revolve_binomial.f90
+	$(FC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+test_revolve_binomial: test_revolve_binomial.o
+	$(FC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) test_revolve_binomial.o \
+	      -I$(LIB_DIR) -L$(LIB_DIR) -l$(CHECKP_LIB) $(LD_LIB)
+
+all: $(CHECKP_LIB) test
+
+clean:
+	rm *.o *.mod
+
+cleanall: clean
+	rm -f $(LIB_DIR)/lib$(CHECKP_LIB).a $(LIB_DIR)/*.mod
+	rm -f $(BIN_DIR)/test_revolve_binomial$(SUFFIX)

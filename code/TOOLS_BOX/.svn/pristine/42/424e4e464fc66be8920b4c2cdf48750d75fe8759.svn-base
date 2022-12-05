@@ -1,0 +1,32 @@
+#Makefile.inc include compiler name, option and library ar name and option
+
+include ../../Makefile.inc
+
+LIB = ../lib
+NAMELIB = libSU_IO.a
+INCLUDE = -I ../include
+
+all : lib
+
+
+.SUFFIXES: .f90
+.f90.o:
+	$(FC) $(OPTFF) $(INCLUDE) -c $*.f90
+
+.SUFFIXES: .f 
+.f.o:
+	$(FC) $(OPTF) $(INCLUDE) -c $*.f
+
+.SUFFIXES: .c 
+.c.o:
+	$(CC) $(OPTC) $(INCLUDE) -c $*.c
+
+
+SUB = read_su.o get_ns.o get_nr_su.o 
+
+lib : $(SUB) 
+	$(AR) $(ARFUNCT) $(LIB)/$(NAMELIB) $(SUB)
+
+clean :	
+	$(RM) *.o  *~ *.mod  \#* *_genmod.f90 $(LIB)/$(NAMELIB)	
+

@@ -1,0 +1,241 @@
+subroutine lsq_valhall2d(verb,Q0,Yl,wl,w,L,K,n1,n2)
+  implicit none
+
+  logical::verb
+  integer::L,K,n1,n2
+  real::wl(L),w(K),Q0(n1,n2),Yl(n1,n2,L)
+  real::tmpYl(L,6)
+
+  integer::i1,i2 
+
+  call lsq_value(verb,60.,tmpYl(:,1),wl,w,L,K)
+  call lsq_value(verb,80.,tmpYl(:,2),wl,w,L,K)
+  call lsq_value(verb,150.,tmpYl(:,3),wl,w,L,K)
+  call lsq_value(verb,160.,tmpYl(:,4),wl,w,L,K)
+  call lsq_value(verb,200.,tmpYl(:,5),wl,w,L,K)
+  call lsq_value(verb,1000.,tmpYl(:,6),wl,w,L,K)
+
+  do i2=1,n2
+     do i1=1,n1
+        if(Q0(i1,i2)==60.) then
+           Yl(i1,i2,:)=tmpYl(:,1)
+        elseif(Q0(i1,i2)==80.) then
+           Yl(i1,i2,:)=tmpYl(:,2)
+        elseif(Q0(i1,i2)==150.) then
+           Yl(i1,i2,:)=tmpYl(:,3)
+        elseif(Q0(i1,i2)==160.) then
+           Yl(i1,i2,:)=tmpYl(:,4)
+        elseif(Q0(i1,i2)==200.) then
+           Yl(i1,i2,:)=tmpYl(:,5)
+        elseif(Q0(i1,i2)==1000.) then
+           Yl(i1,i2,:)=tmpYl(:,6)
+        endif
+     enddo
+  enddo
+  
+end subroutine lsq_valhall2d
+
+
+
+subroutine lsq_value(verb,Q0,Yl,wl,w,L,K)
+  implicit none  
+  include 'optim_type.h'  
+
+  logical::verb
+  integer :: L                                ! dimension of the problem
+  integer::K                                  ! K=2*L-1, overdetermined system
+  real :: Jcost                               ! cost function value
+  real :: Q0                                  ! reference quality factor
+  real :: Yl(L)                               ! current point
+  real :: wl(L),w(K)                          ! frequencies
+
+  real,dimension(:),allocatable :: grad       ! current gradient
+  real,dimension(:),allocatable :: grad_preco ! preconditioned gradient
+  type(optim_type) :: optim                   ! data structure for the optimizer
+  character*4 :: FLAG                         ! communication FLAG 
+  real, parameter:: PI=3.14159265359
+
+  integer::i1,i2                                  ! an index
+  real::x(L),Q0inv
+
+  !----------------------------------------------------!
+  ! parameter initialization                           !
+  !----------------------------------------------------!
+  FLAG='INIT'             ! first flag
+  optim%niter_max=1000    ! maximum iteration number 
+  optim%conv=1e-8         ! tolerance for the stopping criterion
+  optim%print_flag=1      ! print info in output files 
+  optim%debug=.false.     ! level of details for output files
+  optim%bound=1.          ! activate the bound
+  allocate(optim%ub(L))
+  allocate(optim%lb(L))
+  optim%ub(:)=1.
+  optim%lb(:)=0.
+  optim%threshold=1e-5
+
+  !----------------------------------------------------!
+  ! intial guess                                       !
+  !----------------------------------------------------!
+  allocate(grad(L),grad_preco(L)) 
+
+  FLAG='INIT'             ! first flag
+  Q0inv=1./Q0
+  x(:)=0.001
+  !----------------------------------------------------!
+  ! computation of the cost and gradient associated    !
+  ! with the initial guess                             !
+  !----------------------------------------------------!
+  call computeQ_cost_gradient(Q0inv,x,wl,w,Jcost,grad,L,K)
+  ! at the first iteration, the precondition operator is identity
+  grad_preco(:)=grad(:) ! 
+  optim%debug=.false.
+
+  !----------------------------------------------------!
+  ! optimization loop: while convergence not reached or!
+  ! linesearch not failed, iterate                     !
+  !----------------------------------------------------!
+  do while ((FLAG.ne.'CONV').and.(FLAG.ne.'FAIL'))     
+     call PNLCG(L,x,Jcost,grad,grad_preco,optim,FLAG)
+     if(FLAG.eq.'GRAD') then        
+        !compute cost and gradient at point x
+        call computeQ_cost_gradient(Q0inv,x,wl,w,Jcost,grad,L,K)
+        grad_preco(:)=grad(:)
+     endif
+  enddo
+  Yl=x
+
+  !Helpful console writings
+  if(verb) write(0,*) 'FINAL iterate is : ', x
+
+  deallocate(grad,grad_preco)
+  deallocate(optim%ub)
+  deallocate(optim%lb)
+end subroutine lsq_value
+
+
+
+
+subroutine lsq_model(verb,Q0,Yl,wl,w,L,K,n1,n2)
+
+  implicit none  
+  include 'optim_type.h'  
+
+  logical::verb
+  integer :: L                                ! dimension of the problem
+  integer::K                                  ! K=2*L-1, overdetermined system
+  integer::n1,n2                              ! data size
+  real :: Jcost                               ! cost function value
+  real :: Q0(n1,n2)                           ! reference quality factor
+  real :: Yl(n1,n2,L)                         ! current point
+  real :: wl(L),w(K)                          ! frequencies
+
+  real,dimension(:),allocatable :: grad       ! current gradient
+  real,dimension(:),allocatable :: grad_preco ! preconditioned gradient
+  type(optim_type) :: optim                   ! data structure for the optimizer
+  character*4 :: FLAG                         ! communication FLAG 
+  real, parameter:: PI=3.14159265359
+
+  integer::i1,i2                                  ! an index
+  real::x(L),Q0inv
+
+  !----------------------------------------------------!
+  ! parameter initialization                           !
+  !----------------------------------------------------!
+  FLAG='INIT'             ! first flag
+  optim%niter_max=1000    ! maximum iteration number 
+  optim%conv=1e-8         ! tolerance for the stopping criterion
+  optim%print_flag=1      ! print info in output files 
+  optim%debug=.false.     ! level of details for output files
+  optim%bound=1.          ! activate the bound
+  allocate(optim%ub(L))
+  allocate(optim%lb(L))
+  optim%ub(:)=1.
+  optim%lb(:)=0.
+  optim%threshold=1e-5
+
+  !----------------------------------------------------!
+  ! intial guess                                       !
+  !----------------------------------------------------!
+  allocate(grad(L),grad_preco(L)) 
+
+  do i2=1,n2
+     do i1=1,n1
+        FLAG='INIT'             ! first flag
+        Q0inv=1./Q0(i1,i2)
+        x(:)=0.001
+        !----------------------------------------------------!
+        ! computation of the cost and gradient associated    !
+        ! with the initial guess                             !
+        !----------------------------------------------------!
+        call computeQ_cost_gradient(Q0inv,x,wl,w,Jcost,grad,L,K)
+        ! at the first iteration, the precondition operator is identity
+        grad_preco(:)=grad(:) ! 
+        optim%debug=.false.
+
+        !----------------------------------------------------!
+        ! optimization loop: while convergence not reached or!
+        ! linesearch not failed, iterate                     !
+        !----------------------------------------------------!
+        do while ((FLAG.ne.'CONV').and.(FLAG.ne.'FAIL'))     
+           call PNLCG(L,x,Jcost,grad,grad_preco,optim,FLAG)
+           if(FLAG.eq.'GRAD') then        
+              !compute cost and gradient at point x
+              call computeQ_cost_gradient(Q0inv,x,wl,w,Jcost,grad,L,K)
+              grad_preco(:)=grad(:)
+           endif
+        enddo
+        Yl(i1,i2,:)=x
+     enddo
+  enddo
+  !Helpful console writings
+  if(verb) write(0,*) 'FINAL iterate is : ', x
+
+  deallocate(grad,grad_preco)
+  deallocate(optim%ub)
+  deallocate(optim%lb)
+end subroutine lsq_model
+
+!-----------------------------------------------------------
+! compute cost function and gradient related to Q at specific location
+! each grid point should do such kind of optimization
+subroutine computeQ_cost_gradient(Q0inv,Yl,wl,w,Jcost,grad,L,K)
+  implicit none
+
+  integer::L,K
+  real::Yl(L)   !L meachnisms corresponds to L Yl
+  real::Jcost   !cost function to be optimized by least squares
+  real::grad(L) !gradient of Yl(L)
+  real::Q0inv   !the ideal Q value
+  real::wl(L)   !reference frequencies in logarithmic equal-distance
+  real::w(K)   !discretized frequencies for integration
+
+  integer::il,ik
+  real::num(K),den(K),a,b,ss,tt
+
+  !compute Jcost and gradient for Yl
+  Jcost=0.
+  do ik=1,K
+     ss=0.;tt=1. !temporary summation
+     do il=1,L
+        a=w(ik)/wl(il)
+        b=Yl(il)/(1.+a*a)
+        ss=ss+a*b
+        tt=tt-b
+     enddo
+     num(ik)=ss; den(ik)=tt ! Qinv=ss/tt
+     !update cost function
+     Jcost=Jcost+(ss/tt-Q0inv)**2
+  enddo
+
+  !update gradient grad(i*il)
+  do il=1,L
+     ss=0. !temporary summation
+     do ik=1,K
+        a=w(ik)/wl(il)
+        b=1./(1.+a*a)
+        tt=(a*b*den(ik)+num(ik)*b)/den(ik)**2
+        ss=ss+(num(ik)/den(ik)-Q0inv)*tt
+     enddo
+     grad(il)=2.*ss
+  enddo
+end subroutine computeQ_cost_gradient

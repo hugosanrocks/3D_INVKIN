@@ -1,0 +1,864 @@
+module tetra_mesh_graphs_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use tetra_mesh_struct_mod
+
+  implicit none
+
+  public  :: build_tetra_mesh_graphs
+
+  public  :: build_tetra_mesh_face_graph
+  public  :: build_tetra_mesh_element_to_face_graph
+
+  ! Type used to build the graph of the triangular faces (v1,v2,v3) of the tetrahedra elements
+  type, private :: tria_face_cell_t
+      sequence
+      integer :: v2    = 0, v3      = 0 ! the vertices indices v2,v3 will be stored in the ascendant order
+      integer :: e1    = 0, e2      = 0 ! the elements indices e1,e2 sharing this face. A face can be holded by 2 elements max
+      integer :: ife1  = 0, ife2    = 0 ! the index of the face in element e1/e2
+      integer :: tag   = 0, itagfac = 0 ! the identifier of the possible boundary (0 = none) and its indice in Ftag
+      type(tria_face_cell_t), pointer :: next => Null()
+  end type tria_face_cell_t
+
+  contains
+
+  subroutine build_tetra_mesh_graphs(mesh)
+    type(tetra_mesh_struct_type),           intent(in out) :: mesh
+    character(len=*),                       parameter      :: proc_name = "build_tetra_mesh_graphs"
+    real                                                   :: time_end = 0., time_begin = 0.
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call cpu_time(time_begin)
+    !==============================================================================
+    call build_tetra_mesh_face_graph(mesh%nV, mesh%nE, mesh%nEdeg, mesh%EtoV, mesh%nFtag, mesh%FtagtoV, mesh%Ftag, &
+    &                                mesh%nF, mesh%FtoV, mesh%FtoE, mesh%FtagtoF)
+    !==============================================================================
+    call cpu_time(time_end)
+    write(*,*)
+    write(*,*) 'build_hexa_mesh_face_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+    write(*,*)
+
+    call cpu_time(time_begin)
+    !==============================================================================
+    call build_tetra_mesh_element_to_face_graph( &
+    &     mesh%nE, mesh%nEdeg, mesh%nF, mesh%nFtag, mesh%FtoE, mesh%FtagtoF, mesh%Ftag, mesh%wholeEtag, &
+    &     mesh%EtoF, mesh%EtoE, mesh%nEtag, mesh%EtagtoE, mesh%Etag, mesh%EtoFtag)
+    !==============================================================================
+    call cpu_time(time_end)
+    write(*,*)
+    write(*,*) 'build_hexa_element_to_face_graph: Total time (seconds) = ', REAL(time_end - time_begin)
+    write(*,*)
+
+  end subroutine build_tetra_mesh_graphs
+
+  !----------------------------------------------------------------
+  ! tria_face_cell constructors / destructor
+  !----------------------------------------------------------------
+
+  ! Default constructor
+  subroutine tria_face_cell_default_constructor(oCell)
+    type(tria_face_cell_t),         intent(in out) :: oCell
+    oCell%v2   = 0; oCell%v3      = 0
+    oCell%e1   = 0; oCell%e2      = 0
+    oCell%ife1 = 0; oCell%ife2    = 0
+    oCell%tag  = 0; oCell%itagfac = 0
+    nullify(oCell%next)
+  end subroutine tria_face_cell_default_constructor
+
+  ! Constructor
+  subroutine tria_face_cell_constructor(oCell, v2, v3, e1, e2, ife1, ife2, tag, itagfac, next)
+    type(tria_face_cell_t),          intent(in out) :: oCell
+    integer,                         intent(in)     :: v2, v3, e1, e2, ife1, ife2, tag, itagfac
+    type(tria_face_cell_t), pointer, intent(in)     :: next
+    oCell%v2   = v2;   oCell%v3      = v3
+    oCell%e1   = e1;   oCell%e2      = e2
+    oCell%ife1 = ife1; oCell%ife2    = ife2
+    oCell%tag  = tag;  oCell%itagfac = itagfac
+    nullify(oCell%next); oCell%next => next
+  end subroutine tria_face_cell_constructor
+
+  ! Constructor
+  subroutine tria_face_cell_ptr_constructor(oCell, v2, v3, e1, e2, ife1, ife2, tag, itagfac, next)
+    type(tria_face_cell_t), pointer, intent(in out) :: oCell
+    integer,                         intent(in)     :: v2, v3, e1, e2, ife1, ife2, tag, itagfac
+    type(tria_face_cell_t), pointer, intent(in)     :: next
+    nullify(oCell); allocate(oCell)
+    oCell%v2   = v2;   oCell%v3      = v3
+    oCell%e1   = e1;   oCell%e2      = e2
+    oCell%ife1 = ife1; oCell%ife2    = ife2
+    oCell%tag  = tag;  oCell%itagfac = itagfac
+    nullify(oCell%next); oCell%next => next
+  end subroutine tria_face_cell_ptr_constructor
+
+  ! Copy constructor
+  ! Copy data members of the Cell and copy the address of the pointer
+  ! (it means that at the exit both iCell and oCell point on the same next address)
+  subroutine tria_face_cell_ptr_copy_constructor(oCell, iCell)
+    type(tria_face_cell_t), pointer, intent(out) :: oCell
+    type(tria_face_cell_t),          intent(in)  :: iCell
+    nullify(oCell); allocate(oCell)
+    oCell%v2   = iCell%v2;   oCell%v3      = iCell%v3
+    oCell%e1   = iCell%e1;   oCell%e2      = iCell%e2
+    oCell%ife1 = iCell%ife1; oCell%ife2    = iCell%ife2
+    oCell%tag  = iCell%tag;  oCell%itagfac = iCell%itagfac
+    nullify(oCell%next)
+    oCell%next => iCell%next 
+  end subroutine tria_face_cell_ptr_copy_constructor
+
+  ! Destructor
+  subroutine tria_face_cell_destructor(Cell)
+    type(tria_face_cell_t), intent(in out) :: Cell
+    nullify(Cell%next)
+  end subroutine tria_face_cell_destructor
+
+  ! Destructor
+  subroutine tria_face_cell_ptr_destructor(Cell)
+    type(tria_face_cell_t), pointer, intent(in out) :: Cell
+    if (associated(Cell)) then
+      nullify(Cell%next)
+      deallocate(Cell)
+    end if
+    nullify(Cell)
+  end subroutine tria_face_cell_ptr_destructor
+
+  !----------------------------------------------------------------
+  ! Build the graph of the faces for a mesh of tetrahedra elements
+  !----------------------------------------------------------------
+
+  subroutine build_tetra_mesh_face_graph(nV, nE, nEdeg, EtoV, nFtag, FtagtoV, Ftag, &
+  &                                      nF, FtoV, FtoE, FtagtoF)
+    integer,                                     intent(in)  :: nV, nE, nEdeg, nFtag
+    integer, dimension(:,:), allocatable,        intent(in)  :: EtoV, FtagtoV
+    integer, dimension(:),   allocatable,        intent(in)  :: Ftag
+    integer,                                     intent(out) :: nF
+    integer, dimension(:,:), allocatable,        intent(out) :: FtoV, FtoE
+    integer, dimension(:),   allocatable,        intent(out) :: FtagtoF
+
+    integer, dimension(3)                                    :: iv
+    integer, dimension(:),   allocatable                     :: nNghb
+    integer                                                  :: iv1, iv2, iv3, ie, ifac, inghb, ibndfac, itagfac, cpttagfac, rc
+    type(tria_face_cell_t), dimension(:), allocatable,target :: FaceHashTab
+    type(tria_face_cell_t),                          pointer :: NewCell => Null(), NextCell => Null(), PrevCell => Null()
+    character(len=*),                              parameter :: proc_name = "build_tetra_mesh_face_graph"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (dd_debug_level > 3) then
+      write(*,'(I4,3A,3I8)') myid_1, ": ", proc_name, ' : nV, nE, nFtag =', nV, nE, nFtag
+    end if
+
+    nF = 0
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    if (.not. allocated(EtoV)) then
+      write(*,*) proc_name, " :: ERROR : non valid EtoV input array"
+      return
+    end if
+
+    ! To build efficently the array of the faces of the mesh, 
+    ! we define an hashtable associated to the triangular faces of the mesh 
+    ! with the minimum indice vertex as key value.
+    ! Hash collisions (several faces having the same key in the hashtable, 
+    ! i.e. sharing the same vertex as minimum index vertex)
+    ! are solved by defining a linked list of tria_face_cell_t type to each entry in the hash table.
+    ! Each item in the linked list will be sorted in the ascendant order of the second vertex then the third one.
+    ! To illustrate it, we consider a single tetrahedra composed of 4 vertices: (v1,v2,v3,v4)=(1,2,3,4)
+    ! A face is identified by the three vertices that compose it (v1,v2,v3), stored in the ascending order.
+    ! Then the structure in memory will be:
+    ! FaceHashTab(v1=1) = face1 = (1,2,3)
+    !                   = FaceCell%v2,v3=2,3
+    !                             %e1,e2=1,0
+    !                             %next      -> face2 = (1,2,4)
+    !                                           = FaceCell%v2,v3=2,4
+    !                                                     %e1,e2=1,0
+    !                                                     %next      -> face3 = (1,3,4)
+    !                                                                   = FaceCell%v2,v3=3,4
+    !                                                                             %e1,e2=1,0
+    !                                                                             %next      -> Null
+    ! FaceHashTab(v1=2) = face4 = (2,3,4)
+    !                   = FaceCell%v2,v3=3,4
+    !                             %e1,e2=1,0
+    !                             %next      -> Null
+    ! FaceHashTab(v1=3) = NullFaceCell
+    ! FaceHashTab(v1=4) = NullFaceCell
+    
+    allocate(FaceHashTab(1:nV), stat = rc)
+    if (rc /= 0) then
+      write(error_message,*) proc_name, ' :: ERROR : on array allocation FaceHashTab: ', rc
+      call stop_mpi()
+    end if
+    do iv1 = 1, nv
+      call tria_face_cell_default_constructor(FaceHashTab(iv1))
+    end do
+
+    ! Store the number of item in the chained lists.
+    ! It corresponds to the number of faces sharing the same first vertex.
+    ! It corresponds also to the number of the neighbors vertices with a greater index.
+    ! In the previous example, it gives:
+    ! nNghb(1:4) = (3,1,0,0)
+    call alloc_(nNghb, 1, nV, proc_name // '/nNghb')
+    nNghb(:) = 0
+
+    if (myid_1 == 0) then
+      write(*,*)
+      write(*,*) proc_name, ': Build the hashtable of the faces ...'
+    end if
+
+    ! Build the hashtable of the faces
+    do ie = 1, nE    !-- loop on the tetrahedra
+      do ifac = 1, 4 !-- loop on the four faces of the tetrahedron
+
+        ! vector of the indices of the vertices of the current face if of the current element ie
+        iv = EtoV(tetra_faces_connectivity(:,ifac), ie)
+
+        ! sort index vertices
+        iv1 = Minval(iv)
+        iv3 = Maxval(iv)
+        iv2 = iv(1) + iv(2) + iv(3) - iv1 - iv3
+        ! now we have: iv1 < iv2 < iv3
+
+!         if (iv1 == 5) then
+!           debug_graph = 2
+!         else
+!           debug_graph = 1
+!         end if
+
+        if (debug_graph > 1) then
+          write(*,*)
+          write(*,'(2(A,I6),A,3I6)') ' ie =', ie, ' ifac =', ifac, ' iv =', iv
+          write(*,'(A,3I6)')         "            sorted vertices =", iv1, iv2, iv3
+          write(*,*)
+        end if
+
+        ! is it more efficient without minval, maxval and sum intrinsic functions?
+        ! v1 = EtoV(hexa(1,ifac), ie)
+        ! v2 = EtoV(hexa(2,ifac), ie)
+        ! v3 = EtoV(hexa(3,ifac), ie)
+        ! iv1 = min(v1,v2,v3)
+        ! iv3 = max(v1,v2,v3)
+        ! iv2 = v1 + v2 + v3 - iv1 - iv3
+
+        ! Manage cases where current face must take the place of the first cell in the array
+        if ( nNghb(iv1) == 0 ) then
+
+          ! no cell at the rank iv1 of the hashtable, the current face will be the first one
+          call tria_face_cell_constructor(  &
+          &       oCell = FaceHashTab(iv1), &
+          &       v2    = iv2,  v3   = iv3, &
+          &       e1    = ie,   e2   = 0,   &
+          &       ife1  = ifac, ife2 = 0,   &
+          &       tag   = 0, itagfac = 0,   &
+          &       next  = Null())
+
+          nNghb(iv1)  = nNghb(iv1) + 1
+
+          if (debug_graph > 1) then
+            write(*,'(A,I6,A,2I6)') " - 1-       iv1 =", iv1, &
+            & " Cell at first place", FaceHashTab(iv1)%v2, FaceHashTab(iv1)%v3
+          end if
+
+        else if (     (iv2 <  FaceHashTab(iv1)%v2) &
+        &        .or. (iv2 == FaceHashTab(iv1)%v2 .and. iv3 < FaceHashTab(iv1)%v3) ) then
+
+          ! A greater face is stored at first rank of the hashtable(iv1), the current face takes its place
+
+          ! Create the new cell and copy the old cell inside 
+          call tria_face_cell_ptr_copy_constructor(oCell = NewCell, iCell = FaceHashTab(iv1))
+
+          ! Modify the old cell parameters so that the current face takes its place
+          call tria_face_cell_constructor(  &
+          &       oCell = FaceHashTab(iv1), &
+          &       v2    = iv2,  v3   = iv3, &
+          &       e1    = ie,   e2   = 0,   &
+          &       ife1  = ifac, ife2 = 0,   &
+          &       tag   = 0, itagfac = 0,   &
+          &       next  = NewCell)
+
+          nNghb(iv1)  = nNghb(iv1) + 1
+
+          if (debug_graph > 1) then
+            write(*,'(A,I6,A,2(A,2I6))') " - 2-       iv1 =", iv1, &
+            & " Greater face find at the first place, copy existing cell and store new one before", &
+            & " new cell: ", FaceHashTab(iv1)%v2, FaceHashTab(iv1)%v3, &
+            & " existing cell: ", FaceHashTab(iv1)%next%v2, FaceHashTab(iv1)%next%v3
+          end if
+
+        else if (FaceHashTab(iv1)%v2 == iv2 .and. FaceHashTab(iv1)%v3 == iv3) then ! The face is already present
+
+          ! it means that now we know the two elements sharing this face
+          FaceHashTab(iv1)%e2   = ie
+          FaceHashTab(iv1)%ife2 = ifac
+
+          if (debug_graph > 1) then
+            write(*,'(A,I6,2A,2I6)') " - 3-       iv1 =", iv1, &
+            & " Face already present at the first place, element differs: ", &
+            & " elements: ", FaceHashTab(iv1)%e1, FaceHashTab(iv1)%e2
+          end if
+
+        else
+
+          ! All the other cases where the cell associated to the face should take place 
+          ! in the chained list starting from FaceHashTab(iv1)%next
+
+          PrevCell => FaceHashTab(iv1)
+          NextCell => FaceHashTab(iv1)%next
+
+          ! Search the place in the chained list (of the faces sharing v1 as minimum vertex indice)
+          ! where the current face must be inserted
+          loop1 : do
+
+            if (debug_graph > 1) then
+              write(*,'(A,I6,A,2I6)') " - 4- loop1 iv1 =", iv1, &
+              & ' PrevCell =', PrevCell%v2, PrevCell%v3
+              if(associated(NextCell)) &
+              & write(*,'(A,2I6)') '                    and NextCell =', NextCell%v2, NextCell%v3
+            end if
+
+            if (.not. associated(NextCell)) then
+
+              if (debug_graph > 1) then
+                write(*,'(A,I6,A)') " - 5- loop1 iv1 =", iv1, " no next cell, put here"
+              end if
+
+              exit loop1 ! no next cell in the chained list, the new cell must be inserted here
+            end if
+
+            if ( iv2 < NextCell%v2  ) then
+
+              if (debug_graph > 1) then
+                write(*,'(A,I6,A,2I6)') " - 6- loop1 iv1 =", iv1, &
+                & " V2 next face is greater, put here: ", iv2, NextCell%v2
+              end if
+
+              exit loop1 ! v2 of next face is greater than v2 of the current face, the new cell must be inserted before next cell
+            end if
+
+            if ( iv2 == NextCell%v2 )  then
+              ! v2 of next face is equal to v2 of the current face, search place among the third vertex v3 indices
+
+              if (debug_graph > 1) then
+                write(*,'(A,I6,A,2I6)') " - 7- loop1 iv1 =", iv1, " V2 next face is equal, start loop2: ", iv2, NextCell%v2
+              end if
+
+              loop2 : do
+
+                  if (debug_graph > 1) then
+                    write(*,'(A,I6,A,2I6)') " - 8- loop2 iv1 =", iv1, &
+                    & ' PrevCell =', PrevCell%v2, PrevCell%v3
+                    if (associated(NextCell)) &
+                    & write(*,'(A,2I6)') '                    and NextCell =', &
+                    & NextCell%v2, NextCell%v3
+                  end if
+
+                  if (.not. associated(NextCell)) then
+
+                    if (debug_graph > 1) then
+                      write(*,'(A,I6,A)') " - 9- loop2 iv1 =", iv1, " no next cell, put here"
+                    end if
+
+                    exit loop1 ! no next cell in the chained list, the new cell must be inserted here
+                  end if
+
+                  if (iv3 < NextCell%v3 .or. iv2 < NextCell%v2) then
+
+                    if (debug_graph > 1) then
+                      write(*,'(A,I6,A,2(A,2I6))') " -10- loop2 iv1 =", iv1, &
+                      & " V2 or V3 next face is greater, put here: ", &
+                      & " V2:", iv2, NextCell%v2, " V3:", iv3, NextCell%v3
+                    end if
+
+                    exit loop1 ! v2 or v3 of next face is greater than v2 or v3 of the current face, the new cell must be inserted before next cell
+                  end if
+
+                  if (iv3 == NextCell%v3)  then
+                    ! v3 of next face is equal to v3 of the current face
+
+                    if (debug_graph > 1) then
+                      write(*,'(A,I6,A,2I6)') " -11- loop2 iv1 =", iv1, &
+                      & " V3 next face is equal, stop here: ", iv3, NextCell%v3
+                    end if
+
+                    exit loop1
+                  end if
+
+                  PrevCell => NextCell
+                  NextCell => NextCell%next
+
+              end do loop2
+            end if
+
+            PrevCell => NextCell
+            NextCell => NextCell%next
+
+          end do loop1
+
+          if (PrevCell%v2 == 0) then ! first entry at FaceHashTab(iv1)
+
+            write(error_message,*) proc_name, ' :: ERROR : Already managed... Not supposed to happen'
+            call stop_mpi()
+
+          else if (compare_cell(PrevCell, iv2, iv3)) then ! The face is already present
+
+            ! it means that now we know the two elements sharing this face
+            PrevCell%e2   = ie
+            PrevCell%ife2 = ifac
+
+            if (debug_graph > 1) then
+              write(*,'(A,I6,2A,2I6)') " -12-       iv1 =", iv1, &
+              & " Face already present (prev), element differs: ", &
+              & " elements = ", PrevCell%e1, PrevCell%e2
+            end if
+
+          else if (compare_cell(NextCell, iv2, iv3)) then ! The face is already present
+
+            ! it means that now we know the two elements sharing this face
+            NextCell%e2   = ie
+            NextCell%ife2 = ifac
+
+            if (debug_graph > 1) then
+              write(*,'(A,I6,2A,2I6)') " -13-       iv1 =", iv1, &
+              & " Face already present (next), element differs: ", &
+              & " elements: ", NextCell%e1, NextCell%e2
+            end if
+
+          else if (PrevCell%v2 < iv2 .or. PrevCell%v3 < iv3) then ! insert between PrevCell and NextCell
+
+            call tria_face_cell_ptr_constructor( &
+            &    oCell = NewCell,         &
+            &    v2    = iv2,  v3 = iv3,  &
+            &    e1    = ie,   e2 = 0,    &
+            &    ife1  = ifac, ife2 = 0,  &
+            &    tag   = 0, itagfac = 0,  &
+            &    next = Null())
+
+            ! Chain cells such that NewCell is between PrevCell and NextCell
+            NewCell%next   => NextCell
+            PrevCell%next  => NewCell
+
+            nNghb(iv1)  = nNghb(iv1) + 1
+
+            if (debug_graph > 1) then
+              write(*,'(A,I6,A,2(A,2I6))') " -14-       iv1 =", iv1, " Insert", &
+              & " PrevCell: ", PrevCell%v2, PrevCell%v3, &
+              & " NextCell: ", PrevCell%next%v2, PrevCell%next%v3
+            end if
+
+          else
+
+            write(*,*) proc_name, " :: ERROR : while building the face hashtable"
+            write(*,*) "ie             = ", ie
+            write(*,*) "PrevCell%v2,v3 = ", PrevCell%v2, PrevCell%v3
+            write(*,*) "iv1,iv2,iv3    = ", iv1, iv2, iv3
+            write(error_message,*) proc_name, ' :: ERROR'
+            call stop_mpi()
+  
+          end if
+
+        end if
+      end do ! do ifac = 1, 4
+    end do ! do ie = 1, nE
+
+    nF = sum(nNghb)
+
+    if (debug_graph > 0) then
+      call dump_ht()
+      call check_ht_sort()
+    end if
+
+    if (allocated(FtagtoV) .and. allocated(Ftag)) then
+
+      write(*,*)
+      write(*,*) proc_name, ': Add tagged faces ...'
+
+      ! Add tagged face info in face hash table
+      if (nFtag > 0) then
+        do ifac = 1, nFtag
+
+          ! vector of the indices of the vertices of the current tagged face
+          iv = FtagtoV(:,ifac)
+
+          ! sort index vertices
+          iv1 = Minval(iv)
+          iv3 = Maxval(iv)
+          iv2 = iv(1) + iv(2) + iv(3) - iv1 - iv3
+          ! now we have: iv1 < iv2 < iv3
+
+          if (debug_graph > 1) then
+            write(*,*)
+            write(*,'(A,I6,A,3I6)') ' ifac =', ifac, ' iv =', iv
+            write(*,'(A,3I6)') " sorted vertices =", iv1, iv2, iv3
+            write(*,*)
+          end if
+
+          PrevCell => FaceHashTab(iv1)
+          NextCell => FaceHashTab(iv1)%next
+
+          ! Search the cell corresponding to the current tagged face
+          loop3 : do
+              if (.not. associated(PrevCell)) then
+                write(*,*) proc_name, " :: ERROR : while building the tagged face hashtable"
+                write(*,*) "ifac, tag      = ", ifac, Ftag(ifac)
+                write(*,*) "iv1,iv2,iv3    = ", iv1, iv2, iv3
+                write(error_message,*) proc_name, ' :: ERROR'
+                call stop_mpi()
+              end if
+
+              if (debug_graph > 1) then
+                write(*,*)
+                write(*,'(A,I6,A,5I6)') ' iv1 =', iv1, &
+                &' PrevCell =', PrevCell%v2, PrevCell%v3, PrevCell%e1, PrevCell%e2, PrevCell%tag
+              end if
+
+              if (PrevCell%v2 == iv2 .and. PrevCell%v3 == iv3) then
+                ! we have found the wanted cell
+                PrevCell%tag = Ftag(ifac)
+                PrevCell%itagfac = ifac
+                exit loop3
+              else
+                ! not found, go further in the chained list
+                PrevCell => NextCell
+                NextCell => NextCell%next
+              end if
+          end do loop3
+
+        end do
+      end if
+    end if
+
+    if (debug_graph > 0) then
+      call dump_ht()
+    end if
+
+    ! To store the indices of the three vertices composing the face
+    call alloc_(FtoV, 1, 3, 1, nF, 'FtoV')
+
+    ! To store the informations linking the faces to the elements
+    ! indices 1..2:          e1,          e2 as the two elements sharing the face (a single element for boundary faces) 
+    ! indices 3..4:   facref_e1,   facref_e2 as the reference index of the face in the elements e1, e2
+    call alloc_(FtoE, 1, 4, 1, nF, 'FtoE')
+
+    if (nFtag > 0) then
+      call alloc_(FtagtoF, 1, nFtag, 'FtagtoF') ! to store the mapping between tagged face local indices and the global face indices
+    end if
+
+    ifac = 0 ! indice of the current face
+    cpttagfac = 0 ! counter of tagged faces
+    ibndfac = 0 ! counter of the number of face holded by a single element 
+    ! (global domain boundary face + local subdomain boundary face in domain decomposition case)
+
+    do iv1 = 1, nV
+      if (nNghb(iv1) /= 0) then
+        NextCell => FaceHashTab(iv1)
+
+        do inghb = 1, nNghb(iv1)
+          ifac = ifac + 1
+
+          FtoV(:, ifac) = (/ iv1, NextCell%v2, NextCell%v3 /)
+          FtoE(:, ifac) = (/ NextCell%e1, NextCell%e2, NextCell%ife1, NextCell%ife2 /)
+
+          if (NextCell%e2 == 0) then
+            ibndfac = ibndfac + 1
+          end if
+
+          if (NextCell%tag /= 0) then
+            cpttagfac = cpttagfac + 1
+            itagfac = NextCell%itagfac
+            FtagtoF(itagfac) = ifac
+          end if
+
+          NextCell => NextCell%next
+        end do
+      end if
+    end do
+
+    ! Some checks
+    if (cpttagfac /= nFtag) then
+      write(*,*) proc_name, ' :: ERROR : cpttagfac = ', cpttagfac, ' /= nFtag =', nFtag
+    end if
+    if (ifac /= nF) then
+      write(*,*) proc_name, ' :: ERROR : ifac = ', ifac, ' /= nF =', nF
+    end if
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'Face graph info:'
+      write(*,*)
+      write(*,'(A,I3)') ' Nb faces:', nF
+      do ifac = 1, nF
+        write(*,'(A,I8,A,3I8,A,4I8)') ' ifac =', ifac, ' FtoV =', FtoV(:,ifac), ' FtoE =', FtoE(:,ifac)
+      end do
+      write(*,*)
+      write(*,*) 'Nb tagged faces:', nFtag
+      if (allocated(FtagtoF) .and. (allocated(Ftag))) then
+        do ifac = 1, nFtag
+          write(*,'(A,I8,A,I8,A,I8)') ' itagfac =', ifac, ' FtagtoF =', FtagtoF(ifac), ' Ftag =', Ftag(ifac)
+        end do
+      end if
+      write(*,*)
+    end if
+
+    ! Free memory
+    do iv1 = 1, nV
+      if (nNghb(iv1) > 1) then
+        PrevCell => FaceHashTab(iv1)%next
+        NextCell => PrevCell%next
+        do
+          call tria_face_cell_ptr_destructor(PrevCell)
+          if (.not. associated(NextCell)) then
+            exit
+          end if
+          PrevCell => NextCell
+          NextCell => NextCell%next
+        end do
+      end if
+      call tria_face_cell_destructor(FaceHashTab(iv1))
+    end do
+    deallocate(FaceHashTab)
+    call dealloc_(nNghb, proc_name // '/nNghb')
+
+    return
+    
+    contains
+
+
+    function compare_cell(cell, iv2, iv3)
+      type(tria_face_cell_t), pointer, intent(in) :: cell
+      integer,                         intent(in) :: iv2, iv3
+      logical                                     :: compare_cell
+      compare_cell = .false.
+      if (associated(cell)) then
+        if (cell%v2 == iv2 .and. cell%v3 == iv3) then ! The face is already present
+          compare_cell = .true.
+        end if
+      end if
+    end function compare_cell
+
+
+    subroutine check_ht_sort()
+      integer                         :: iv1, inghb
+      type(tria_face_cell_t), pointer :: NextCell => Null(), PrevCell => Null()
+      character(len=*),     parameter :: proc_name = 'check_ht_sort'
+
+      do iv1 = 1, nV
+        if (nNghb(iv1) /= 0) then
+  
+          PrevCell => FaceHashTab(iv1)
+          NextCell => FaceHashTab(iv1)%next
+
+          ! write(*,*) 'nNghb(',iv1,') = ', nNghb(iv1)
+
+          do inghb = 1, nNghb(iv1)-1
+
+            ! write(*,*) "iv1..3", iv1,PrevCell%v2,PrevCell%v3,NextCell%v2,NextCell%v3
+
+            if (NextCell%v2 < PrevCell%v2) then
+              write(*,*) proc_name, ' :: ERROR : in sorted hashtable of faces:'
+              write(*,*) '          v1 = ', iv1
+              write(*,*) '     prev%v2 = ', PrevCell%v2, ' next%v2 = ', NextCell%v2
+              write(*,*) '     prev%v3 = ', PrevCell%v3, ' next%v3 = ', NextCell%v3
+              write(error_message,*) proc_name, ' :: ERROR'
+              call stop_mpi()
+            end if
+
+            if (NextCell%v2 == PrevCell%v2 .and. NextCell%v3 < PrevCell%v3) then
+              write(*,*) proc_name, ' :: ERROR : in sorted hashtable of faces:'
+              write(*,*) '          v1 = ', iv1
+              write(*,*) '          v2 = ', NextCell%v2
+              write(*,*) '     prev%v3 = ', PrevCell%v3, ' next%v3 = ', NextCell%v3
+              write(error_message,*) proc_name, ' :: ERROR'
+              call stop_mpi()
+            end if
+
+            PrevCell => NextCell
+            NextCell => NextCell%next
+          end do
+        end if
+      end do
+
+    end subroutine check_ht_sort
+
+
+    subroutine dump_ht()
+      integer                         :: i, iv1, inghb
+      type(tria_face_cell_t), pointer :: PrevCell => Null()
+
+      write(*,*)
+      write(*,*) 'Dump Face hash table'
+      write(*,'(100A1)') ('-', i=1, 100)
+
+      do iv1 = 1, nV
+        if (nNghb(iv1) /= 0) then
+  
+          PrevCell => FaceHashTab(iv1)
+
+          ! write(*,*) 'nNghb(',iv1,') = ', nNghb(iv1)
+
+          do inghb = 1, nNghb(iv1)
+
+            write(*,'(" iv = ",I6," Cell: ",2I6," elements: ",2I6," faces: ",2I6," tag: ",I6)') &
+            & iv1, PrevCell%v2, PrevCell%v3, PrevCell%e1, PrevCell%e2, PrevCell%ife1, PrevCell%ife2, PrevCell%tag
+
+            !write(*,'(A,I6,A,2I6,2(A,2I6),A,I6)') " iv = ", iv1, " Cell: ", PrevCell%v2, PrevCell%v3, &
+            !& " elements: ", PrevCell%e1, PrevCell%e2, " faces: ", PrevCell%ife1, PrevCell%ife2, " tag: ", PrevCell%tag
+
+            PrevCell => PrevCell%next
+          end do
+        end if
+      end do
+
+      write(*,'(100A1)') ('-', i=1, 100)
+      write(*,*)
+
+    end subroutine dump_ht
+
+  end subroutine build_tetra_mesh_face_graph
+
+
+  subroutine build_tetra_mesh_element_to_face_graph(nE, nEdeg, nF, nFtag, FtoE, FtagtoF, Ftag, wholeEtag, &
+  &                                                 EtoF, EtoE, nEtag, EtagtoE, Etag, EtoFtag)
+    integer,                                intent(in)  :: nF, nFtag, nE, nEdeg
+    integer, dimension(:,:), allocatable,   intent(in)  :: FtoE
+    integer, dimension(:),   allocatable,   intent(in)  :: Ftag, wholeEtag, FtagtoF
+    integer, dimension(:,:), allocatable,   intent(out) :: EtoF, EtoE, EtoFtag
+    integer,                                intent(out) :: nEtag
+    integer, dimension(:),   allocatable,   intent(out) :: EtagtoE, Etag
+
+    integer                                             :: i, j, ie, ifac, ifacref, itagfac, inghb, ietag
+    character(len=*),                         parameter :: proc_name = "build_tetra_mesh_element_to_face_graph"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid_1, " : ", proc_name, ' : nE, nF =', nE, nF
+    end if
+
+    nEtag = 0
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    if (.not. allocated(FtoE)) then
+      write(*,*) proc_name, " :: ERROR : non valid FtoE input array"
+      return
+    end if
+
+    ! (*) Notice about FtoE array:
+    ! In case of tetrahedra elements, FtoE dimensions are (1:4, 1:nF) where
+    ! indices 1..2:          e1,          e2 as the two elements sharing the face (a single element for boundary faces) 
+    ! indices 3..4:   facref_e1,   facref_e2 as the reference index of the face in the elements e1, e2
+
+    call alloc_(EtoF, 1, 4, 1, nE, 'EtoF')
+
+    do ifac = 1, nF
+      do i = 1, 2
+        ie = FtoE(i, ifac)
+        if (ie /= 0) then
+          ! Retrieve the reference index of the face inside the element
+          ifacref = FtoE(i+2, ifac)
+          ! Store the face index at its reference place
+          EtoF(ifacref, ie) = ifac
+        end if
+      end do
+    end do
+
+    call alloc_(EtoE, 1, 4, 1, nE, 'EtoE')
+
+    do ie = 1, nE
+      do i = 1, 4
+        ifac = EtoF(i,ie)
+        do j = 1, 2
+          inghb = FtoE(j,ifac)
+          if (inghb /= ie .and. inghb /= 0) then
+            ! Retrieve the reference index of the face shared between the two elements
+            ifacref = FtoE(j+2, ifac)
+            ! Store the element neighbour index at its reference place
+            EtoE(ifacref, inghb) = ie
+          end if
+        end do
+      end do
+    end do
+
+    ! Retrieve the number of tagged elements
+    if (allocated(wholeEtag)) then
+      ietag = 0
+      do ie = 1, nE
+        if (wholeEtag(ie) /= 0) then
+          ietag = ietag + 1
+        end if
+      end do
+      nEtag = ietag
+
+      if (nEtag > 0) then
+        call alloc_(Etag,    1, nEtag, 'Etag')
+
+        call alloc_(EtagtoE, 1, nEtag, 'EtagtoE')
+        
+        ietag = 0
+        do ie = 1, nE
+          if (wholeEtag(ie) /= 0) then
+            ietag = ietag + 1
+            Etag(ietag) = wholeEtag(ie)
+            EtagtoE(ietag) = ie
+          end if
+        end do
+      end if
+    end if
+
+    call alloc_(EtoFtag, 1, 4, 1, nE, 'EtoFtag')
+    
+    do itagfac = 1, nFtag     ! tagged face index among tagged faces
+
+      ifac = FtagtoF(itagfac) ! tagged face index among all faces
+    
+      if (ifac > 0) then 
+        ! retrieve ie and ifacref corresponding to ifac
+        
+        ie = FtoE(1, ifac)
+        if (ie /= 0) then
+          ifacref = FtoE(3, ifac)
+          EtoFtag(ifacref,ie) = Ftag(itagfac)
+        end if
+
+        ie = FtoE(2,ifac)
+        if (ie /= 0) then            
+          ifacref = FtoE(4, ifac)
+          EtoFtag(ifacref,ie) = Ftag(itagfac)
+        end if
+
+      end if
+    end do
+
+    if (dd_debug_level > 0) then
+      write(*,*)
+      write(*,*) 'Element graph info:'
+      write(*,*)
+      write(*,'(A,I3)') ' Nb elements:', nE
+      if (allocated(EtoF) .and. (allocated(EtoE))) then
+      do ie = 1, nE
+        write(*,'(A,I8,A,4I8,A,4I8)') ' ie    =', ie, ' EtoF =', EtoF(:,ie), ' EtoE =', EtoE(:,ie)
+      end do
+      end if
+      write(*,*)
+      write(*,'(A,I3)') ' Nb tagged elements:', nEtag
+      if (allocated(EtagtoE) .and. (allocated(Etag))) then
+      do ie = 1, nEtag
+        write(*,'(A,I8,A,I8,A,I8)') ' ietag =', ie, ' EtagtoE =', EtagtoE(ie), ' Etag =', Etag(ie)
+      end do
+      end if
+      write(*,*)
+    end if
+
+    if (dd_debug_level > 0) write(*,*) myid_1, ' : ', proc_name, ' : Number of tagged elements :', nEtag
+
+  end subroutine build_tetra_mesh_element_to_face_graph
+
+
+end module tetra_mesh_graphs_mod

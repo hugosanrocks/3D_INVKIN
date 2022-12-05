@@ -1,0 +1,4 @@
+mpirun -np 8 ../../bin/test_dd_sgrid
+
+rm F
+

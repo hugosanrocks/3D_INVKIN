@@ -1,0 +1,1326 @@
+This is pdfTeXk, Version 3.141592-1.40.3 (Web2C 7.5.6) (format=pdflatex 2011.10.31)  14 FEB 2014 12:24
+entering extended mode
+ %&-line parsing enabled.
+**OPTIMIZATION_TOOLBOX_MANUAL.tex
+(./OPTIMIZATION_TOOLBOX_MANUAL.tex
+LaTeX2e <2005/12/01>
+Babel <v3.8h> and hyphenation patterns for english, usenglishmax, dumylang, noh
+yphenation, arabic, basque, bulgarian, coptic, welsh, czech, slovak, german, ng
+erman, danish, esperanto, spanish, catalan, galician, estonian, farsi, finnish,
+ french, greek, monogreek, ancientgreek, croatian, hungarian, interlingua, ibyc
+us, indonesian, icelandic, italian, latin, mongolian, dutch, norsk, polish, por
+tuguese, pinyin, romanian, russian, slovenian, uppersorbian, serbian, swedish, 
+turkish, ukenglish, ukrainian, loaded.
+(/usr/share/texmf/tex/latex/base/article.cls
+Document Class: article 2005/09/16 v1.4f Standard LaTeX document class
+(/usr/share/texmf/tex/latex/base/size11.clo
+File: size11.clo 2005/09/16 v1.4f Standard LaTeX file (size option)
+)
+\c@part=\count79
+\c@section=\count80
+\c@subsection=\count81
+\c@subsubsection=\count82
+\c@paragraph=\count83
+\c@subparagraph=\count84
+\c@figure=\count85
+\c@table=\count86
+\abovecaptionskip=\skip41
+\belowcaptionskip=\skip42
+\bibindent=\dimen102
+)
+(/usr/share/texmf/tex/latex/graphics/epsfig.sty
+Package: epsfig 1999/02/16 v1.7a (e)psfig emulation (SPQR)
+
+(/usr/share/texmf/tex/latex/graphics/graphicx.sty
+Package: graphicx 1999/02/16 v1.0f Enhanced LaTeX Graphics (DPC,SPQR)
+
+(/usr/share/texmf/tex/latex/graphics/keyval.sty
+Package: keyval 1999/03/16 v1.13 key=value parser (DPC)
+\KV@toks@=\toks14
+)
+(/usr/share/texmf/tex/latex/graphics/graphics.sty
+Package: graphics 2006/02/20 v1.0o Standard LaTeX Graphics (DPC,SPQR)
+
+(/usr/share/texmf/tex/latex/graphics/trig.sty
+Package: trig 1999/03/16 v1.09 sin cos tan (DPC)
+)
+(/usr/share/texmf/tex/latex/config/graphics.cfg
+File: graphics.cfg 2007/01/18 v1.5 graphics configuration of teTeX/TeXLive
+)
+Package graphics Info: Driver file: pdftex.def on input line 90.
+
+(/usr/share/texmf/tex/latex/pdftex-def/pdftex.def
+File: pdftex.def 2007/01/08 v0.04d Graphics/color for pdfTeX
+\Gread@gobject=\count87
+))
+\Gin@req@height=\dimen103
+\Gin@req@width=\dimen104
+)
+\epsfxsize=\dimen105
+\epsfysize=\dimen106
+)
+(/usr/share/texmf/tex/latex/natbib/natbib.sty
+Package: natbib 2007/02/05 8.0 (PWD)
+\bibhang=\skip43
+\bibsep=\skip44
+LaTeX Info: Redefining \cite on input line 602.
+\c@NAT@ctr=\count88
+)
+(/usr/share/texmf/tex/latex/base/inputenc.sty
+Package: inputenc 2006/05/05 v1.1b Input encoding file
+\inpenc@prehook=\toks15
+\inpenc@posthook=\toks16
+
+(/usr/share/texmf/tex/latex/ucs/utf8x.def
+File: utf8x.def 2004/10/17 UCS: Input encoding UTF-8
+))
+(/usr/share/texmf/tex/latex/ucs/ucs.sty
+Package: ucs 2004/10/17 UCS: Unicode input support
+
+(/usr/share/texmf/tex/latex/ucs/data/uni-global.def
+File: uni-global.def 2004/10/17 UCS: Unicode global data
+)
+\uc@secondtry=\count89
+\uc@combtoks=\toks17
+\uc@combtoksb=\toks18
+\uc@temptokena=\toks19
+)
+(/usr/share/texmf/tex/generic/babel/babel.sty
+Package: babel 2005/11/23 v3.8h The Babel package
+
+(/usr/share/texmf/tex/generic/babel/english.ldf
+Language: english 2005/03/30 v3.3o English support from the babel system
+
+(/usr/share/texmf/tex/generic/babel/babel.def
+File: babel.def 2005/11/23 v3.8h Babel common definitions
+\babel@savecnt=\count90
+\U@D=\dimen107
+)
+\l@british = a dialect from \language\l@english 
+\l@UKenglish = a dialect from \language\l@english 
+\l@canadian = a dialect from \language\l@american 
+\l@australian = a dialect from \language\l@british 
+\l@newzealand = a dialect from \language\l@british 
+))
+(/usr/share/texmf/tex/latex/fancyhdr/fancyhdr.sty
+\fancy@headwidth=\skip45
+\f@ncyO@elh=\skip46
+\f@ncyO@erh=\skip47
+\f@ncyO@olh=\skip48
+\f@ncyO@orh=\skip49
+\f@ncyO@elf=\skip50
+\f@ncyO@erf=\skip51
+\f@ncyO@olf=\skip52
+\f@ncyO@orf=\skip53
+)
+(/usr/share/texmf/tex/latex/amsmath/amsmath.sty
+Package: amsmath 2000/07/18 v2.13 AMS math features
+\@mathmargin=\skip54
+
+For additional information on amsmath, use the `?' option.
+(/usr/share/texmf/tex/latex/amsmath/amstext.sty
+Package: amstext 2000/06/29 v2.01
+
+(/usr/share/texmf/tex/latex/amsmath/amsgen.sty
+File: amsgen.sty 1999/11/30 v2.0
+\@emptytoks=\toks20
+\ex@=\dimen108
+))
+(/usr/share/texmf/tex/latex/amsmath/amsbsy.sty
+Package: amsbsy 1999/11/29 v1.2d
+\pmbraise@=\dimen109
+)
+(/usr/share/texmf/tex/latex/amsmath/amsopn.sty
+Package: amsopn 1999/12/14 v2.01 operator names
+)
+\inf@bad=\count91
+LaTeX Info: Redefining \frac on input line 211.
+\uproot@=\count92
+\leftroot@=\count93
+LaTeX Info: Redefining \overline on input line 307.
+\classnum@=\count94
+\DOTSCASE@=\count95
+LaTeX Info: Redefining \ldots on input line 379.
+LaTeX Info: Redefining \dots on input line 382.
+LaTeX Info: Redefining \cdots on input line 467.
+\Mathstrutbox@=\box26
+\strutbox@=\box27
+\big@size=\dimen110
+LaTeX Font Info:    Redeclaring font encoding OML on input line 567.
+LaTeX Font Info:    Redeclaring font encoding OMS on input line 568.
+\macc@depth=\count96
+\c@MaxMatrixCols=\count97
+\dotsspace@=\muskip10
+\c@parentequation=\count98
+\dspbrk@lvl=\count99
+\tag@help=\toks21
+\row@=\count100
+\column@=\count101
+\maxfields@=\count102
+\andhelp@=\toks22
+\eqnshift@=\dimen111
+\alignsep@=\dimen112
+\tagshift@=\dimen113
+\tagwidth@=\dimen114
+\totwidth@=\dimen115
+\lineht@=\dimen116
+\@envbody=\toks23
+\multlinegap=\skip55
+\multlinetaggap=\skip56
+\mathdisplay@stack=\toks24
+LaTeX Info: Redefining \[ on input line 2666.
+LaTeX Info: Redefining \] on input line 2667.
+)
+(/usr/share/texmf/tex/latex/amsfonts/amssymb.sty
+Package: amssymb 2002/01/22 v2.2d
+
+(/usr/share/texmf/tex/latex/amsfonts/amsfonts.sty
+Package: amsfonts 2001/10/25 v2.2f
+\symAMSa=\mathgroup4
+\symAMSb=\mathgroup5
+LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
+(Font)                  U/euf/m/n --> U/euf/b/n on input line 132.
+))
+(/usr/share/texmf/tex/latex/algorithms/algorithm.sty
+
+LaTeX Warning: You have requested package `algorithms/algorithm',
+               but the package provides `algorithm'.
+
+Package: algorithm 
+Document Style `algorithm' - floating environment
+(/usr/share/texmf/tex/latex/float/float.sty
+Package: float 2001/11/08 v1.3d Float enhancements (AL)
+\c@float@type=\count103
+\float@exts=\toks25
+\float@box=\box28
+\@float@everytoks=\toks26
+\@floatcapt=\box29
+)
+(/usr/share/texmf/tex/latex/base/ifthen.sty
+Package: ifthen 2001/05/26 v1.1c Standard LaTeX ifthen package (DPC)
+)
+\@float@every@algorithm=\toks27
+\c@algorithm=\count104
+)
+(/usr/share/texmf/tex/latex/algorithms/algorithmic.sty
+
+LaTeX Warning: You have requested package `algorithms/algorithmic',
+               but the package provides `algorithmic'.
+
+Package: algorithmic 2006/06/02
+Document Style `algorithmic' - environment
+(/usr/share/texmf/tex/latex/tools/calc.sty
+Package: calc 2005/08/06 v4.2 Infix arithmetic (KKT,FJ)
+\calc@Acount=\count105
+\calc@Bcount=\count106
+\calc@Adimen=\dimen117
+\calc@Bdimen=\dimen118
+\calc@Askip=\skip57
+\calc@Bskip=\skip58
+LaTeX Info: Redefining \setlength on input line 75.
+LaTeX Info: Redefining \addtolength on input line 76.
+\calc@Ccount=\count107
+\calc@Cskip=\skip59
+)
+\c@ALC@line=\count108
+\c@ALC@rem=\count109
+\c@ALC@depth=\count110
+\ALC@tlm=\skip60
+\algorithmicindent=\skip61
+)
+(/usr/share/texmf/tex/latex/html/url.sty
+Package: url 1999/03/02  ver 1.4  Verb mode for urls, email addresses, and file
+ names
+)
+(/usr/share/texmf/tex/latex/hyperref/hyperref.sty
+Package: hyperref 2007/02/07 v6.75r Hypertext links for LaTeX
+\@linkdim=\dimen119
+\Hy@linkcounter=\count111
+\Hy@pagecounter=\count112
+
+(/usr/share/texmf/tex/latex/hyperref/pd1enc.def
+File: pd1enc.def 2007/02/07 v6.75r Hyperref: PDFDocEncoding definition (HO)
+)
+(/usr/share/texmf/tex/latex/config/hyperref.cfg
+File: hyperref.cfg 2002/06/06 v1.2 hyperref configuration of TeXLive
+)
+(/usr/share/texmf/tex/latex/oberdiek/kvoptions.sty
+Package: kvoptions 2006/08/22 v2.4 Connects package keyval with LaTeX options (
+HO)
+)
+Package hyperref Info: Option `final' set `true' on input line 2238.
+Package hyperref Info: Hyper figures OFF on input line 2288.
+Package hyperref Info: Link nesting OFF on input line 2293.
+Package hyperref Info: Hyper index ON on input line 2296.
+Package hyperref Info: Plain pages OFF on input line 2303.
+Package hyperref Info: Backreferencing OFF on input line 2308.
+
+Implicit mode ON; LaTeX internals redefined
+Package hyperref Info: Bookmarks ON on input line 2444.
+LaTeX Info: Redefining \url on input line 2599.
+\Fld@menulength=\count113
+\Field@Width=\dimen120
+\Fld@charsize=\dimen121
+\Choice@toks=\toks28
+\Field@toks=\toks29
+Package hyperref Info: Hyper figures OFF on input line 3102.
+Package hyperref Info: Link nesting OFF on input line 3107.
+Package hyperref Info: Hyper index ON on input line 3110.
+Package hyperref Info: backreferencing OFF on input line 3117.
+Package hyperref Info: Link coloring OFF on input line 3122.
+\Hy@abspage=\count114
+\c@Item=\count115
+\c@Hfootnote=\count116
+)
+*hyperref using default driver hpdftex*
+(/usr/share/texmf/tex/latex/hyperref/hpdftex.def
+File: hpdftex.def 2007/02/07 v6.75r Hyperref driver for pdfTeX
+\Fld@listcount=\count117
+)
+
+Package hyperref Warning: Option `dvips' has already been used,
+(hyperref)                setting the option has no effect on input line 47.
+
+
+Package hyperref Warning: Option `backref' has already been used,
+(hyperref)                setting the option has no effect on input line 47.
+
+
+Package hyperref Warning: Option `pagebackref' has already been used,
+(hyperref)                setting the option has no effect on input line 47.
+
+Package hyperref Info: Option `breaklinks' set `true' on input line 47.
+
+Package hyperref Warning: Option `bookmarks' has already been used,
+(hyperref)                setting the option has no effect on input line 47.
+
+Package hyperref Info: Option `bookmarksopen' set `true' on input line 47.
+
+Package hyperref Warning: Option `hyperindex' has already been used,
+(hyperref)                setting the option has no effect on input line 47.
+
+(/usr/share/texmf/tex/latex/pgf/frontendlayer/tikz.sty
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgf.sty
+(/usr/share/texmf/tex/latex/pgf/utilities/pgfrcs.sty
+(/usr/share/texmf/tex/generic/pgf/utilities/pgfutil-common.tex)
+(/usr/share/texmf/tex/generic/pgf/utilities/pgfutil-latex.def)
+(/usr/share/texmf/tex/generic/pgf/utilities/pgfrcs.code.tex
+Package: pgfrcs 2006/10/26 v1.10 (rcs-revision 1.14)
+))
+Package: pgf 2006/10/11 v1.10 (rcs-revision 1.7)
+
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfcore.sty
+(/usr/share/texmf/tex/latex/pgf/systemlayer/pgfsys.sty
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgfsys.code.tex
+Package: pgfsys 2006/10/16 v1.10 (rcs-revision 1.19)
+\pgf@x=\dimen122
+\pgf@y=\dimen123
+\pgf@xa=\dimen124
+\pgf@ya=\dimen125
+\pgf@xb=\dimen126
+\pgf@yb=\dimen127
+\pgf@xc=\dimen128
+\pgf@yc=\dimen129
+
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgf.cfg
+File: pgf.cfg 2006/10/11  (rcs-revision 1.2)
+)
+Package pgfsys Info: Driver file for pgf: pgfsys-pdftex.def on input line 845.
+
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgfsys-pdftex.def
+File: pgfsys-pdftex.def 2006/10/23  (rcs-revision 1.14)
+
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgfsys-common-pdf.def
+File: pgfsys-common-pdf.def 2006/10/16  (rcs-revision 1.7)
+)))
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgfsyssoftpath.code.tex
+File: pgfsyssoftpath.code.tex 2006/10/16  (rcs-revision 1.4)
+)
+(/usr/share/texmf/tex/generic/pgf/systemlayer/pgfsysprotocol.code.tex
+File: pgfsysprotocol.code.tex 2006/10/16  (rcs-revision 1.4)
+))
+(/usr/share/texmf/tex/latex/xcolor/xcolor.sty
+Package: xcolor 2007/01/21 v2.11 LaTeX color extensions (UK)
+
+(/usr/share/texmf/tex/latex/config/color.cfg
+File: color.cfg 2007/01/18 v1.5 color configuration of teTeX/TeXLive
+)
+Package xcolor Info: Driver file: pdftex.def on input line 225.
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1337.
+Package xcolor Info: Model `hsb' substituted by `rgb' on input line 1341.
+Package xcolor Info: Model `RGB' extended on input line 1353.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1355.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1356.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1357.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1358.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1359.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1360.
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcore.code.tex
+Package: pgfcore 2006/10/11 v1.10 (rcs-revision 1.4)
+
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcoremath.code.tex
+File: pgfcoremath.code.tex 2006/10/15  (rcs-revision 1.3)
+\c@pgf@counta=\count118
+\c@pgf@countb=\count119
+\c@pgf@countc=\count120
+\c@pgf@countd=\count121
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorepoints.code.tex
+File: pgfcorepoints.code.tex 2006/10/16  (rcs-revision 1.7)
+\pgf@picminx=\dimen130
+\pgf@picmaxx=\dimen131
+\pgf@picminy=\dimen132
+\pgf@picmaxy=\dimen133
+\pgf@pathminx=\dimen134
+\pgf@pathmaxx=\dimen135
+\pgf@pathminy=\dimen136
+\pgf@pathmaxy=\dimen137
+\pgf@tempdim=\dimen138
+\c@pgf@tempcount=\count122
+\pgf@xx=\dimen139
+\pgf@xy=\dimen140
+\pgf@yx=\dimen141
+\pgf@yy=\dimen142
+\pgf@zx=\dimen143
+\pgf@zy=\dimen144
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorepathconstruct.code.tex
+File: pgfcorepathconstruct.code.tex 2006/10/16  (rcs-revision 1.6)
+\pgf@path@lastx=\dimen145
+\pgf@path@lasty=\dimen146
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorepathusage.code.tex
+File: pgfcorepathusage.code.tex 2006/10/16  (rcs-revision 1.7)
+\pgf@shorten@end@additional=\dimen147
+\pgf@shorten@start@additional=\dimen148
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorescopes.code.tex
+File: pgfcorescopes.code.tex 2006/10/23  (rcs-revision 1.20)
+\pgfpic=\box30
+\pgf@hbox=\box31
+\pgf@layerbox@main=\box32
+\pgf@picture@serial@count=\count123
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcoregraphicstate.code.tex
+File: pgfcoregraphicstate.code.tex 2006/10/16  (rcs-revision 1.6)
+\pgflinewidth=\dimen149
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcoretransformations.code.tex
+File: pgfcoretransformations.code.tex 2006/10/11  (rcs-revision 1.4)
+\pgf@pt@x=\dimen150
+\pgf@pt@y=\dimen151
+\pgf@pt@temp=\dimen152
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorequick.code.tex
+File: pgfcorequick.code.tex 2006/10/11  (rcs-revision 1.2)
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcoreobjects.code.tex
+File: pgfcoreobjects.code.tex 2006/10/11  (rcs-revision 1.2)
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorepathprocessing.code.tex
+File: pgfcorepathprocessing.code.tex 2006/10/16  (rcs-revision 1.5)
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcorearrows.code.tex
+File: pgfcorearrows.code.tex 2006/10/16  (rcs-revision 1.6)
+)
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfcoreshade.code.tex
+File: pgfcoreshade.code.tex 2006/10/16  (rcs-revision 1.7)
+\pgf@max=\dimen153
+\pgf@sys@shading@range@num=\count124
+)))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbaseshapes.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbaseshapes.code.tex
+Package: pgfbaseshapes 2006/10/16 v1.10 (rcs-revision 1.16)
+\pgfnodeparttextbox=\box33
+))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbaseplot.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbaseplot.code.tex
+Package: pgfbaseplot 2006/10/16 v1.10 (rcs-revision 1.5)
+\pgf@plotwrite=\write3
+))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbaseimage.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbaseimage.code.tex
+Package: pgfbaseimage 2006/10/16 v1.10 (rcs-revision 1.5)
+))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbaselayers.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbaselayers.code.tex
+Package: pgfbaselayers 2006/10/16 v1.10 (rcs-revision 1.5)
+))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbasesnakes.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbasesnakes.code.tex
+Package: pgfbasesnakes 2006/10/16 v1.10 (rcs-revision 1.10)
+\pgfsnakeremainingdistance=\dimen154
+\pgfsnakecompleteddistance=\dimen155
+))
+(/usr/share/texmf/tex/latex/pgf/basiclayer/pgfbasepatterns.sty
+(/usr/share/texmf/tex/generic/pgf/basiclayer/pgfbasepatterns.code.tex
+Package: pgfbasepatterns 2006/10/16 v1.10 (rcs-revision 1.9)
+))
+(/usr/share/texmf/tex/latex/pgf/compatibility/pgfcomp-version-0-65.sty
+Package: pgfcomp-version-0-65 2006/10/11 v1.10 (rcs-revision 1.4)
+\pgf@nodesepstart=\dimen156
+\pgf@nodesepend=\dimen157
+))
+(/usr/share/texmf/tex/latex/pgf/utilities/pgffor.sty
+(/usr/share/texmf/tex/generic/pgf/utilities/pgffor.code.tex
+Package: pgffor 2006/10/16 v1.10 (rcs-revision 1.5)
+\pgffor@iter=\dimen158
+\pgffor@skip=\dimen159
+))
+(/usr/share/texmf/tex/latex/xkeyval/xkeyval.sty
+Package: xkeyval 2006/11/18 v2.5f package option processing (HA)
+
+(/usr/share/texmf/tex/latex/xkeyval/xkeyval.tex
+\XKV@toks=\toks30
+\XKV@depth=\count125
+File: xkeyval.tex 2006/11/18 v2.5f key=value parser (HA)
+))
+(/usr/share/texmf/tex/generic/pgf/frontendlayer/tikz.code.tex
+Package: tikz 2006/10/17 v1.10 (rcs-revision 1.68)
+
+(/usr/share/texmf/tex/generic/pgf/libraries/pgflibraryplothandlers.code.tex
+File: pgflibraryplothandlers.code.tex 2006/10/16 v1.10 (rcs-revision 1.8)
+\pgf@plot@mark@count=\count126
+\pgfplotmarksize=\dimen160
+)
+\tikz@lastx=\dimen161
+\tikz@lasty=\dimen162
+\tikz@lastxsaved=\dimen163
+\tikz@lastysaved=\dimen164
+\tikzleveldistance=\dimen165
+\tikzsiblingdistance=\dimen166
+\tikz@figbox=\box34
+\tikz@tempbox=\box35
+\tikztreelevel=\count127
+\tikznumberofchildren=\count128
+\tikznumberofcurrentchild=\count129
+\tikz@fig@count=\count130
+\tikz@expandcount=\count131
+
+(/usr/share/texmf/tex/generic/pgf/libraries/pgflibrarytikztopaths.code.tex
+File: pgflibrarytikztopaths.code.tex 2006/10/16 v1.10 (rcs-revision 1.5)
+)))
+(/usr/share/texmf/tex/generic/pgf/libraries/pgflibrarytikztrees.code.tex
+File: pgflibrarytikztrees.code.tex 2006/10/11 v1.10 (rcs-revision 1.7)
+)
+(/usr/share/texmf/tex/latex/listings/listings.sty
+\lst@mode=\count132
+\lst@gtempboxa=\box36
+\lst@token=\toks31
+\lst@length=\count133
+\lst@currlwidth=\dimen167
+\lst@column=\count134
+\lst@pos=\count135
+\lst@lostspace=\dimen168
+\lst@width=\dimen169
+\lst@newlines=\count136
+\lst@lineno=\count137
+\c@lstlisting=\count138
+\lst@maxwidth=\dimen170
+
+(/usr/share/texmf/tex/latex/listings/lstpatch.sty
+File: lstpatch.sty 2004/10/17 1.3b (Carsten Heinz)
+)
+(/usr/share/texmf/tex/latex/listings/lstmisc.sty
+File: lstmisc.sty 2004/09/07 1.3 (Carsten Heinz)
+\c@lstnumber=\count139
+\lst@skipnumbers=\count140
+\lst@framebox=\box37
+)
+(/usr/share/texmf/tex/latex/listings/listings.cfg
+File: listings.cfg 2004/09/05 1.3 listings configuration
+))
+Package: listings 2004/10/17 1.3b (Carsten Heinz)
+
+
+LaTeX Warning: Unused global option(s):
+    [openright].
+
+(./OPTIMIZATION_TOOLBOX_MANUAL.aux)
+\openout1 = `OPTIMIZATION_TOOLBOX_MANUAL.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 119.
+LaTeX Font Info:    ... okay on input line 119.
+ (/usr/share/texmf/tex/latex/ucs/ucsencs.def
+File: ucsencs.def 2003/11/29 Fixes to fontencodings LGR, T3
+)
+Package hyperref Info: Link coloring OFF on input line 119.
+ (/usr/share/texmf/tex/latex/hyperref/nameref.sty
+Package: nameref 2006/12/27 v2.28 Cross-referencing by name of section
+
+(/usr/share/texmf/tex/latex/oberdiek/refcount.sty
+Package: refcount 2006/02/20 v3.0 Data extraction from references (HO)
+)
+\c@section@level=\count141
+)
+LaTeX Info: Redefining \ref on input line 119.
+LaTeX Info: Redefining \pageref on input line 119.
+
+(./OPTIMIZATION_TOOLBOX_MANUAL.out) (./OPTIMIZATION_TOOLBOX_MANUAL.out)
+\@outlinefile=\write4
+\openout4 = `OPTIMIZATION_TOOLBOX_MANUAL.out'.
+
+LaTeX Font Info:    Try loading font information for U+msa on input line 129.
+
+(/usr/share/texmf/tex/latex/amsfonts/umsa.fd
+File: umsa.fd 2002/01/19 v2.2g AMS font definitions
+)
+LaTeX Font Info:    Try loading font information for U+msb on input line 129.
+
+(/usr/share/texmf/tex/latex/amsfonts/umsb.fd
+File: umsb.fd 2002/01/19 v2.2g AMS font definitions
+)
+Underfull \hbox (badness 10000) in paragraph at lines 130--131
+
+ []
+
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <12> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 133.
+
+Underfull \hbox (badness 10000) in paragraph at lines 135--136
+
+ []
+
+<logo.pdf, id=104, 317.185pt x 99.37125pt>
+File: logo.pdf Graphic file (type pdf)
+ <use logo.pdf> [1
+
+{/usr/share/texmf/fonts/map/pdftex/updmap/pdftex.map} <./logo.pdf>]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[2] (./OPTIMIZATION_TOOLBOX_MANUAL.toc)
+\tf@toc=\write5
+\openout5 = `OPTIMIZATION_TOOLBOX_MANUAL.toc'.
+
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[3]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[4]
+LaTeX Font Info:    Try loading font information for OMS+cmr on input line 212.
+
+ (/usr/share/texmf/tex/latex/base/omscmr.fd
+File: omscmr.fd 1999/05/25 v2.5h Standard LaTeX font definitions
+)
+LaTeX Font Info:    Font shape `OMS/cmr/m/n' in size <10.95> not available
+(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 212.
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[5]
+Overfull \hbox (0.1168pt too wide) in paragraph at lines 241--242
+\OT1/cmr/m/n/10.95 The re-cur-rence [] is re-peated un-til con-ver-gence is rea
+ched (in a cer-tain sense). The steplength
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[6]
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 284.
+
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 284.
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[7]
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 302.
+
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 302.
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[8]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[9]
+Underfull \hbox (badness 10000) in paragraph at lines 375--382
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 375--382
+
+ []
+
+
+Overfull \hbox (5.29906pt too wide) in paragraph at lines 410--411
+\OT1/cmr/m/n/10.95 com-pil-ing all the op-ti-miza-tion rou-tines and cre-at-ing
+ the global li-brary file \OT1/cmtt/m/n/10.95 libSEISCOPE[]OPTIM.a\OT1/cmr/m/n/
+10.95 .
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 414--436
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[10]
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/it' in size <12> not available
+(Font)              Font shape `OT1/cmtt/m/it' tried instead on input line 436.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 456--478
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[11]
+Overfull \hbox (58.4838pt too wide) in paragraph at lines 505--507
+\OT1/cmr/m/n/10.95 is dif-fi-cult. The source code of the Rosen-brock func-tion
+ is in \OT1/cmtt/m/n/10.95 OPTIMIZATION/COMMON/test/rosenbrock.f90\OT1/cmr/m/n/
+10.95 . 
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 514--561
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[12]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[13] (/usr/share/texmf/tex/latex/listings/lstlang1.sty
+File: lstlang1.sty 2004/09/05 1.3 listings language file
+)
+(/usr/share/texmf/tex/latex/listings/lstlang1.sty
+File: lstlang1.sty 2004/09/05 1.3 listings language file
+)
+Package hyperref Info: bookmark level for unknown lstlisting defaults to 0 on i
+nput line 594.
+
+(./src_code/PSTD/declaration.f90
+LaTeX Font Info:    Font shape `OMS/cmr/m/n' in size <10> not available
+(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 11.
+)
+Overfull \hbox (4.90096pt too wide) in paragraph at lines 594--596
+[] 
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[14]
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <10.95> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 597.
+ (/usr/share/texmf/tex/latex/ucs/data/uni-0.def
+File: uni-0.def 2004/10/17 UCS: Unicode data U+0000..U+00FF
+)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[15] (./src_code/PSTD/init.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[16] (./src_code/PSTD/reverse_communication_loop.f90)
+(./src_code/PSTD/iterate_ST.dat
+LaTeX Font Info:    Font shape `OMS/cmr/m/n' in size <6> not available
+(Font)              Font shape `OMS/cmsy/m/n' tried instead on input line 1.
+)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[17] (./src_code/PNLCG/declaration.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[18]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[19] (./src_code/PNLCG/init.f90)
+(./src_code/PNLCG/reverse_communication_loop.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[20] (./src_code/PNLCG/iterate_CG.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[21]
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 783.
+
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 783.
+
+(./src_code/LBFGS/declaration.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[22] (./src_code/LBFGS/init.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[23] (./src_code/LBFGS/reverse_communication_loop.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[24] (./src_code/LBFGS/iterate_LB.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[25]
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 883.
+
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 883.
+
+(./src_code/PLBFGS/declaration.f90
+Overfull \hbox (30.45134pt too wide) in paragraph at lines 8--9
+[][][][][][][][][][][][][][][][][][][][][][][][][][] 
+ []
+
+)
+Overfull \hbox (40.90132pt too wide) in paragraph at lines 901--903
+[][] 
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[26] (./src_code/PLBFGS/init.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[27] (./src_code/PLBFGS/reverse_communication_loop.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[28] (./src_code/PLBFGS/iterate_PLB.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[29] (./src_code/TRN/declaration.f90
+Overfull \hbox (30.45134pt too wide) in paragraph at lines 8--9
+[][][][][][][][][][][][][][][][][][][][][][][][][][] 
+ []
+
+)
+Overfull \hbox (40.90132pt too wide) in paragraph at lines 1004--1006
+[][] 
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[30]
+Overfull \hbox (12.51175pt too wide) in paragraph at lines 1023--1024
+[]\OT1/cmr/m/n/10.95 Set the level of of in-for-ma-tion in the out-put files \O
+T1/cmtt/m/n/10.95 iterate[]TRN.dat \OT1/cmr/m/n/10.95 and \OT1/cmtt/m/n/10.95 i
+terate[]TRN[]CG.dat\OT1/cmr/m/n/10.95 :
+ []
+
+
+Overfull \hbox (21.42242pt too wide) in paragraph at lines 1023--1024
+\OT1/cmr/m/n/10.95 ner it-er-a-tions through the con-ju-gate gra-di-ent al-go-r
+ithm will be printed in \OT1/cmtt/m/n/10.95 iterate[]TRN[]CG.dat
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[31] (./src_code/TRN/init.f90) (./src_code/TRN/reverse_communication_loop.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[32] (./src_code/TRN/iterate_TRN.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[33] (./src_code/TRN/iterate_TRN_CG.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[34] (./src_code/PTRN/declaration.f90
+Overfull \hbox (24.45128pt too wide) in paragraph at lines 8--9
+[][][][][][][][][][][][][][][][][][][][][] 
+ []
+
+
+Overfull \hbox (30.45134pt too wide) in paragraph at lines 9--10
+[][][][][][][][][][][][][][][][][][][][][][][][][][] 
+ []
+
+)
+Overfull \hbox (40.90132pt too wide) in paragraph at lines 1129--1131
+[][] 
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[35]
+Overfull \hbox (24.00912pt too wide) in paragraph at lines 1148--1149
+[]\OT1/cmr/m/n/10.95 Set the level of of in-for-ma-tion in the out-put files \O
+T1/cmtt/m/n/10.95 iterate[]PTRN.dat \OT1/cmr/m/n/10.95 and \OT1/cmtt/m/n/10.95 
+iterate[]PTRN[]CG.dat\OT1/cmr/m/n/10.95 :
+ []
+
+
+Overfull \hbox (27.17111pt too wide) in paragraph at lines 1148--1149
+\OT1/cmr/m/n/10.95 ner it-er-a-tions through the con-ju-gate gra-di-ent al-go-r
+ithm will be printed in \OT1/cmtt/m/n/10.95 iterate[]PTRN[]CG.dat
+ []
+
+
+Overfull \hbox (9.82443pt too wide) in paragraph at lines 1148--1149
+\OT1/cmr/m/n/10.95 tem). Oth-er-wise, if it is set to \OT1/cmtt/m/n/10.95 false
+\OT1/cmr/m/n/10.95 , the files \OT1/cmtt/m/n/10.95 iterate[]PTRN.dat \OT1/cmr/m
+/n/10.95 and \OT1/cmtt/m/n/10.95 iterate[]PTRN[]CG.dat
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[36] (./src_code/PTRN/init.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[37]
+Overfull \hbox (36.80971pt too wide) in paragraph at lines 1179--1180
+\OT1/cmr/m/n/10.95 the vec-tor \OT1/cmtt/m/n/10.95 optim%residual \OT1/cmr/m/n/
+10.95 by the pre-con-di-tioner, and store the re-sult in \OT1/cmtt/m/n/10.95 op
+tim%residual[]preco\OT1/cmr/m/n/10.95 .
+ []
+
+(./src_code/PTRN/reverse_communication_loop.f90)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[38] (./src_code/PTRN/iterate_PTRN.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[39] (./src_code/TRN/iterate_TRN_CG.dat)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[40]
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 1238.
+
+
+Package hyperref Warning: Token not allowed in a PDFDocEncoded string,
+(hyperref)                removing `math shift' on input line 1238.
+
+(./src_code/new_step/reverse_communication_loop.f90)
+Underfull \hbox (badness 10000) in paragraph at lines 1268--1281
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1268--1281
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1268--1281
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1268--1281
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1268--1281
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[41]
+Underfull \hbox (badness 10000) in paragraph at lines 1303--1310
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1303--1310
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1317--1327
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1317--1327
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1317--1327
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[42]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[43]
+Underfull \hbox (badness 10000) in paragraph at lines 1375--1388
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1375--1388
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1375--1388
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 1375--1388
+
+ []
+
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[44]
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[45] (./OPTIMIZATION_TOOLBOX_MANUAL.bbl)
+
+Package Fancyhdr Warning: \headheight is too small (12.0pt): 
+ Make it at least 13.59999pt.
+ We now make it that large for the rest of the document.
+ This may cause the page layout to be inconsistent, however.
+
+[46] (./OPTIMIZATION_TOOLBOX_MANUAL.aux) ) 
+Here is how much of TeX's memory you used:
+ 11323 strings out of 256216
+ 164473 string characters out of 1917071
+ 297637 words of memory out of 1500000
+ 13510 multiletter control sequences out of 10000+200000
+ 16190 words of font info for 64 fonts, out of 1200000 for 2000
+ 645 hyphenation exceptions out of 8191
+ 50i,12n,101p,846b,1344s stack positions out of 5000i,500n,6000p,200000b,15000s
+</usr/share/texmf/fonts/type1/bluesky
+/cm/cmbx10.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmbx12.pfb></usr/share/
+texmf/fonts/type1/bluesky/cm/cmex10.pfb></usr/share/texmf/fonts/type1/bluesky/c
+m/cmitt10.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmmi10.pfb></usr/share/t
+exmf/fonts/type1/bluesky/cm/cmmi12.pfb></usr/share/texmf/fonts/type1/bluesky/cm
+/cmmi8.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmr10.pfb></usr/share/texmf
+/fonts/type1/bluesky/cm/cmr12.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmr1
+7.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmr6.pfb></usr/share/texmf/fonts
+/type1/bluesky/cm/cmr8.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmsy10.pfb>
+</usr/share/texmf/fonts/type1/bluesky/cm/cmsy6.pfb></usr/share/texmf/fonts/type
+1/bluesky/cm/cmsy8.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmti10.pfb></us
+r/share/texmf/fonts/type1/bluesky/cm/cmti12.pfb></usr/share/texmf/fonts/type1/b
+luesky/cm/cmtt10.pfb></usr/share/texmf/fonts/type1/bluesky/cm/cmtt12.pfb>
+Output written on OPTIMIZATION_TOOLBOX_MANUAL.pdf (46 pages, 421047 bytes).
+PDF statistics:
+ 1293 PDF objects out of 1440 (max. 8388607)
+ 751 named destinations out of 1000 (max. 131072)
+ 214 words of extra memory for PDF output out of 10000 (max. 10000000)
+

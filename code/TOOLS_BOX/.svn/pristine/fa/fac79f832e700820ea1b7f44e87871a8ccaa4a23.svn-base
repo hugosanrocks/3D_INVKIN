@@ -1,0 +1,37 @@
+#===================================================================
+#Intel compiler (make -j 16)
+FC =  ifort
+
+#PREPOCESSING COMMANDES
+OPTPRE = -openmp -fpp #-DTIME_PROFILING
+#FLAGS =  -C -g -warn  -DEBUG -check -assume byterecl -check all -gen_interfaces -traceback   $(OPT_PRE) -assume byterecl
+FFLAGS =  -O3  -assume byterecl  $(OPTPRE)
+
+
+#===================================================================
+# overload some variables for the case of gnu compilers (make GNU=1 -j 16)
+ifeq ($(GNU),1)
+FC = gfortran
+
+OPTPRE = -fopenmp -cpp -ffree-line-length-0 #-DTIME_PROFILING
+#OPTF = -g -Wall -pedantic -fbounds-check -ffpe-trap=invalid,overflow,zero ${OPTPRE}
+FFLAGS = -O3  ${OPTPRE}
+endif
+
+#===================================================================
+# overload some variables for the case of IBM compilers (make XL=1 -j 16)
+ifeq ($(XL),1)
+FC =  xlf90_r
+
+OPTPRE = -qsuffix=cpp=f90 #-WF,-DTIME_PROFILING
+FFLAGS =  -O3 -qsmp=omp -qalign=struct=natural  $(OPTPRE) 
+endif
+
+
+#==================================================================
+# variables for the libraries
+AR = ar
+ARFUNCT = cruv
+AREXTRA = xo
+RANLIB = ranlib
+RM = rm -rf

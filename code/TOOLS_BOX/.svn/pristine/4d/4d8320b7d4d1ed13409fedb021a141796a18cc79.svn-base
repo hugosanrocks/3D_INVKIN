@@ -1,0 +1,162 @@
+
+module dd_common_mod
+
+  use mpi
+
+  implicit none
+
+  integer, public, parameter :: MESSAGE_LENGTH_MAX = 2000
+  character(len=MESSAGE_LENGTH_MAX), public, save :: error_message = ''
+
+  ! reserved unit for files not kept opened during running
+  integer, public, parameter :: unit_dd = 9
+
+  ! Floating point precision
+  integer, public, parameter :: FP = 4
+
+  integer, public, save :: myid_world  = 0
+  integer, public, save :: nproc_world = 1
+
+  integer, public, save :: mpi_comm_0  = 0
+  integer, public, save :: myid_0      = 0
+  integer, public, save :: nproc_0     = 1
+
+  integer, public, save :: mpi_comm_1  = 0
+  integer, public, save :: myid_1      = 0
+  integer, public, save :: nproc_1     = 1
+
+  integer, public, save :: mpi_comm_2  = 0
+  integer, public, save :: myid_2      = 0
+  integer, public, save :: nproc_2     = 1
+
+  integer, public, save :: nthreads    = 1
+
+  integer, public, save :: npart       = 1 ! nb of subdomains (i.e. domain partitions) defining a group
+  integer, public, save :: ngroup      = 1 ! nb of groups
+
+  logical, public, save :: config2D    = .false. ! 3D by default 
+
+  ! Task placement
+  integer, public, save :: task_placement = 0 ! 0 = NO, 1 = YES
+  character(len=250), public, save :: task_map_file = ''
+
+  integer, public, save :: dd_call_trace   = 0
+  integer, public, save :: dd_debug_level  = 0
+  integer, public, save :: mem_debug_level = 0
+
+  ! Internal debug level: 0 for none, 1 for hashtab dump and check sort, > 1 for all
+  integer, public, save :: debug_graph = 0
+
+  ! Pretabulated array to define the connectivity of the four faces of a tetrahedra
+  !tetra(:,1) = (/ 2, 3, 4 /) 
+  !tetra(:,2) = (/ 1, 3, 4 /)
+  !tetra(:,3) = (/ 1, 4, 2 /)
+  !tetra(:,4) = (/ 1, 2, 3 /)
+  integer, dimension(3,4), parameter :: tetra_faces_connectivity = &
+  & reshape((/ 2, 3, 4, 1, 3, 4, 1, 4, 2, 1, 2, 3 /), &
+  & shape(tetra_faces_connectivity))
+
+  integer, parameter    :: HEXA_8    = 8
+  integer, parameter    :: HEXA_27   = 27
+
+  integer, parameter    :: VERTEX_ID         = 1
+  integer, parameter    :: EDGE_ID           = 2
+  integer, parameter    :: FACE_ID           = 3
+  integer, parameter    :: INSIDE_ELEMENT_ID = 4
+
+  !hexa_faces_connectivity(:, 1) = (/ 4, 1, 2, 3 /)
+  !hexa_faces_connectivity(:, 2) = (/ 1, 5, 6, 2 /)
+  !hexa_faces_connectivity(:, 3) = (/ 2, 6, 7, 3 /)
+  !hexa_faces_connectivity(:, 4) = (/ 3, 7, 8, 4 /)
+  !hexa_faces_connectivity(:, 5) = (/ 4, 8, 5, 1 /)
+  !hexa_faces_connectivity(:, 6) = (/ 5, 8, 7, 6 /)
+
+  integer, dimension(4,6), parameter :: hexa_faces_connectivity = &
+  & reshape((/ 4, 1, 2, 3, 1, 5, 6, 2, 2, 6, 7, 3, 3, 7, 8, 4, 4, 8, 5, 1, 5, 8, 7, 6 /), &
+  & shape(hexa_faces_connectivity))
+
+  !hexa_faces_to_cp_connectivity(:, 1) = (/  4,  1,  2,  3, 13 /)
+  !hexa_faces_to_cp_connectivity(:, 2) = (/  5,  9,  6,  1, 14 /)
+  !hexa_faces_to_cp_connectivity(:, 3) = (/  6, 10,  7,  2, 15 /)
+  !hexa_faces_to_cp_connectivity(:, 4) = (/  7, 11,  8,  3, 16 /)
+  !hexa_faces_to_cp_connectivity(:, 5) = (/  8, 12,  5,  4, 17 /)
+  !hexa_faces_to_cp_connectivity(:, 6) = (/ 12, 11, 10,  9, 18 /)
+
+  integer, dimension(5,6), parameter :: hexa_faces_to_cp_connectivity = &
+  & reshape((/ 4, 1, 2, 3, 13, 5, 9, 6, 1, 14, 6, 10, 7, 2, 15, 7, 11, 8, 3, 16, 8, 12, 5, 4, 17, 12, 11, 10, 9, 18 /), &
+  & shape(hexa_faces_to_cp_connectivity))
+
+  ! Pretabulated array to define the connectivity of the 12 edges of an hexahedra
+  !hexa_edges_connectivity(:, 1) = (/ 1, 2 /) 
+  !hexa_edges_connectivity(:, 2) = (/ 2, 3 /)
+  !hexa_edges_connectivity(:, 3) = (/ 4, 3 /)
+  !hexa_edges_connectivity(:, 4) = (/ 1, 4 /)
+  !hexa_edges_connectivity(:, 5) = (/ 1, 5 /)
+  !hexa_edges_connectivity(:, 6) = (/ 2, 6 /)
+  !hexa_edges_connectivity(:, 7) = (/ 3, 7 /)
+  !hexa_edges_connectivity(:, 8) = (/ 4, 8 /)
+  !hexa_edges_connectivity(:, 9) = (/ 5, 6 /)
+  !hexa_edges_connectivity(:,10) = (/ 6, 7 /)
+  !hexa_edges_connectivity(:,11) = (/ 8, 7 /) 
+  !hexa_edges_connectivity(:,12) = (/ 5, 8 /)
+
+  integer, dimension(2,12), parameter :: hexa_edges_connectivity = &
+  & reshape((/ 1, 2, 2, 3, 4, 3, 1, 4, 1, 5, 2, 6, 3, 7, 4, 8, 5, 6, 6, 7, 8, 7, 5, 8 /), &
+  & shape(hexa_edges_connectivity))
+
+  ! Pretabulated array to define the link between the faces and the edges of an reference hexahedra element
+  ! minus sign refers to the edge with the vertices in the reverse order compared to the hexa_edges_connectivity reference array
+  ! For convenience, add the definition of hexa_faces_to_edges array for faces in the reverse order (referenced by -ifacref)
+  !hexa_faces_to_edges(:, -6) = (/  10, -11, -12,   9 /) \
+  !hexa_faces_to_edges(:, -5) = (/   5,  12, - 8, - 4 /)  |
+  !hexa_faces_to_edges(:, -4) = (/   8,  11, - 7, - 3 /)  |   reference index
+  !hexa_faces_to_edges(:, -3) = (/   7, -10, - 6,   2 /)  |   for faces in the reverse order
+  !hexa_faces_to_edges(:, -2) = (/   6, - 9, - 5,   1 /)  |
+  !hexa_faces_to_edges(:, -1) = (/ - 2, - 1,   4,   3 /) /
+  !hexa_faces_to_edges(:,  0) = (/   0,   0,   0,   0 /)      dummy data
+  !hexa_faces_to_edges(:,  1) = (/ - 4,   1,   2, - 3 /) \
+  !hexa_faces_to_edges(:,  2) = (/   5,   9, - 6, - 1 /)  |
+  !hexa_faces_to_edges(:,  3) = (/   6,  10, - 7, - 2 /)  |   reference index
+  !hexa_faces_to_edges(:,  4) = (/   7, -11, - 8,   3 /)  |   for faces in the direct order
+  !hexa_faces_to_edges(:,  5) = (/   8, -12, - 5,   4 /)  |
+  !hexa_faces_to_edges(:,  6) = (/  12,  11, -10, - 9 /) /
+
+  integer, dimension(1:4,-6:6), parameter :: hexa_faces_to_edges =                                          &
+  & reshape((/ 10, -11, -12, 9, 5, 12, -8, -4, 8, 11, -7, -3, 7, -10, -6, 2, 6, -9, -5, 1, -2, -1, 4, 3,    &
+  &             0,   0,   0,   0,                                                                           &
+  &           - 4, 1, 2, -3, 5, 9, -6, -1, 6, 10, -7, -2, 7, -11, -8, 3, 8, -12, -5, 4, 12, 11, -10, -9 /), &
+  & shape(hexa_faces_to_edges))
+!   integer, dimension(4,6), parameter :: hexa_faces_to_edges = &
+!   & reshape((/ - 4, 1, 2, -3, 5, 9, -6, -1, 6, 10, -7, -2, 7, -11, -8, 3, 8, -12, -5, 4, 12, 11, -10, -9 /), &
+!   & shape(hexa_faces_to_edges))
+
+  ! End of line character
+  character(len=*), parameter :: end_of_line = char(10)!char(13)//char(11)//char(0)
+
+  ! Constant to multiply with to convert bytes in kilobytes
+  real,             parameter :: convert_b2kb = 1. / 1024.
+
+  ! Constant to multiply with to convert bytes in megabytes
+  real,             parameter :: convert_b2mb = 1. / 1024. / 1024.
+
+  ! Constant to multiply with to convert bytes in gigabytes
+  real,             parameter :: convert_b2gb = 1. / 1024. / 1024. / 1024.
+
+  ! Constant to multiply with to convert kilobytes in gigabytes
+  real,             parameter :: convert_kb2gb = 1. / 1024. / 1024.
+
+  public:: stop_mpi
+
+  contains
+
+  subroutine stop_mpi()
+    integer :: mpierr
+    write(*,*) myid_world, ' :: STOP EXECUTION : ', trim(adjustl(error_message))
+    call flush(6)
+
+    call mpi_abort(MPI_COMM_WORLD, 1, mpierr)
+    call mpi_finalize(mpierr)
+  end subroutine stop_mpi
+
+end module dd_common_mod
+

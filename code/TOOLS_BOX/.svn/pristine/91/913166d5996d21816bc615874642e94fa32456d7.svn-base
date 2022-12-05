@@ -1,0 +1,217 @@
+!
+!!$  Copyright (C) 2015 University Joseph Fourier, Grencle (Pengliang Yang)
+!!$
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!----------------------------------------------------------------------------
+! check the CFL/stability condition is satisfied or not
+subroutine check_sanity(vpmax,dt,dx,dz)
+  implicit none
+
+  real::vpmax,dt,dx,dz    
+  real CFL
+
+  CFL=vpmax*dt/max(dx,dz)*sqrt(2.)*7./6.
+  if (CFL>=1.) then 
+     write(0,*)'do NOT satisfy CFL condition'
+     call exit(0)
+  else
+     write(0,*)'CFL=',CFL
+  endif
+end subroutine check_sanity
+
+!----------------------------------------------------------------------------
+subroutine apply_sponge(p,bndr,nz,nx,nb)
+  implicit none
+
+  integer::nb,nz,nx
+  real,dimension(nb)::bndr
+  real,dimension(-nb+1:nb+nz,-nb+1:nb+nx)::p
+
+  integer::ib,i1,i2
+
+  do i2=-nb+1,nb+nx
+     do i1=-nb+1,0 !top
+        ib=i1+nb
+        p(i1,i2)=bndr(ib)*p(i1,i2)
+     enddo
+     do i1=nz+1,nz+nb !bottom
+        ib=nz+nb-i1+1
+        p(i1,i2)=bndr(ib)*p(i1,i2)
+     enddo
+  enddo
+  do i1=-nb+1,nz+nb
+     do i2=-nb+1,0!left
+        ib=i2+nb
+        p(i1,i2)=bndr(ib)*p(i1,i2)
+     enddo
+     do i2=nx+1,nb+nx !right
+        ib=nx+nb-i2+1
+        p(i1,i2)=bndr(ib)*p(i1,i2)
+     enddo
+  enddo
+end subroutine apply_sponge
+
+!----------------------------------------------------------------------------
+! expand the model with artificial boundaries
+subroutine expand2d(tgt, src, nz, nx, nb)
+  implicit none
+
+  integer::i1,i2
+  integer::nz,nx,nb
+  real::tgt(-nb+1:nb+nz,-nb+1:nb+nx),src(nz,nx)
+
+  !first copy from source to inner part of target
+  do i2=1,nx
+     do i1=1,nz
+        tgt(i1,i2)=src(i1,i2)
+     enddo
+  enddo
+  !then pad the boundaries
+  do i2=-nb+1,nb+nx
+     do i1=-nb+1,0
+        tgt(i1,i2)=tgt(1,i2)
+     enddo
+     do i1=1,nb
+        tgt(i1+nz,i2)=tgt(nz,i2)
+     enddo
+  enddo
+  do i1=-nb+1,nb+nz
+     do i2=-nb+1,0
+        tgt(i1,i2)=tgt(i1,1)
+     enddo
+     do i2=1,nb
+        tgt(i1,i2+nx)=tgt(i1,nx)
+     enddo
+  enddo
+end subroutine expand2d
+
+!----------------------------------------------------------------------------
+!window the inner part from the expanded model
+!the source is assumed to be larger in size than the target
+subroutine window2d(tgt, src, nz, nx, nb)
+  implicit none
+
+  integer::nz, nx, nb
+  real::src(-nb+1:nb+nz,-nb+1:nb+nx),tgt(nz,nx)
+
+  integer::i1, i2
+  do i2=1,nx
+     do i1=1,nz
+        tgt(i1,i2)=src(i1,i2)
+     enddo
+  enddo
+end subroutine window2d
+
+!----------------------------------------------------------------------------
+! initialize PML damping profile
+subroutine sponge_coeff(bb,vpmax,dx,dt,nb)
+  implicit none
+
+  integer::nb
+  real::dt,dx,vpmax
+  real,dimension(nb)::bb
+
+  integer::ib
+  real::x,L,d0,d,ratio
+  real,parameter::Rc=1.e-4
+
+  L=nb*dx
+  d0=-3.*log(Rc)*vpmax/(2.*L)
+
+  do ib=1,nb
+     x=(nb-ib)*dx     !x=1.-cos(0.5*(nb-ib)*PI/nb)
+     ratio=x/L 		! ratio of x over L
+     d=d0*ratio**2
+     bb(ib)=exp(-d*dt)
+  enddo
+end subroutine sponge_coeff
+
+!----------------------------------------------------------------------------
+subroutine step_forward_v(p, vz, vx, rho, dt, idz, idx, nz, nx, nb)
+  implicit none
+
+  integer::i1, i2
+  real::diff1,diff2
+
+  integer:: nz, nx, nb
+  real::idz,idx,dt
+  real,dimension(-nb+1:nb+nz,-nb+1:nb+nx)::p, vz, vx, rho
+
+  real,parameter::c1=1.125
+  real,parameter::c2=-1./24.
+
+  do i2=-nb+2,nx+nb-2
+     do i1=-nb+2,nz+nb-2
+        diff1=c1*(p(i1+1,i2)-p(i1,i2))&
+             +c2*(p(i1+2,i2)-p(i1-1,i2))
+        diff2=c1*(p(i1,i2+1)-p(i1,i2))&
+             +c2*(p(i1,i2+2)-p(i1,i2-1))
+        vz(i1,i2)=vz(i1,i2)+dt*idz*diff1/rho(i1,i2)
+        vx(i1,i2)=vx(i1,i2)+dt*idx*diff2/rho(i1,i2)
+     enddo
+  enddo
+end subroutine step_forward_v
+
+!----------------------------------------------------------------------------
+subroutine step_forward_p(p, vz, vx, kappa, dt, idz, idx, nz,nx,nb)
+  implicit none
+
+  integer::i1, i2
+  real::tmp,diff1,diff2
+
+  integer:: nz,nx,nb
+  real::idz,idx,dt
+  real,dimension(-nb+1:nb+nz,-nb+1:nb+nx)::p, vz, vx, kappa
+
+  real,parameter::c1=1.125
+  real,parameter::c2=-1./24.
+
+  do i2=-nb+3,nb+nx-1
+     do i1=-nb+3,nb+nz-1
+        diff1=c1*(vz(i1,i2)-vz(i1-1,i2))&
+             +c2*(vz(i1+1,i2)-vz(i1-2,i2))
+        diff2=c1*(vx(i1,i2)-vx(i1,i2-1))&
+             +c2*(vx(i1,i2+1)-vx(i1,i2-2))
+        p(i1,i2)=p(i1,i2)+dt*kappa(i1,i2)*(idz*diff1+idx*diff2)
+     enddo
+  enddo
+end subroutine step_forward_p
+
+!----------------------------------------------------------------------------
+subroutine add_sources(p, dt, wlt, sz, sx, nz, nx, nb)
+  implicit none
+
+  integer::sz,sx,nz,nx,nb
+  real::dt,wlt
+  real,dimension(-nb+1:nb+nz,-nb+1:nb+nx)::p
+
+  p(sz,sx)=p(sz,sx)+dt*wlt
+end subroutine add_sources
+
+!----------------------------------------------------------------------------
+subroutine compute_energy(e,vz,vx,p,rho,kappa,nz,nx)
+  !compute the sum of kinematic energy and deformation/potential energy
+  implicit none
+
+  integer::nz,nx
+  real::e
+  real,dimension(1:nz,1:nx)::rho,kappa,p,vz,vx
+
+  e=0.5*sum((vz*vz+vx*vx)*rho+p*p/kappa)
+end subroutine compute_energy
+

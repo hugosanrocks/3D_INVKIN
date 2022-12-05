@@ -1,0 +1,90 @@
+3DINVKIN Template
+
+PLEASE RUN clean.sh BEFORE COMMITING ANY CHANGE
+
+Possible process available:
+
+0. Preprocessing of stress fields
+1. Forward modeling of synthetic seismograms
+2. Kinematic source inversion (SIS or PIS)
+3. Hessian estimation
+
+
+###########################################################
+0. Preprocessing
+###########################################################
+
+Estimation of unitary traction vectors along a given fault
+geometry from the stress fields and the given strike and 
+dip directions.
+
+INPUTS: 
+dat/SIGMA_**_C*       Stress fields
+dat/sliprate.info     Information of traction output length
+dat/simul.info        Information of input stress fields
+dat/focal.info        Geometrical information
+dat/filpreproc.info   Time filtering information
+
+OUTPUTS:
+dat/TRACT_time.bin    Traction vectors in time domain
+
+
+###########################################################
+1. Forward modeling
+###########################################################
+
+Estimation of velocity recordings given a rupture
+scenario.
+
+INPUTS:
+dat/TRACT_time.bin    Traction vectors in time domain
+dat/simul.info        Information of all time arrays
+dat/focal.info        Information of focal mechanisms
+dat/map_focal.info    Local focal mechanisms
+dat/sliprate.info     Information of traction time history
+dat/filter.info       Not used but necessary to run
+dat/fwioption.info    Not used but necessary to run
+dat/syn.info          Information about source and wavefield windows
+dat/vitesse.out       Sliprate time-space history
+dat/obs_S***_C*       Not used but necessary to run and plot
+
+OUTPUTS:
+out/syn_S***_C*.ascii Synthetic seismograms S(station)_C(component)
+out/obs_S***_C*.a     Observed seismograms used to plot
+out/syn_S***.head     Header of synthetic wavefileds
+out/syn_S***.win      Header of time windows used
+out/fault.mus         Mu modulli along the fault
+
+###########################################################
+2. Kinematic source inversion
+###########################################################
+
+Kinematic source inversion as described in Sanchez-Reyes et
+al. (2017). The inversion can be a SIS or a PIS according to
+the correct choices given inside the input files.
+
+INPUTS:
+dat/TRACT_time.bin    Traction vectors in time domain
+dat/simul.info        Information of all time arrays
+dat/focal.info        Information of focal mechanisms
+dat/map_focal.info    Local focal mechanisms
+dat/sliprate.info     Information of traction time history
+dat/filter.info       Time-space filtering options
+dat/fwioption.info    Optimization, regularization and preconditioning options
+dat/syn.info          Information about source and wavefield windows
+                      Initial sliprate time-space history
+dat/vitesse.out       for SIS inversion
+dat/modelpri*.dat     for PIS Inversion modelpri1d.dat modelpri.dat (1D or 2D)
+dat/obs_S***_C*       Observed wavefields
+
+OUTPUTS:
+out/syn_S***_C*.ascii Synthetic seismograms S(station)_C(component)
+out/obs_S***_C*.a     Observed seismograms used to plot
+out/syn_S***.head     Header of synthetic wavefileds
+out/syn_S***.win      Header of time windows used
+out/fault.mus         Mu modulli along the fault
+dat/modelpri*.dat     Inverted sliprate time-space history (1column)
+                      modelpri1d.dat (1D), modelpri.dat (2D)
+iterate_PLBFGS        Information of the optimization tool                      
+out/angle.out         Information to compute local angles as post process
+

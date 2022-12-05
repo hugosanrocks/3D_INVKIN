@@ -1,0 +1,371 @@
+!  Backward reconstruction based on DFT and inverse DFT
+!
+!!$  Copyright (C) 2015 University Joseph Fourier, Grenoble (Pengliang Yang)
+!!$  
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+program dftinterp2
+  implicit none
+  include "interp_type.h"
+  type(interp_type)::interp
+
+  integer :: it, nt, mt, nz, nx, nb, sx, sz, r
+  integer :: xtr,ztr,kt,ierr
+  real  :: dt, dz, dx, amp, fm, vpmax, tmp, idx, idz, dtb
+  real, dimension (:),   allocatable :: wlt,bb,aa,ef,eb, trf, trb
+  real, dimension (:,:), allocatable :: v0, vv, rho,kappa, eta
+  real, dimension (:,:), allocatable :: p, vz, vx
+  complex, dimension(:,:,:,:),allocatable::cb1min,cb1max,cb2min,cb2max
+
+
+  ! Read/Write axes
+  nz=301
+  nx=301
+  dz=5.
+  dx=5.
+  nb=25 ! number of boundary layers
+  nt=1000
+  dt=0.001
+  dtb=4*dt
+  amp=1. !maximum amplitude of ricker wavelet
+  fm=20. !domainant freq for ricker wavelet
+  xtr=100 !grid location of randomly extract a seismic trace
+  ztr=100 !grid location of randomly extract a seismic trace
+  kt=250
+
+
+  idx=1./dx
+  idz=1./dz
+  sx=(nx+1)/2
+  sz=(nz+1)/2
+  r=nint(dtb/dt)
+  if(mod(nt,r)==0) then
+     write(0,*) 'store boundary every r-step: r=', r
+     mt=nt/r !N=nt;M=mt; M=N/r
+  else
+     write(0,*) 'dt for boundary saving is chosen inappropriately.'
+     call exit(0)
+  endif
+
+  allocate(wlt(nt))
+  allocate(bb(nb))
+  allocate(aa(nb))
+  allocate(v0(nz,nx))
+  allocate(vv(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(rho(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(kappa(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(p(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vz(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vx(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(cb1min(mt/2+1,-1:1,1:nx,1),stat=ierr)
+  allocate(cb1max(mt/2+1,-1+nz:1+nz,1:nx,1),stat=ierr)
+  allocate(cb2min(mt/2+1,1:nz,-1:1,1),stat=ierr)
+  allocate(cb2max(mt/2+1,1:nz,-1+nx:1+nx,1),stat=ierr)
+  call decimate_interp_init(interp,nz,nx,1,nt,mt,0,3)    
+  if (ierr /= 0) then
+     write(0,*) 'Error: Allocation failed!'
+     call exit(0)
+  endif
+  allocate(ef(nt))
+  allocate(eb(nt))
+  allocate(trf(nt))
+  allocate(trb(nt))
+
+  !generate ricker wavelet with a delay
+  do it=1,nt  
+     tmp=3.1415926535897932*fm*(it*dt-1.0/fm)
+     tmp=tmp*tmp
+     wlt(it)=amp*(1.0-2.0*tmp)*exp(-tmp)
+  enddo
+  v0=2000.
+  vpmax=maxval(v0)
+  call check_sanity(vpmax,dt,dx,dz)
+  call expand2d(vv, v0, nz, nx, nb)
+  rho=1000.
+  call expand2d(rho, v0, nz, nx, nb)
+  call sponge_coeff(bb,vpmax,dx,dt,nb)
+  kappa=rho*vv*vv
+  p=0.
+  vx=0.
+  vz=0.
+  !------------------------------------------------------------------!
+  !initialize the allocated memory for DFT coefficients with zeros
+  !------------------------------------------------------------------!
+  cb1min=cmplx(0,0)
+  cb1max=cmplx(0,0)
+  cb2min=cmplx(0,0)
+  cb2max=cmplx(0,0)
+  trf=0.
+  trb=0.
+  ef=0.
+  eb=0.
+
+
+  !forward modeling
+  do it=1,nt
+     call add_sources(p, dt, wlt(it), sz, sx, nz,nx,nb)
+     call step_forward_v(p, vz(:,:), vx(:,:), rho, dt, idz, idx, nz,nx,nb)
+     call apply_sponge(vz(:,:),bb,nz,nx,nb)
+     call apply_sponge(vx(:,:),bb,nz,nx,nb)
+     call step_forward_p(p, vz(:,:), vx(:,:), kappa, dt, idz, idx, nz,nx,nb)
+     call apply_sponge(p,bb,nz,nx,nb)
+     !-----------------------------------------------------------------------!
+     !decimation sampling: flag v2b=.true.
+     !-----------------------------------------------------------------------!
+     call dft_interp(.true.,bvzt,vz(-1:1,1:nx),-1,1,1,nx,1,1,nt,mt,it)
+     call dft_interp(.true.,bvzb,vz(-1+nz:1+nz,1:nx),-1+nz,1+nz,1,nx,1,1,nt,mt,it)
+     call dft_interp(.true.,bvxl,vx(1:nz,-1:1),1,nz,-1,1,1,1,nt,mt,it)
+     call dft_interp(.true.,bvxr,vx(1:nz,-1+nx:1+nx),1,nz,-1+nx,1+nx,1,1,nt,mt,it)
+
+     trf(it)=p(ztr,xtr)
+     call compute_energy(ef(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     if(it==kt) then
+        call window2d(v0, p, nz, nx, nb)
+        open(10,file='forward_kt.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+  enddo
+  open(10,file='ef.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) ef
+  close(10)
+  open(10,file='trf.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trf
+  close(10)
+
+
+  !backward reconstruction
+  do it=nt,1,-1
+     !----------------------------------------------------------------------!
+     !reconstruct wavefield boundaries by DFT interpolation: flag v2b=.fasle.
+     !----------------------------------------------------------------------!
+     call dft_interp(.false.,bvzt,vz(-1:1,1:nx),-1,1,1,nx,1,1,nt,mt,it)
+     call dft_interp(.false.,bvzb,vz(-1+nz:1+nz,1:nx),-1+nz,1+nz,1,nx,1,1,nt,mt,it)
+     call dft_interp(.false.,bvxl,vx(1:nz,-1:1),1,nz,-1,1,1,1,nt,mt,it)
+     call dft_interp(.false.,bvxr,vx(1:nz,-1+nx:1+nx),1,nz,-1+nx,1+nx,1,1,nt,mt,it)
+
+     trb(it)=p(ztr,xtr)
+     call compute_energy(eb(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     if(it==kt) then
+     	call window2d(v0, p, nz, nx, nb)
+        open(10,file='reconstructed_kt.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+
+     call step_forward_p(p, vz(:,:), vx(:,:), kappa, -dt, idz, idx, nz,nx,nb)
+     call step_forward_v(p, vz(:,:), vx(:,:), rho, -dt, idz, idx, nz,nx,nb)
+     call add_sources(p, -dt, wlt(it), sz, sx, nz,nx,nb)
+  enddo
+  open(10,file='eb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) eb
+  close(10)
+  open(10,file='trb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trb
+  close(10)
+
+  call decimate_interp_close(interp)
+  deallocate(wlt)
+  deallocate(bb)
+  deallocate(aa)
+  deallocate(ef)
+  deallocate(eb)
+  deallocate(v0)
+  deallocate(vv)
+  deallocate(rho)
+  deallocate(kappa)
+  deallocate(p)
+  deallocate(vz)
+  deallocate(vx)  
+  deallocate(bvzt)
+  deallocate(bvzb)
+  deallocate(bvxl)
+  deallocate(bvxr)
+  deallocate(trf)
+  deallocate(trb)
+
+  call exit(0)
+end program dftinterp2
+
+!===========================================================================
+subroutine bndr_decimate_interp(flag,method,pbdir,it,adjorder)
+  implicit none
+  include "interp_type.h"
+  include "pbdir_type.h"
+  type(interp_type)::interp
+  type(pbdir_type)::pbdir 
+  character(len=10):: flag,method
+  integer::it,adjorder
+
+  !copy it to local array, FD stencil O(2,4) nblayers=4-1=3
+  if(flag=='decimation') then !vx,vy,vz ==>boundary memory
+     interp%top=pbdir%vz1(0:2,1:n2,1:n3)
+     interp%bottom=pbdir%vz1(n1:n1+2,1:n2,1:n3)
+     interp%left=pbdir%vx1(1:n1,0:2,1:n3)
+     interp%right=pbdir%vx1(1:n1,n2:n2+2,1:n3)
+     if(method=='ksinc') then
+        call ksinc_interp(.true.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,4)!top
+        call ksinc_interp(.true.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,4)!bottom
+        call ksinc_interp(.true.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,4)!left
+        call ksinc_interp(.true.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,4)!right
+     elseif(method=='poly') then
+        call poly_interp(.true.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,7)!top
+        call poly_interp(.true.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,7)!bottom
+        call poly_interp(.true.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,7)!left
+        call poly_interp(.true.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,7)!right
+     elseif(method=='dft') then
+        call dft_interp(.true.,pbdir%cb1min,interp%top,1,3,1,n2,1,n3,nt,mt,it)!top
+        call dft_interp(.true.,pbdir%cb1max,interp%bottom,1,3,1,n2,1,n3,nt,mt,it)!bottom
+        call dft_interp(.true.,pbdir%cb2min,interp%left,1,n1,1,3,1,n3,nt,mt,it)!left
+        call dft_interp(.true.,pbdir%cb2max,interp%right,1,n1,1,3,1,n3,nt,mt,it)!right
+     endif
+
+     if(pbdir%i3d==1) then
+        interp%front=pbdir%vy1(1:n1,1:n2,0:2)
+        interp%rear=pbdir%vy1(1:n1,1:n2,n3:n3+2)
+        if(method=='ksinc') then
+           call ksinc_interp(.true.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,4)!front
+           call ksinc_interp(.true.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,4)!rear
+        elseif(method=='poly') then
+           call poly_interp(.true.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,7)!front
+           call poly_interp(.true.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,7)!rear
+        elseif(method=='dft') then
+           call dft_interp(.true.,pbdir%cb3min,interp%front,1,n1,1,n2,1,3,nt,mt,it)!front
+           call dft_interp(.true.,pbdir%cb3max,interp%rear,1,n1,1,n2,1,3,nt,mt,it)!rear
+        endif
+     endif
+  elseif(flag=='interpolation') then !stored boundary==>vx,vy,vz
+     if(method=='ksinc') then
+        call ksinc_interp(.false.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,4)!top
+        call ksinc_interp(.false.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,4)!bottom
+        call ksinc_interp(.false.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,4)!left
+        call ksinc_interp(.false.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,4)!right
+     elseif(method=='poly') then
+        call poly_interp(.false.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,7)!top
+        call poly_interp(.false.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,7)!bottom
+        call poly_interp(.false.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,7)!left
+        call poly_interp(.false.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,7)!right
+     elseif(method=='dft') then
+        call dft_interp(.false.,pbdir%cb1min,interp%top,1,3,1,n2,1,n3,nt,mt,it)!top
+        call dft_interp(.false.,pbdir%cb1max,interp%bottom,1,3,1,n2,1,n3,nt,mt,it)!bottom
+        call dft_interp(.false.,pbdir%cb2min,interp%left,1,n1,1,3,1,n3,nt,mt,it)!left
+        call dft_interp(.false.,pbdir%cb2max,interp%right,1,n1,1,3,1,n3,nt,mt,it)!right
+     endif
+     pbdir%vz1(0:2,1:n2,1:n3)=interp%top
+     pbdir%vz1(n1:n1+2,1:n2,1:n3)=interp%bottom
+     pbdir%vx1(1:n1,0:2,1:n3)=interp%left
+     pbdir%vx1(1:n1,n2:n2+2,1:n3)=interp%right
+     if(pbdir%i3d==1) then
+        if(method=='ksinc') then
+           call ksinc_interp(.false.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,4)!front
+           call ksinc_interp(.false.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,4)!rear
+        elseif(method=='poly') then
+           call poly_interp(.false.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,7)!front
+           call poly_interp(.false.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,7)!rear
+        elseif(method=='dft') then
+           call dft_interp(.false.,pbdir%cb3min,interp%front,1,n1,1,n2,1,3,nt,mt,it)!front
+           call dft_interp(.false.,pbdir%cb3max,interp%rear,1,n1,1,n2,1,3,nt,mt,it)!rear
+        endif
+        pbdir%vy1(1:n1,1:n2,0:2)=interp%front
+        pbdir%vy1(1:n1,1:n2,n3:n3+2)=interp%rear
+     endif
+  endif
+
+  !interpolate 2nd order adjoint field mu1
+  if(adjorder==2) then
+     if(flag=='decimation') then !vx,vy,vz ==>boundary memory
+        interp%top=pbdir%uvz1(0:2,1:n2,1:n3)
+        interp%bottom=pbdir%uvz1(n1:n1+2,1:n2,1:n3)
+        interp%left=pbdir%uvx1(1:n1,0:2,1:n3)
+        interp%right=pbdir%uvx1(1:n1,n2:n2+2,1:n3)
+        if(method=='ksinc') then
+           call ksinc_interp(.true.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,4)!top
+           call ksinc_interp(.true.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,4)!bottom
+           call ksinc_interp(.true.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,4)!left
+           call ksinc_interp(.true.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,4)!right
+        elseif(method=='poly') then
+           call poly_interp(.true.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,7)!top
+           call poly_interp(.true.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,7)!bottom
+           call poly_interp(.true.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,7)!left
+           call poly_interp(.true.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,7)!right
+        elseif(method=='dft') then
+           call dft_interp(.true.,pbdir%cb1min,interp%top,1,3,1,n2,1,n3,nt,mt,it)!top
+           call dft_interp(.true.,pbdir%cb1max,interp%bottom,1,3,1,n2,1,n3,nt,mt,it)!bottom
+           call dft_interp(.true.,pbdir%cb2min,interp%left,1,n1,1,3,1,n3,nt,mt,it)!left
+           call dft_interp(.true.,pbdir%cb2max,interp%right,1,n1,1,3,1,n3,nt,mt,it)!right
+        endif
+
+        if(pbdir%i3d==1) then
+           interp%front=pbdir%uvy1(1:n1,1:n2,0:2)
+           interp%rear=pbdir%uvy1(1:n1,1:n2,n3:n3+2)
+           if(method=='ksinc') then
+              call ksinc_interp(.true.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,4)!front
+              call ksinc_interp(.true.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,4)!rear
+           elseif(method=='poly') then
+              call poly_interp(.true.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,7)!front
+              call poly_interp(.true.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,7)!rear
+           elseif(method=='dft') then
+              call dft_interp(.true.,pbdir%cb3min,interp%front,1,n1,1,n2,1,3,nt,mt,it)!front
+              call dft_interp(.true.,pbdir%cb3max,interp%rear,1,n1,1,n2,1,3,nt,mt,it)!rear
+           endif
+        endif
+     elseif(flag=='interpolation') then !stored boundary==>vx,vy,vz
+        if(method=='ksinc') then
+           call ksinc_interp(.false.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,4)!top
+           call ksinc_interp(.false.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,4)!bottom
+           call ksinc_interp(.false.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,4)!left
+           call ksinc_interp(.false.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,4)!right
+        elseif(method=='poly') then
+           call poly_interp(.false.,pbdir%rb1min,interp%top, 1,3,1,n2,1,n3,nt,mt,it,7)!top
+           call poly_interp(.false.,pbdir%rb1max,interp%bottom, 1,3,1,n2,1,n3,nt,mt,it,7)!bottom
+           call poly_interp(.false.,pbdir%rb2min,interp%left, 1,n1,1,3,1,n3,nt,mt,it,7)!left
+           call poly_interp(.false.,pbdir%rb2max,interp%right, 1,n1,1,3,1,n3,nt,mt,it,7)!right
+        elseif(method=='dft') then
+           call dft_interp(.false.,pbdir%cb1min,interp%top,1,3,1,n2,1,n3,nt,mt,it)!top
+           call dft_interp(.false.,pbdir%cb1max,interp%bottom,1,3,1,n2,1,n3,nt,mt,it)!bottom
+           call dft_interp(.false.,pbdir%cb2min,interp%left,1,n1,1,3,1,n3,nt,mt,it)!left
+           call dft_interp(.false.,pbdir%cb2max,interp%right,1,n1,1,3,1,n3,nt,mt,it)!right
+        endif
+        pbdir%uvz1(0:2,1:n2,1:n3)=interp%top
+        pbdir%uvz1(n1:n1+2,1:n2,1:n3)=interp%bottom
+        pbdir%uvx1(1:n1,0:2,1:n3)=interp%left
+        pbdir%uvx1(1:n1,n2:n2+2,1:n3)=interp%right
+        if(pbdir%i3d==1) then
+           if(method=='ksinc') then
+              call ksinc_interp(.false.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,4)!front
+              call ksinc_interp(.false.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,4)!rear
+           elseif(method=='poly') then
+              call poly_interp(.false.,pbdir%rb3min,interp%front, 1,n1,1,n2,1,3,nt,mt,it,7)!front
+              call poly_interp(.false.,pbdir%rb3max,interp%rear, 1,n1,1,n2,1,3,nt,mt,it,7)!rear
+           elseif(method=='dft') then
+              call dft_interp(.false.,pbdir%cb3min,interp%front,1,n1,1,n2,1,3,nt,mt,it)!front
+              call dft_interp(.false.,pbdir%cb3max,interp%rear,1,n1,1,n2,1,3,nt,mt,it)!rear
+           endif
+           pbdir%uvy1(1:n1,1:n2,0:2)=interp%front
+           pbdir%uvy1(1:n1,1:n2,n3:n3+2)=interp%rear
+        endif
+     endif
+  endif
+end subroutine bndr_decimate_interp
+
+
+
+

@@ -1,0 +1,8 @@
+2              !SIS or PIS option: 1=vitesse.out, 2=modelpri*.dat
+2 2 5          !1=do not extend time modelsize,2=extend it, #samples, #samplesint
+10 10          !data windows to read, windows to invert, window to forward (from 2:x)
+10             !synwin: until which window to estimate synthetic from 2:x
+0 5 7 9 11 15 21 29 37 39  !# slip-rate time samples at each progressive stage (PIS only)
+
+synwin must be <= invwin
+

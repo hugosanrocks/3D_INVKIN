@@ -1,0 +1,787 @@
+module tetra_mesh_partition_mod
+
+  use mem_alloc_mod
+  use tetra_mesh_struct_mod
+  use mesh_partition_struct_mod
+  use mesh_partition_mod
+  use tetra_comm_struct_mod
+  use tetra_mesh_graphs_mod
+
+  implicit none
+
+  ! Public types and functions
+  !-----------------------------
+
+  public :: tetra_mesh_partition
+
+  contains
+
+
+  subroutine tetra_mesh_partition(mesh, graph_type, weight, npart, mesh_part, comm_part)
+
+    type(tetra_mesh_struct_type),                   intent(in out) :: mesh
+    integer,                                        intent(in)     :: graph_type, weight, npart
+    type(tetra_mesh_struct_type), dimension(npart), intent(out)    :: mesh_part
+    type(tetra_comm_struct_type), dimension(npart), intent(in out) :: comm_part
+
+    integer,         dimension(:),   pointer         :: e_part
+    integer                                          :: numflag!, rc, cpt
+    integer                                          :: ne_min, ne_max, nnghb_min, nnghb_max
+    integer                                          :: ie1, ie2!, ie, ieloc, ietag, ietagloc
+    integer                                          :: ipart, ipart1, ipart2
+    integer                                          :: nfacref, nFdeg, ifac!, ifacloc
+    !integer                                          :: ifactag, ifactagloc, tag
+    !integer                                          :: i, i1, iEnd
+    !integer                                          :: iv, ivloc, ivref, ncornerref, vertex_max_share, vertex_min_share
+    integer,         dimension(npart)                :: nnghb_part    ! nb neighbour subdomains per partition
+    integer,         dimension(npart,npart)          :: nghb_part     ! (relative nghb index, part id) = absolute nghb id
+    integer,         dimension(npart,npart)          :: map_nghb_part ! (absolute part id, absolute part id) = >1 (relative nghb index) or 0 (not nghb)
+    integer,         dimension(npart)                :: ne_part    ! nb elements per partition
+    !integer,         dimension(npart)                :: cpt_part
+    !integer,         dimension(:),   allocatable     :: Eglobtoloc, Etagglobtoloc
+    !type(entity_part_cell_t), dimension(:), allocatable, target :: Vglobtoloc, Fglobtoloc, Ftagglobtoloc
+    !type(entity_part_cell_t),                pointer :: NextCell => Null(), NextCell2 => Null()
+    !character(len=3)                                 :: str1
+    !character(len=15)                                :: ht_name
+    character(len=*),                      parameter :: proc_name = "tetra_mesh_partition"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    !------------------------------------------------
+    !
+    !          mesh partitioning with metis
+    !
+    !------------------------------------------------
+    nfacref     = 4
+    nFdeg       = 4
+    numflag     = 1 ! fortran style numbering
+
+    write(*,*)
+    write(*,*)
+    write(*,*) '------------------------------------------------------------'
+    write(*,*)
+    write(*,*) '           S T A R T   M E S H   P A R T I T I O N'
+    write(*,*)
+    write(*,*) '------------------------------------------------------------'
+    write(*,*)
+    write(*,*)
+
+    call mesh_partition(mesh%nEdeg, mesh%nV, mesh%nE, mesh%coorV, mesh%EtoV, &
+    &                   e_part, graph_type, weight, npart)
+
+    !=================================
+    !---------------------------------
+    ! Connectivity between subdomains
+    !---------------------------------
+    !=================================
+
+    !----------------------------------------------------------
+    ! retrieve the number of elements per partition
+    !----------------------------------------------------------
+    ne_part(:) = 0
+    do ie1 = 1, mesh%nE
+      ipart1          = e_part(ie1)
+      ne_part(ipart1) = ne_part(ipart1) + 1
+    end do
+
+    nnghb_part(:)      = 0
+    nghb_part(:,:)     = 0
+    map_nghb_part(:,:) = 0
+
+    !----------------------------------------------------------
+    ! retrieve the neighbour partitions of each partition
+    !----------------------------------------------------------
+    do ie1 = 1, mesh%nE
+      ipart1 = e_part(ie1)
+
+      ! Neighbouring by faces
+      do ifac = 1, nfacref
+        ie2 = mesh%EtoE(ifac, ie1)
+
+        ! external face
+        if (ie2 == 0) cycle
+
+        ipart2  = e_part(ie2)
+        if ((ipart2 /= 0) .and. (ipart1 /= ipart2)) then
+
+          ! is ipart2 already stored as neighbour of ipart1?
+          if (map_nghb_part(ipart2, ipart1) == 0) then
+            nnghb_part(ipart1) = nnghb_part(ipart1) + 1 
+            map_nghb_part(ipart2, ipart1) = nnghb_part(ipart1)
+            nghb_part(nnghb_part(ipart1), ipart1) = ipart2
+
+            nnghb_part(ipart2) = nnghb_part(ipart2) + 1 
+            map_nghb_part(ipart1, ipart2) = nnghb_part(ipart2)
+            nghb_part(nnghb_part(ipart2), ipart2) = ipart1
+          end if
+
+        end if ! if ((ipart2 /= 0) .and. (ipart1 /= ipart2))
+      end do ! do ifac = 1, nfacref
+
+    end do !  do ie1 = 1, mesh%nE
+  
+    ! retrieve min - max number of elements per partition
+    ne_min = minval(ne_part(:))
+    ne_max = maxval(ne_part(:))
+
+    write(*,*) 'Min and max number of elements   per partition =', ne_min, ne_max  
+
+    ! retrieve max number of neighbours per proc
+    nnghb_min = minval(nnghb_part(:))
+    nnghb_max = maxval(nnghb_part(:))
+
+    write(*,*) 'Min and max number of neighbours per partition =', nnghb_min, nnghb_max  
+
+    ! simple check 
+    if (sum(ne_part(:)) /= mesh%nE) then
+       write(*,*) ''
+       write(*,*) proc_name, ' :: ERROR : in sum of partitioned elements :', mesh%ne, sum(ne_part(:))
+    end if
+
+    write(*,*)
+    write(*,*) 'Partitions:'
+    if (dd_debug_level > 0) then
+      do ipart = 1, npart
+        write(*,*) ipart, ' ne = ', ne_part(ipart), &
+        & ' nnghb = ', nnghb_part(ipart), &
+        & ' nghb = ', nghb_part(:,ipart), &
+        & ' map_nghb = ', map_nghb_part(:,ipart)
+      end do
+    else
+      do ipart = 1, npart
+        write(*,*) ipart, ' Nb elements = ', ne_part(ipart), &
+        & ' Nb neighbours = ', nnghb_part(ipart)
+      end do
+    end if
+    write(*,*)
+
+!     !----------------------------------------------------------
+!     ! Compute mapping between element partition local numbering
+!     ! and global one
+!     ! (as an element belongs to a single partition, 
+!     !  no need to define a hashtable for Eglobtoloc)
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       mesh_part(ipart)%nE    = ne_part(ipart)
+!       mesh_part(ipart)%nEdeg = mesh%nEdeg
+!       if (mesh_part(ipart)%nE > 0) then
+!         !call alloc_(mesh_part(ipart)%Eloctoglob, 1, mesh_part(ipart)%nE, 'Eloctoglob')
+!         allocate(mesh_part(ipart)%Eloctoglob%tab(1:mesh_part(ipart)%nE))
+!         mesh_part(ipart)%Eloctoglob%tab(:) = 0
+!       end if
+!       mesh_part(ipart)%Eloctoglob%n = mesh_part(ipart)%nE
+!     end do
+!     call alloc_(Eglobtoloc, 1, mesh%nE, 'Eglobtoloc')
+! 
+!     cpt_part(:) = 0
+!     do ie = 1, mesh%nE ! global index
+!       ipart           = e_part(ie)
+!       cpt_part(ipart) = cpt_part(ipart) + 1
+! 
+!       ieloc = cpt_part(ipart)
+!       mesh_part(ipart)%Eloctoglob%tab(ieloc) = ie         ! keep the element global index
+!       Eglobtoloc(ie)                         = ieloc      ! keep the element local  index in the owner partition
+!     end do
+! 
+!     ! simple check 
+!     do ipart = 1, npart
+!       if (cpt_part(ipart) /= mesh_part(ipart)%nE) then
+!         write(*,*) proc_name, ' :: ERROR : in partition ', ipart, &
+!         & ' wrong number of retrieved elements :', mesh_part(ipart)%nE, cpt_part(ipart)
+!       end if
+!     end do
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'Eloctoglob info:'
+!       write(*,*)
+!       do ipart = 1, npart
+!         do ieloc = 1, mesh_part(ipart)%nE
+!           write(*,'(3(A,I6))') 'ipart =', ipart, ' ieloc =', ieloc, ' ieglob =', mesh_part(ipart)%Eloctoglob%tab(ieloc)
+!         end do
+!       end do
+!       write(*,*)
+!       write(*,*)
+!       write(*,*) 'Eglobtoloc info:'
+!       write(*,*)
+!       do ie = 1, mesh%nE
+!         write(*,'(2(A,I6))') ' ieglob =', ie, ' ieloc =', Eglobtoloc(ie)
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Retrieve vertices associated to each partition
+!     ! and mapping between local partition numbering and global one
+!     !----------------------------------------------------------
+!     allocate(Vglobtoloc(1:mesh%nV), stat = rc)
+!     if (rc /= 0) then
+!       write(error_message,*) proc_name, ' :: ERROR : on array allocation Vglobtoloc: ', rc
+!       call stop_mpi()
+!     end if
+!     do iv = 1, mesh%nv
+!       call entity_part_cell_default_constructor(Vglobtoloc(iv))
+!     end do
+! 
+!     cpt_part(:) = 0
+!     do iv = 1, mesh%nV ! global index
+!       i1   = mesh%VtoE%i1(iv)
+!       iEnd = mesh%VtoE%i1(iv+1) - 1
+!       do i = i1, iEnd
+!         ie = mesh%VtoE%ie(i) ! global index
+!         ipart = e_part(ie)
+! 
+!         call fulfill_entity_part_ht(iv, ipart, npart, cpt_part, Vglobtoloc)
+! 
+!       end do ! i = i1, iEnd
+!     end do ! iv = 1, mesh%nV
+! 
+!     if (debug_graph > 0) then
+!       ht_name = 'Vglobtoloc'
+!       call dump_entity_part_ht(Vglobtoloc, mesh%nV, ht_name)
+!     end if
+! 
+!     ! Store the number of vertices per partition
+!     do ipart = 1, npart
+!       mesh_part(ipart)%nV = cpt_part(ipart)
+!     end do
+! 
+!     ! Compute the min and max number of partitions sharing a same vertex
+!     vertex_min_share = 100
+!     vertex_max_share = 0
+!     do iv = 1, mesh%nV ! global index
+!       NextCell => Vglobtoloc(iv)
+!       cpt = 0
+! 
+!       do while (associated(NextCell))
+!         cpt = cpt + 1
+!         NextCell => NextCell%next
+!       end do
+! 
+!       vertex_min_share = min(cpt, vertex_min_share)
+!       vertex_max_share = max(cpt, vertex_max_share)
+!     end do
+! 
+!     write(*,*)
+!     write(*,*) 'min/max number of partitions sharing the same vertex :', vertex_min_share, vertex_max_share
+!     write(*,*)
+! 
+!     !----------------------------------------------------------
+!     ! Compute mapping between vertex partition local numbering
+!     ! and global one and store coordinates
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       if (mesh_part(ipart)%nV > 0) then
+!         !call alloc_(mesh_part(ipart)%Vloctoglob,  1, mesh_part(ipart)%nV, 'Vloctoglob')
+!         allocate(mesh_part(ipart)%Vloctoglob%tab(1:mesh_part(ipart)%nV))
+!         mesh_part(ipart)%Vloctoglob%tab(:) = 0
+!         call alloc_(mesh_part(ipart)%coorV, 1, 3, 1, mesh_part(ipart)%nV, 'coorV')
+!       end if
+!       mesh_part(ipart)%Vloctoglob%n = mesh_part(ipart)%nV
+!     end do
+! 
+!     do iv = 1, mesh%nV ! global index
+!       NextCell => Vglobtoloc(iv)
+! 
+!       do while (associated(NextCell))
+!         ipart = NextCell%ipart
+!         ivloc = NextCell%iloc
+! 
+!         mesh_part(ipart)%Vloctoglob%tab(ivloc) = iv
+!         mesh_part(ipart)%coorV(:,ivloc) = mesh%coorV(:,iv)
+! 
+!         NextCell => NextCell%next
+!       end do
+!     end do
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'Vloctoglob and coorV info:'
+!       write(*,*)
+!       do ipart = 1, npart
+!         do ivloc = 1, mesh_part(ipart)%nV
+!           write(*,'(3(A,I6),A,3F17.10)') 'ipart =', ipart, ' ivloc =', ivloc,       &
+!           &                    ' ivglob =', mesh_part(ipart)%Vloctoglob%tab(ivloc), &
+!           &                    ' coor = ', mesh_part(ipart)%coorV(:,ivloc)
+!         end do
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Compute element connectivity with local vertex numbering
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       if (mesh_part(ipart)%nE > 0) then
+!         call alloc_(mesh_part(ipart)%EtoV, 1, mesh%nEdeg, 1, mesh_part(ipart)%nE, 'EtoV')
+!       end if
+!     end do
+! 
+!     do ie = 1, mesh%nE ! global index
+!       ipart = e_part(ie)
+!       ieloc = Eglobtoloc(ie)
+! 
+!       do i = 1, mesh%nEdeg
+!         iv = mesh%EtoV(i,ie) ! global index
+! 
+!         NextCell => Vglobtoloc(iv)
+! 
+!         loop1 : do while (associated(NextCell))
+! 
+!           if (ipart == NextCell%ipart) then
+!             mesh_part(ipart)%EtoV(i,ieloc) = NextCell%iloc ! local index
+!             exit loop1
+!           end if
+! 
+!           NextCell => NextCell%next
+! 
+!         end do loop1
+! 
+!       end do ! i = 1, mesh%nEdeg
+!     end do ! ie = 1, mesh%nE
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'EtoV info:'
+!       write(*,*)
+!       write(str1,'(I3)') mesh%nEdeg
+!       do ipart = 1, npart
+!         do ieloc = 1, mesh_part(ipart)%nE
+!           write(*,'(3(A,I6),A,'//str1//'I6)') 'ipart =', ipart, ' ieloc =', ieloc,  &
+!           &                    ' ieglob =', mesh_part(ipart)%Eloctoglob%tab(ieloc), &
+!           &                    ' EtoV = ', mesh_part(ipart)%EtoV(:,ieloc)
+!         end do
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Retrieve faces associated to each partition
+!     !----------------------------------------------------------
+!     allocate(Fglobtoloc(1:mesh%nF), stat = rc)
+!     if (rc /= 0) then
+!       write(error_message,*) proc_name, ' :: ERROR : on array allocation : Fglobtoloc', rc
+!       call stop_mpi()
+!     end if
+!     do ifac = 1, mesh%nF
+!       call entity_part_cell_default_constructor(Fglobtoloc(ifac))
+!     end do
+! 
+!     cpt_part(:) = 0
+!     do ifac = 1, mesh%nF ! global index
+!       do i = 1, 2
+!         ie = mesh%FtoE(i, ifac)
+!         
+!         if (ie == 0) cycle
+! 
+!         ipart = e_part(ie)
+! 
+!         call fulfill_entity_part_ht(ifac, ipart, npart, cpt_part, Fglobtoloc)
+! 
+!       end do ! i = 1, 2
+!     end do ! ifac = 1, mesh%nF
+! 
+!     if (debug_graph > 0) then
+!       ht_name = 'Fglobtoloc'
+!       call dump_entity_part_ht(Fglobtoloc, mesh%nF, ht_name)
+!     end if
+! 
+!     ! Store the number of faces per partition
+!     do ipart = 1, npart
+!       mesh_part(ipart)%nF = cpt_part(ipart)
+!     end do
+! 
+!     !----------------------------------------------------------
+!     ! Compute mapping between face partition local numbering
+!     ! and global one
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       if (mesh_part(ipart)%nF > 0) then
+!         !call alloc_(mesh_part(ipart)%Floctoglob, 1, mesh_part(ipart)%nF, 'Floctoglob')
+!         allocate(mesh_part(ipart)%Floctoglob%tab(1:mesh_part(ipart)%nF))
+!         mesh_part(ipart)%Floctoglob%tab(:) = 0
+!       end if
+!       mesh_part(ipart)%Floctoglob%n = mesh_part(ipart)%nF
+!     end do
+! 
+!     do ifac = 1, mesh%nF ! global index
+!       NextCell => Fglobtoloc(ifac)
+! 
+!       do while (associated(NextCell))
+!         ipart = NextCell%ipart
+!         ifacloc = NextCell%iloc ! local index
+! 
+!         mesh_part(ipart)%Floctoglob%tab(ifacloc) = ifac
+! 
+!         NextCell => NextCell%next
+!       end do
+!     end do ! ifac = 1, mesh%nF
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'Floctoglob info:'
+!       write(*,*)
+!       do ipart = 1, npart
+!         do ifacloc = 1, mesh_part(ipart)%nF
+!           write(*,'(3(A,I6))') 'ipart =', ipart, ' ifacloc =', ifacloc, &
+!           &                    ' ifacglob =', mesh_part(ipart)%Floctoglob%tab(ifacloc)
+!         end do
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Compute the face connectivity with local vertex indices
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       mesh_part(ipart)%nFdeg = mesh%nFdeg
+!       if (mesh_part(ipart)%nF > 0) then
+!         call alloc_(mesh_part(ipart)%FtoV, 1, mesh%nFdeg, 1, mesh_part(ipart)%nF, 'FtoV')
+!       end if
+!     end do
+! 
+!     do ipart = 1, npart
+!       do ifacloc = 1, mesh_part(ipart)%nF
+!         ifac = mesh_part(ipart)%Floctoglob%tab(ifacloc)
+!         do i = 1, mesh%nFdeg
+!           iv = mesh%FtoV(i,ifac)
+! 
+!           NextCell => Vglobtoloc(iv)
+! 
+!           loop4 : do while (associated(NextCell))
+! 
+!             if (ipart == NextCell%ipart) then
+!               mesh_part(ipart)%FtoV(i,ifacloc) = NextCell%iloc ! local index
+!               exit loop4
+!             end if
+! 
+!             NextCell => NextCell%next
+! 
+!           end do loop4
+!         end do ! i = 1, mesh%nFdeg
+!       end do ! ifacloc = 1, mesh_part(ipart)%nF
+!     end do ! ipart = 1, npart
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'FtoV info:'
+!       write(*,*)
+!       write(str1,'(I3)') mesh%nFdeg
+!       do ipart = 1, npart
+!         do ifacloc = 1, mesh_part(ipart)%nF
+!           write(*,'(2(A,I6),A,'//str1//'I6)') 'ipart =', ipart, ' ifacloc =', ifacloc, &
+!           &                    ' FtoV =', mesh_part(ipart)%FtoV(:,ifacloc)
+!         end do
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Compute the element connectivity with local face indices
+!     !----------------------------------------------------------
+!     do ipart = 1, npart
+!       if (mesh_part(ipart)%nE > 0) then
+!         call alloc_(mesh_part(ipart)%EtoF, 1, nfacref, 1, mesh_part(ipart)%nE, 'EtoF')
+!       end if
+!     end do
+! 
+!     do ie = 1, mesh%nE ! global index
+!       ipart = e_part(ie)
+!       ieloc = Eglobtoloc(ie)
+! 
+!       do i = 1, nfacref
+!         ifac = mesh%EtoF(i,ie) ! global index
+! 
+!         NextCell => Fglobtoloc(ifac)
+! 
+!         loop5 : do while (associated(NextCell))
+! 
+!           if (ipart == NextCell%ipart) then
+!             mesh_part(ipart)%EtoF(i,ieloc) = NextCell%iloc ! local index
+!             exit loop5
+!           end if
+! 
+!           NextCell => NextCell%next
+! 
+!         end do loop5
+! 
+!       end do ! i = 1, nfacref
+!     end do ! ie = 1, mesh%nE
+! 
+!     if (debug_graph > 0) then
+!       write(*,*)
+!       write(*,*) 'EtoF info:'
+!       write(*,*)
+!       write(str1,'(I3)') nfacref
+!       do ipart = 1, npart
+!         do ieloc = 1, mesh_part(ipart)%nE
+!           write(*,'(2(A,I6),A,'//str1//'I6)') 'ipart =', ipart, ' ieloc =', ieloc, &
+!           &                    ' EtoF =', mesh_part(ipart)%EtoF(:,ieloc)
+!         end do
+!       end do
+!       write(*,*)
+!     end if
+! 
+!     !----------------------------------------------------------
+!     ! Retrieve tagged faces
+!     !----------------------------------------------------------
+!     if (mesh%nFtag > 0) then
+! 
+!       !----------------------------------------------------------
+!       ! Retrieve tagged faces associated to each partition
+!       !----------------------------------------------------------
+!       allocate(Ftagglobtoloc(1:mesh%nFtag), stat = rc)
+!       if (rc /= 0) then
+!       write(error_message,*) proc_name, ' :: ERROR : on array allocation : Ftagglobtoloc', rc
+!       call stop_mpi()
+!       end if
+!       do ifactag = 1, mesh%nFtag
+!         call entity_part_cell_default_constructor(Ftagglobtoloc(ifactag))
+!       end do
+! 
+!       cpt_part(:) = 0
+!       do ifactag = 1, mesh%nFtag ! global index
+!         ifac = mesh%FtagtoF(ifactag) ! global index
+! 
+!         NextCell => Fglobtoloc(ifac)
+! 
+!         loop6 : do while (associated(NextCell))
+! 
+!           ipart = NextCell%ipart
+! 
+!           call fulfill_entity_part_ht(ifactag, ipart, npart, cpt_part, Ftagglobtoloc)
+! 
+!           NextCell => NextCell%next
+! 
+!         end do loop6
+! 
+!       end do ! ifactag = 1, mesh%nFtag
+! 
+!       if (debug_graph > 0) then
+!         ht_name = 'Ftagglobtoloc'
+!         call dump_entity_part_ht(Ftagglobtoloc, mesh%nFtag, ht_name)
+!       end if
+! 
+!       ! Store the number of tagged faces per partition
+!       do ipart = 1, npart
+!         mesh_part(ipart)%nFtag = cpt_part(ipart)
+!       end do
+! 
+!       !----------------------------------------------------------
+!       ! Compute mapping between tagged faces partition local numbering
+!       ! and global one
+!       !----------------------------------------------------------
+!       do ipart = 1, npart
+!         if (mesh_part(ipart)%nFtag > 0) then
+!           !call alloc_(mesh_part(ipart)%Ftagloctoglob, 1, mesh_part(ipart)%nFtag, 'Ftagloctoglob')
+!           allocate(mesh_part(ipart)%Ftagloctoglob%tab(1:mesh_part(ipart)%nFtag))
+!           mesh_part(ipart)%Ftagloctoglob%tab(:) = 0
+!           call alloc_(mesh_part(ipart)%Ftag,    1, mesh_part(ipart)%nFtag, 'Ftag')
+!           call alloc_(mesh_part(ipart)%FtagtoF, 1, mesh_part(ipart)%nFtag, 'FtagtoF')
+!         end if
+!         mesh_part(ipart)%Ftagloctoglob%n = mesh_part(ipart)%nFtag
+!       end do
+! 
+!       do ifactag = 1, mesh%nFtag ! global index among tagged faces
+!         NextCell => Ftagglobtoloc(ifactag)
+!         tag = mesh%Ftag(ifactag)
+!         ifac = mesh%FtagtoF(ifactag)! global index among all faces
+! 
+!         do while (associated(NextCell))
+!           ipart = NextCell%ipart
+!           ifactagloc = NextCell%iloc ! local index
+! 
+!           mesh_part(ipart)%Ftagloctoglob%tab(ifactagloc) = ifactag
+!           mesh_part(ipart)%Ftag(ifactagloc) = tag
+! 
+!           ! recompute FtagtoF on partition
+!           ! i.e. retrieve the local index of the face among all faces
+!           NextCell2 => Fglobtoloc(ifac)
+!           do while (associated(NextCell2))
+!             if (ipart == NextCell2%ipart) then
+!               ifacloc = NextCell2%iloc ! local index of the face among all faces
+!               mesh_part(ipart)%FtagtoF(ifactagloc) = ifacloc
+!               exit
+!             end if
+!             NextCell2 => NextCell2%next
+!           end do
+! 
+!           NextCell => NextCell%next
+!         end do
+! 
+!       end do ! ifactag = 1, mesh%nFtag
+! 
+!       !----------------------------------------------------------
+!       ! Compute FtagtoE on partition
+!       !----------------------------------------------------------
+!       do ipart = 1, npart
+!         if (mesh_part(ipart)%nFtag > 0) then
+!           call alloc_(mesh_part(ipart)%FtagtoE, 1, 8, 1, mesh_part(ipart)%nFtag, 'FtagtoE')
+!         end if
+!       end do
+! 
+!       do ifactag = 1, mesh%nFtag ! global index among tagged faces
+!         NextCell => Ftagglobtoloc(ifactag)
+! 
+!         do while (associated(NextCell))
+!           ipart = NextCell%ipart
+!           ifactagloc = NextCell%iloc ! local index
+! 
+!           cpt = 0
+!           do i = 1, 2
+!             ie = mesh%FtagtoE(i,ifactag)
+!             ieloc = Eglobtoloc(ie) ! local index of the element among all elements
+! 
+!             if (ipart == e_part(ie)) then
+!               cpt = cpt + 1
+!               mesh_part(ipart)%FtagtoE(cpt  ,ifactagloc) = ieloc
+!               mesh_part(ipart)%FtagtoE(cpt+2,ifactagloc) = mesh%FtagtoE(i+2,ifactag)
+!               mesh_part(ipart)%FtagtoE(cpt+4,ifactagloc) = mesh%FtagtoE(i+4,ifactag)
+!               mesh_part(ipart)%FtagtoE(cpt+6,ifactagloc) = mesh%FtagtoE(i+6,ifactag)
+!             end if
+!           end do
+! 
+!           NextCell => NextCell%next
+!         end do
+! 
+!       end do ! ifactag = 1, mesh%nFtag
+! 
+!       if (debug_graph > 0) then
+!         write(*,*)
+!         write(*,*) 'Ftagloctoglob info:'
+!         write(*,*)
+!         do ipart = 1, npart
+!           do ifacloc = 1, mesh_part(ipart)%nFtag
+!             write(*,'(5(A,I6),A,8I6)') 'ipart =', ipart, ' ifactagloc =', ifacloc,                    &
+!             &                          ' ifactagglob =', mesh_part(ipart)%Ftagloctoglob%tab(ifacloc), &
+!             &                          ' FtagtoF = ', mesh_part(ipart)%FtagtoF(ifacloc),              &
+!             &                          ' tag =', mesh_part(ipart)%Ftag(ifacloc),                      &
+!             &                          ' FtagtoE =', mesh_part(ipart)%FtagtoE(:,ifacloc)
+!           end do
+!         end do
+!         write(*,*)
+!       end if
+! 
+!     end if ! (mesh%nFtag > 0)
+! 
+!     !----------------------------------------------------------
+!     ! Retrieve tagged elements
+!     !----------------------------------------------------------
+! 
+!     if (mesh%nEtag > 0) then
+! 
+!       !----------------------------------------------------------
+!       ! Retrieve tagged elements associated to each partition
+!       ! (as an element belongs to a single partition, no need to define a hashtable)
+!       !----------------------------------------------------------
+!       call alloc_(Etagglobtoloc, 1, mesh%nEtag, 'Etagglobtoloc')
+! 
+!       cpt_part(:) = 0
+!       do ietag = 1, mesh%nEtag ! global index
+!         ie = mesh%EtagtoE(ietag) ! global index
+!         ipart = e_part(ie)
+!         cpt_part(ipart) = cpt_part(ipart) + 1
+! 
+!         ietagloc = cpt_part(ipart)
+!         Etagglobtoloc(ietag) = ietagloc ! keep the tagged element local index in the owner partition
+!       end do ! ietag = 1, mesh%nEtag
+! 
+!       ! print Etagglobtoloc
+!       if (debug_graph > 0) then
+!       end if
+! 
+!       if (debug_graph > 0) then
+!         write(*,*)
+!         write(*,*) 'Etagglobtoloc info:'
+!         write(*,*)
+!         do ie = 1, mesh%nEtag
+!           write(*,'(2(A,I6))') ' ieglob =', ie, ' ieloc =', Etagglobtoloc(ie)
+!         end do
+!         write(*,*)
+!       end if
+! 
+!       ! Store the number of tagged elements per partition
+!       do ipart = 1, npart
+!         mesh_part(ipart)%nEtag = cpt_part(ipart)
+!       end do
+! 
+!       !----------------------------------------------------------
+!       ! Compute mapping between tagged elements partition local numbering
+!       ! and global one
+!       !----------------------------------------------------------
+!       do ipart = 1, npart
+!         if (mesh_part(ipart)%nEtag > 0) then
+!           !call alloc_(mesh_part(ipart)%Etagloctoglob, 1, mesh_part(ipart)%nEtag, 'Etagloctoglob')
+!           allocate(mesh_part(ipart)%Etagloctoglob%tab(1:mesh_part(ipart)%nEtag))
+!           mesh_part(ipart)%Etagloctoglob%tab(:) = 0
+!           call alloc_(mesh_part(ipart)%Etag,          1, mesh_part(ipart)%nEtag, 'Etag')
+!           call alloc_(mesh_part(ipart)%EtagtoE,       1, mesh_part(ipart)%nEtag, 'EtagtoE')
+!         end if
+!         mesh_part(ipart)%Etagloctoglob%n = mesh_part(ipart)%nEtag
+!       end do
+! 
+!       do ietag = 1, mesh%nEtag ! global index
+!         ie = mesh%EtagtoE(ietag) ! global index
+!         ipart = e_part(ie)
+! 
+!         ietagloc = Etagglobtoloc(ietag) ! local index
+!         tag = mesh%Etag(ietag)
+! 
+!         mesh_part(ipart)%Etagloctoglob%tab(ietagloc) = ietag
+!         mesh_part(ipart)%Etag(ietagloc) = tag
+! 
+!         ! recompute EtagtoE on partition
+!         ! i.e. retrieve the local index of the element among all elements
+!         ieloc = Eglobtoloc(ie) ! local index of the element among all elements
+!         mesh_part(ipart)%EtagtoE(ietagloc) = ieloc
+! 
+!       end do ! ietag = 1, nEtag
+! 
+!       if (debug_graph > 0) then
+!         write(*,*)
+!         write(*,*) 'Etagloctoglob info:'
+!         write(*,*)
+!         do ipart = 1, npart
+!           do ietagloc = 1, mesh_part(ipart)%nEtag
+!             write(*,'(5(A,I6))') 'ipart =', ipart, ' ietagloc =', ietagloc,                    &
+!             &                    ' ietagglob =', mesh_part(ipart)%Etagloctoglob%tab(ietagloc), &
+!             &                    ' EtagtoE = ', mesh_part(ipart)%EtagtoE(ietagloc),            &
+!             &                    ' tag =', mesh_part(ipart)%Etag(ietagloc)
+!           end do
+!         end do
+!         write(*,*)
+!       end if
+! 
+!     end if ! (mesh%nEtag > 0)
+! 
+!     ! Report the number of gll in one dimension on all partitioned meshes
+!     do ipart = 1, npart
+!       mesh_part(ipart)%ngll1D = mesh%ngll1D
+!     end do
+! 
+!     call compute_tetra_comm_struct(npart, mesh, mesh_part, comm_part, nnghb_part, nghb_part, map_nghb_part, &
+!     &                                    Vglobtoloc, Fglobtoloc)
+! 
+!     if (allocated(Vglobtoloc)) then
+!       call free_memory_entity_part_ht(Vglobtoloc)
+!       deallocate(Vglobtoloc)
+!     end if
+! 
+!     if (allocated(Fglobtoloc)) then
+!       call free_memory_entity_part_ht(Fglobtoloc)
+!       deallocate(Fglobtoloc)
+!     end if
+! 
+!     if (allocated(Ftagglobtoloc)) then
+!       call free_memory_entity_part_ht(Ftagglobtoloc)
+!       deallocate(Ftagglobtoloc)
+!     end if
+! 
+!     if (allocated(Eglobtoloc)) deallocate(Eglobtoloc)
+! 
+!     if (allocated(Etagglobtoloc)) deallocate(Etagglobtoloc)
+
+  end subroutine tetra_mesh_partition
+
+
+end module tetra_mesh_partition_mod

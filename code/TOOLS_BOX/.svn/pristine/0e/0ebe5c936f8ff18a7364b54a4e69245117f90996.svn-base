@@ -1,0 +1,530 @@
+!!-- Header --!!
+
+module hexa_comm_mod
+
+  use comm_engine_mod
+  use hexa_mesh_struct_mod
+  use hexa_mesh_mod
+  use hexa_comm_struct_mod
+  use mpi
+
+  implicit none
+
+  type, public :: continuous_scalar_field_buf_type
+    integer                                 :: n      = 0
+    real, dimension(:),         allocatable :: sndbuf     ! sndbuf(1:n)
+    real, dimension(:),         allocatable :: rcvbuf     ! rcvbuf(1:n)
+  end type continuous_scalar_field_buf_type
+
+  type, public :: continuous_vector_field_buf_type
+    integer                                 :: n      = 0
+    integer                                 :: nvar   = 0 ! vector field size
+    real, dimension(:),         allocatable :: sndbuf     ! sndbuf(1:nvar*n)
+    real, dimension(:),         allocatable :: rcvbuf     ! rcvbuf(1:nvar*n)
+  end type continuous_vector_field_buf_type
+
+  type, public :: discontinuous_scalar_field_buf_type
+    integer                                 :: ngll1D = 0
+    integer                                 :: nEloc  = 0
+    real, dimension(:,:,:,:), allocatable   :: rcvbuf     ! rcvbuf(1:ngll1D, 1:ngll1D, 1:ngll1D, 1:nEloc)
+  end type discontinuous_scalar_field_buf_type
+
+  type, public :: discontinuous_vector_field_buf_type
+    integer                                 :: ngll1D = 0
+    integer                                 :: nEloc  = 0
+    integer                                 :: nvar   = 0 ! vector field size
+    real, dimension(:,:,:,:,:), allocatable :: rcvbuf     ! rcvbuf(1:nvar, 1:ngll1D, 1:ngll1D, 1:ngll1D, 1:nEloc)
+  end type discontinuous_vector_field_buf_type
+
+  !=========================================================
+  type, extends(comm_engine_type), public :: hexa_comm_type
+
+    ! Data members
+    type(hexa_comm_struct_type)                                          :: pComm_struct
+
+    type(continuous_scalar_field_buf_type),    dimension(:), allocatable :: continuous_scalar_field_buf
+
+    type(continuous_vector_field_buf_type),    dimension(:), allocatable :: continuous_vector_field_buf
+
+    type(discontinuous_vector_field_buf_type), dimension(:), allocatable :: discontinuous_vector_field_buf
+
+    type(discontinuous_scalar_field_buf_type), dimension(:), allocatable :: discontinuous_scalar_field_buf
+
+  contains
+
+    procedure, pass :: create_mpi_types     => hexa_comm_create_mpi_types
+    procedure, pass :: comm_engine_free_mem => hexa_comm_free_mem
+
+    procedure, pass :: hexa_comm_communicate_continuous_scalar_field
+    procedure, pass :: hexa_comm_communicate_continuous_vector_field
+    procedure, pass :: hexa_comm_gather_global_discontinuous_scalar_field
+    procedure, pass :: hexa_comm_gather_global_discontinuous_vector_field
+
+  end type hexa_comm_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_hexa_comm_type
+
+  contains
+
+
+    function as_hexa_comm_type(comm_engine)
+      class(comm_engine_type), target, intent(in) :: comm_engine
+      type(hexa_comm_type),            pointer    :: as_hexa_comm_type
+      character(len=*),                parameter  :: proc_name = "as_hexa_comm_type"
+
+      comm_engine_selector: select type(comm_engine)
+      type is (hexa_comm_type)
+        as_hexa_comm_type => comm_engine
+      class default
+        write(*,*) myid_1, " : ", proc_name, " :: ERROR : Wrong comm_engine type. Attempted: hexa_comm_type"; call flush(6)
+        stop
+      end select comm_engine_selector
+
+    end function as_hexa_comm_type
+
+
+    subroutine hexa_comm_create_mpi_types(this, grid)
+      class(hexa_comm_type), intent(in out) :: this
+      class(grid_type),      intent(in)     :: grid
+      character(len=*),      parameter      :: proc_name = "hexa_comm_create_mpi_types"
+      character(len=8)                      :: str8
+      character(len=250)                    :: iCommFileName
+      type(hexa_mesh_type),  pointer        :: pMesh => Null()
+      integer                               :: mpierr
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, " : ", proc_name
+      end if
+
+      pMesh => as_hexa_mesh_type(grid)
+
+      ! Read data to build communication structure
+      write(str8,'(I8)') myid_1+1
+      iCommFileName = trim(adjustl(pMesh%rootName)) // '_' // trim(adjustl(str8)) // '.comm_struct'
+      if (dd_debug_level > 0) then
+        write(*,*) trim(adjustl(str8)), ' ', trim(adjustl(iCommFileName))
+      end if
+
+      call read_hexa_comm_struct(this%pComm_struct, iCommFileName)
+
+      ! Build communication structure associated to dof for continuous fields
+      this%pComm_struct%ngll1D = pMesh%pMesh_Struct%ngll1D
+      call compute_dof_comm_struct(this%pComm_struct)
+
+      ! As mesh object is not linked to the comm_engine and as the opposite is true (comm_engine "knows" the mesh)
+      ! we set the global number of dof here although this is a mesh data... not nice at all, should be reworked
+      call mpi_reduce(pMesh%pMesh_struct%ndof, pMesh%pMaster_struct%ndofglob, 1, MPI_INTEGER8, MPI_SUM, 0, &
+      &               this%MPI_COMM_1, mpierr)
+      ! idem for nEglob
+      call mpi_reduce(pMesh%pMesh_struct%nE, pMesh%pMaster_struct%nEglob, 1, MPI_INTEGER8, MPI_SUM, 0, &
+      &               this%MPI_COMM_1, mpierr)
+
+    end subroutine hexa_comm_create_mpi_types
+
+
+    subroutine hexa_comm_free_mem(this)
+      class(hexa_comm_type), intent(in out) :: this
+      integer                               :: mpierr, i
+      character(len=*),      parameter      :: proc_name = 'hexa_comm_free_mem'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+      !if (this%ntasks == 1) return
+
+      call mpi_barrier(this%mpi_comm_1, mpierr)
+      if (mpierr < 0) then
+        print *, proc_name, ' :: ERROR : mpi_barrier: ', mpierr; call flush(6)
+        stop
+      end if
+
+      if (allocated(this%continuous_scalar_field_buf)) then
+        do i = 1, size(this%continuous_scalar_field_buf)
+          call dealloc_(this%continuous_scalar_field_buf(i)%sndbuf, 'continuous_scalar_field_buf%sndbuf')
+          call dealloc_(this%continuous_scalar_field_buf(i)%rcvbuf, 'continuous_scalar_field_buf%rcvbuf')
+        end do
+        deallocate(this%continuous_scalar_field_buf)
+      end if
+
+      if (allocated(this%continuous_vector_field_buf)) then
+        do i = 1, size(this%continuous_vector_field_buf)
+          call dealloc_(this%continuous_vector_field_buf(i)%sndbuf, 'continuous_vector_field_buf%sndbuf')
+          call dealloc_(this%continuous_vector_field_buf(i)%rcvbuf, 'continuous_vector_field_buf%rcvbuf')
+        end do
+        deallocate(this%continuous_vector_field_buf)
+      end if
+
+      if (allocated(this%discontinuous_scalar_field_buf)) then
+        do i = 1, size(this%discontinuous_scalar_field_buf)
+          call dealloc_(this%discontinuous_scalar_field_buf(i)%rcvbuf, 'discontinuous_scalar_field_buf%rcvbuf')
+        end do
+        deallocate(this%discontinuous_scalar_field_buf)
+      end if
+
+      if (allocated(this%discontinuous_vector_field_buf)) then
+        do i = 1, size(this%discontinuous_vector_field_buf)
+          call dealloc_(this%discontinuous_vector_field_buf(i)%rcvbuf, 'discontinuous_vector_field_buf%rcvbuf')
+        end do
+        deallocate(this%discontinuous_vector_field_buf)
+      end if
+
+      ! Free all derived MPI types
+
+      call free_hexa_comm_struct(this%pComm_struct)
+
+      ! simulate up-casting towards parent comm_engine class to delete communicators and close MPI
+      call comm_engine_free_mem(this)
+
+    end subroutine hexa_comm_free_mem
+
+
+    subroutine hexa_comm_communicate_continuous_scalar_field(this, V, grid)
+      class(hexa_comm_type),           intent(in out) :: this
+      real, dimension(:), allocatable, intent(in out) :: V
+      class(grid_type),                intent(in)     :: grid
+      character(len=*),                parameter      :: proc_name = 'hexa_comm_communicate_continuous_scalar_field'
+      integer                                         :: npart_nghb, ipart_nghb_rel, ipart_nghb
+      integer                                         :: i1, iEnd, ii, idof, length, tag, tagsym, mpierr
+      integer, dimension(mpi_status_size)             :: status
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+      npart_nghb = this%pComm_struct%nnghb_part
+
+      if (.not. allocated(this%continuous_scalar_field_buf)) then
+        allocate(this%continuous_scalar_field_buf(1:npart_nghb))
+        do ipart_nghb = 1, npart_nghb
+          i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb)
+          iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb + 1) - 1
+          length = iEnd - i1 + 1
+
+          this%continuous_scalar_field_buf(ipart_nghb)%n = length
+          call alloc_(this%continuous_scalar_field_buf(ipart_nghb)%sndbuf, 1, length, 'continuous_scalar_field_buf%sndbuf ')
+          call alloc_(this%continuous_scalar_field_buf(ipart_nghb)%rcvbuf, 1, length, 'continuous_scalar_field_buf%rcvbuf ')
+        end do
+      end if
+
+      do ipart_nghb_rel = 1, npart_nghb                          ! relative neighbour partition index
+
+        ipart_nghb = this%pComm_struct%nghb_part(ipart_nghb_rel) ! global neighbour partition index
+        i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel)
+        iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel + 1) - 1
+        length = iEnd - i1 + 1
+
+        tag = length + myid_1 + ipart_nghb - 1
+        tagsym = tag
+  
+        ! before communication, copy data to send from the field vector into the buffer
+        do ii = i1, iEnd
+          idof = this%pComm_struct%dof_nghb_adj%ie(ii)
+          this%continuous_scalar_field_buf(ipart_nghb_rel)%sndbuf(ii-i1+1) = V(idof)
+        end do
+
+        call mpi_sendrecv(this%continuous_scalar_field_buf(ipart_nghb_rel)%sndbuf(1), length, MPI_REAL, ipart_nghb-1, tag, &
+        &                 this%continuous_scalar_field_buf(ipart_nghb_rel)%rcvbuf(1), length, MPI_REAL, ipart_nghb-1, tagsym, &
+        &                 this%mpi_comm_1, status, mpierr)
+
+      end do
+
+      ! Update the field when all send and receive buffers are fulfilled
+      do ipart_nghb_rel = 1, npart_nghb                          ! relative neighbour partition index
+        i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel)
+        iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel + 1) - 1
+        ! after communication, copy received data from the buffer into the field vector
+        do ii = i1, iEnd
+          idof = this%pComm_struct%dof_nghb_adj%ie(ii)
+          V(idof) = V(idof) + this%continuous_scalar_field_buf(ipart_nghb_rel)%rcvbuf(ii-i1+1)
+        end do
+      end do
+
+    end subroutine hexa_comm_communicate_continuous_scalar_field
+
+
+    subroutine hexa_comm_communicate_continuous_vector_field(this, V, grid)
+      class(hexa_comm_type),             intent(in out) :: this
+      real, dimension(:,:), allocatable, intent(in out) :: V
+      class(grid_type),                  intent(in)     :: grid
+      character(len=*),                  parameter      :: proc_name = 'hexa_comm_communicate_continuous_vector_field'
+      integer                                           :: npart_nghb, nvar, ipart_nghb_rel, ipart_nghb
+      integer                                           :: i1, iEnd, ii, idof, length, tag, tagsym, mpierr
+      integer, dimension(mpi_status_size)               :: status
+      logical                                           :: compliant_dim
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, ' : ', proc_name
+      endif
+
+      npart_nghb = this%pComm_struct%nnghb_part
+      nvar = size(V, dim=1)
+
+      if (allocated(this%continuous_vector_field_buf)) then
+        compliant_dim = .true.
+        do ipart_nghb_rel = 1, npart_nghb
+          if (this%continuous_vector_field_buf(ipart_nghb_rel)%nvar /= nvar) compliant_dim = .false.
+        end do
+
+        if (.not. compliant_dim) then
+          do ipart_nghb_rel = 1, npart_nghb
+            call dealloc_(this%continuous_vector_field_buf(ipart_nghb_rel)%sndbuf, 'continuous_vector_field_buf%sndbuf ')
+            call dealloc_(this%continuous_vector_field_buf(ipart_nghb_rel)%rcvbuf, 'continuous_vector_field_buf%rcvbuf ')
+          end do
+          deallocate(this%continuous_vector_field_buf)
+        end if
+      end if
+
+      if (.not. allocated(this%continuous_vector_field_buf)) then
+        allocate(this%continuous_vector_field_buf(1:npart_nghb))
+        do ipart_nghb_rel = 1, npart_nghb
+          i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel)
+          iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel + 1) - 1
+          length = (iEnd - i1 + 1) * nvar
+
+          this%continuous_vector_field_buf(ipart_nghb_rel)%n = length
+          this%continuous_vector_field_buf(ipart_nghb_rel)%nvar = nvar
+          call alloc_(this%continuous_vector_field_buf(ipart_nghb_rel)%sndbuf, 1, length, 'continuous_vector_field_buf%sndbuf ')
+          call alloc_(this%continuous_vector_field_buf(ipart_nghb_rel)%rcvbuf, 1, length, 'continuous_vector_field_buf%rcvbuf ')
+        end do
+      end if
+
+      do ipart_nghb_rel = 1, npart_nghb                          ! relative neighbour partition index
+
+        ipart_nghb = this%pComm_struct%nghb_part(ipart_nghb_rel) ! global neighbour partition index
+        i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel)
+        iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel + 1) - 1
+        length = (iEnd - i1 + 1) * nvar
+
+        tag = length + myid_1 + ipart_nghb - 1
+        tagsym = tag
+  
+        ! before communication, copy data to send from the field vector into the buffer
+        do ii = i1, iEnd
+          idof = this%pComm_struct%dof_nghb_adj%ie(ii)
+          this%continuous_vector_field_buf(ipart_nghb_rel)%sndbuf((ii-i1)*nvar+1:(ii-i1+1)*nvar) = V(1:nvar,idof)
+        end do
+
+        call mpi_sendrecv(this%continuous_vector_field_buf(ipart_nghb_rel)%sndbuf(1), length, MPI_REAL, ipart_nghb-1, tag, &
+        &                 this%continuous_vector_field_buf(ipart_nghb_rel)%rcvbuf(1), length, MPI_REAL, ipart_nghb-1, tagsym, &
+        &                 this%mpi_comm_1, status, mpierr)
+
+      end do
+
+      ! Update the field when all send and receive buffers are fulfilled
+      do ipart_nghb_rel = 1, npart_nghb                          ! relative neighbour partition index
+        i1   = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel)
+        iEnd = this%pComm_struct%dof_nghb_adj%i1(ipart_nghb_rel + 1) - 1
+        ! after communication, copy received data from the buffer into the field vector
+        do ii = i1, iEnd
+          idof = this%pComm_struct%dof_nghb_adj%ie(ii)
+          V(1:nvar,idof) = V(1:nvar,idof) + this%continuous_vector_field_buf(ipart_nghb_rel)%rcvbuf((ii-i1)*nvar+1:(ii-i1+1)*nvar)
+        end do
+      end do
+
+    end subroutine hexa_comm_communicate_continuous_vector_field
+
+
+    subroutine hexa_comm_gather_global_discontinuous_scalar_field(this, grid, Fglob, F)
+      class(hexa_comm_type),                   intent(in out) :: this
+      class(grid_type),                        intent(in)     :: grid
+      real, dimension(:,:,:,:), allocatable,   intent(in out) :: Fglob
+      real, dimension(:,:,:,:), allocatable,   intent(in)     :: F
+      integer, dimension(MPI_STATUS_SIZE)                     :: mpistat = 0
+      type(hexa_mesh_type),                    pointer        :: pMesh => Null()
+      integer                                                 :: mpierr, snd_length, rcv_length, tag, iproc, ipart
+      integer                                                 :: ngll1D, nEloc_ipart, nEloc, nEglob, ieloc, ieglob
+      character(len=*),                        parameter      :: proc_name = 'hexa_comm_gather_global_discontinuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, " : ", proc_name
+      end if
+
+      pMesh => as_hexa_mesh_type(grid)
+
+      nEloc  = pMesh%pMesh_Struct%nE
+      ngll1D = pMesh%pMesh_Struct%ngll1D
+
+      ! Prepare buffer to receive data on master
+      if (myid_1 == 0 .and. .not. allocated(this%discontinuous_scalar_field_buf)) then
+        allocate(this%discontinuous_scalar_field_buf(1:this%nproc_1-1))
+        do iproc = 1, this%nproc_1-1
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          this%discontinuous_scalar_field_buf(iproc)%ngll1D = ngll1D
+          this%discontinuous_scalar_field_buf(iproc)%nEloc  = nEloc_ipart
+          call alloc_(this%discontinuous_scalar_field_buf(iproc)%rcvbuf, &
+          &           1, ngll1D, 1, ngll1D, 1, ngll1D, 1, nEloc_ipart,   &
+          &           'discontinuous_scalar_field_buf%rcvbuf')
+        end do
+      end if
+
+      snd_length = ngll1D * ngll1D * ngll1D * nEloc
+
+      ! Send data to master
+      if (this%myid_1 /= 0) then
+        tag = this%myid_1
+
+        if (dd_debug_level > 3) write(*,*) myid_1, ' send ', snd_length, ' to 0 with tag', tag
+
+        call mpi_send(F(1,1,1,1), snd_length, MPI_REAL, &
+        &             0, tag, this%mpi_comm_1, mpierr)
+
+      end if ! (myid_1 /= 0)
+
+      ! Master receives slab of global array associated to the subdomain
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        nEglob = pMesh%pMaster_Struct%nEglob
+
+        !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(ieloc, ieglob)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        ! on master (iproc = 0), direct copy of Floc into Fglob
+        do ieloc = 1, nEloc
+          ieglob = pMesh%pMesh_Struct%Eloctoglob%tab(ieloc)
+          Fglob(:,:,:,ieglob) = F(:,:,:,ieloc)
+        end do
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+        do iproc = 1, this%nproc_1-1 ! exclude iproc = 0 as previously managed
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          tag = iproc
+          rcv_length = ngll1D * ngll1D * ngll1D * nEloc_ipart
+
+          if (dd_debug_level > 3) write(*,*) myid_1, ' receive ', rcv_length, ' from ', iproc, ' with tag ', tag
+
+          call mpi_recv(this%discontinuous_scalar_field_buf(iproc)%rcvbuf(1,1,1,1), rcv_length, MPI_REAL, &
+          &             iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+        end do
+
+        !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(iproc, ieloc, ieglob, ipart, nEloc_ipart)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        do iproc = 1, this%nproc_1-1 ! exclude iproc = 0 as previously managed
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          do ieloc = 1, nEloc_ipart
+            ieglob = pMesh%pMaster_struct%Eloctoglob(ipart)%tab(ieloc)
+            Fglob(:,:,:,ieglob) = this%discontinuous_scalar_field_buf(iproc)%rcvbuf(:,:,:,ieloc)
+          end do
+        end do
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+      end if
+
+    end subroutine hexa_comm_gather_global_discontinuous_scalar_field
+
+    subroutine hexa_comm_gather_global_discontinuous_vector_field(this, grid, Fglob, F)
+      class(hexa_comm_type),                   intent(in out) :: this
+      class(grid_type),                        intent(in)     :: grid
+      real, dimension(:,:,:,:,:), allocatable, intent(in out) :: Fglob
+      real, dimension(:,:,:,:,:), allocatable, intent(in)     :: F
+      integer, dimension(MPI_STATUS_SIZE)                     :: mpistat = 0
+      type(hexa_mesh_type),                    pointer        :: pMesh => Null()
+      integer                                                 :: mpierr, snd_length, rcv_length, tag, iproc, ipart
+      integer                                                 :: nvar, ngll1D, nEloc_ipart, nEloc, nEglob, ieloc, ieglob
+      character(len=*),                        parameter      :: proc_name = 'hexa_comm_gather_global_discontinuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid_1, " : ", proc_name
+      end if
+
+      pMesh => as_hexa_mesh_type(grid)
+
+      nEloc  = pMesh%pMesh_Struct%nE
+      ngll1D = pMesh%pMesh_Struct%ngll1D
+
+      if (allocated(F)) then
+        nvar = size(F, dim=1)
+      else
+        nvar = 0
+      end if
+
+      ! Prepare buffer to receive data on master
+      if (myid_1 == 0 .and. .not. allocated(this%discontinuous_vector_field_buf)) then
+        allocate(this%discontinuous_vector_field_buf(1:this%nproc_1-1))
+        do iproc = 1, this%nproc_1-1
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          this%discontinuous_vector_field_buf(iproc)%ngll1D = ngll1D
+          this%discontinuous_vector_field_buf(iproc)%nEloc  = nEloc_ipart
+          this%discontinuous_vector_field_buf(iproc)%nvar   = nvar
+          call alloc_(this%discontinuous_vector_field_buf(iproc)%rcvbuf,        &
+          &           1, nvar, 1, ngll1D, 1, ngll1D, 1, ngll1D, 1, nEloc_ipart, &
+          &           'discontinuous_vector_field_buf%rcvbuf')
+        end do
+      end if
+
+      snd_length = nvar * ngll1D * ngll1D * ngll1D * nEloc
+
+      ! Send data to master
+      if (this%myid_1 /= 0) then
+        tag = this%myid_1
+
+        if (dd_debug_level > 3) write(*,*) myid_1, ' send ', snd_length, ' to 0 with tag', tag
+
+        call mpi_send(F(1,1,1,1,1), snd_length, MPI_REAL, &
+        &             0, tag, this%mpi_comm_1, mpierr)
+
+      end if ! (myid_1 /= 0)
+
+      ! Master receives slab of global array associated to the subdomain
+      if (this%myid_1 == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field array is not allocated"; call flush(6)
+          stop
+        end if
+
+        nEglob = pMesh%pMaster_Struct%nEglob
+
+        !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(ieloc, ieglob)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        ! on master (iproc = 0), direct copy of Floc into Fglob
+        do ieloc = 1, nEloc
+          ieglob = pMesh%pMesh_Struct%Eloctoglob%tab(ieloc)
+          Fglob(:,:,:,:,ieglob) = F(:,:,:,:,ieloc)
+        end do
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+        do iproc = 1, this%nproc_1-1 ! exclude iproc = 0 as previously managed
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          tag = iproc
+          rcv_length = nvar * ngll1D * ngll1D * ngll1D * nEloc_ipart
+
+          if (dd_debug_level > 3) write(*,*) myid_1, ' receive ', rcv_length, ' from ', iproc, ' with tag ', tag
+
+          call mpi_recv(this%discontinuous_vector_field_buf(iproc)%rcvbuf(1,1,1,1,1), rcv_length, MPI_REAL, &
+          &             iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+        end do
+
+        !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(iproc, ieloc, ieglob, ipart, nEloc_ipart)
+        !$OMP DO SCHEDULE(DYNAMIC)
+        do iproc = 1, this%nproc_1-1 ! exclude iproc = 0 as previously managed
+          ipart = iproc + 1
+          nEloc_ipart = pMesh%pMaster_struct%Eloctoglob(ipart)%n
+          do ieloc = 1, nEloc_ipart
+            ieglob = pMesh%pMaster_struct%Eloctoglob(ipart)%tab(ieloc)
+            Fglob(:,:,:,:,ieglob) = this%discontinuous_vector_field_buf(iproc)%rcvbuf(:,:,:,:,ieloc)
+          end do
+        end do
+        !$OMP END DO
+        !$OMP END PARALLEL
+
+      end if
+
+    end subroutine hexa_comm_gather_global_discontinuous_vector_field
+
+
+end module hexa_comm_mod

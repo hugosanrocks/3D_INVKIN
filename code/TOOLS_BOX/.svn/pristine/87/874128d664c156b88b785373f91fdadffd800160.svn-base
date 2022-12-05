@@ -1,0 +1,69 @@
+!!$  Copyright (C) 2015 Seiscope- University Grenoble Alpes (Pengliang Yang)
+!!$			ypl.2100@gmail.com; pengliang.yang@ujf-grenoble.fr
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. M\'etivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, 2016 page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!-----------------------------------------------------------------!
+! allocate memory for complex-valued Fourier coefficients in DFT interpolation
+!-----------------------------------------------------------------!
+subroutine bndrinterp_complex_alloc(bdint)
+  implicit none
+  include 'bndrinterp_type.h' 
+  type(bndrinterp_type) :: bdint !data structure   
+  complex,dimension(:,:,:,:,:),allocatable::var
+
+  allocate(var(mt/2+1,i1min:i1max,i2min:i2max,i3min:i3max,nv))
+
+end subroutine bndrinterp_complex_alloc
+
+!------------------------------------------------------------!
+! deallocate memory for complex-valued Fourier coefficients in DFT interpolation
+!------------------------------------------------------------!
+subroutine interp_complex_free(interp)
+  implicit none
+  include 'bndrinterp_type.h' 
+  type(bndrinterp_type) :: bdint !data structure    
+
+  deallocate(var)
+
+end subroutine bndrinterp_complex_free
+
+!-----------------------------------------------------------------!
+! allocate memory for real values at boundary area for
+! Kaiser windowed sinc interpolation + Lagrange polynomial interpolation
+!-----------------------------------------------------------------!
+subroutine bndrinterp_real_alloc(pbdir)
+  implicit none
+  include 'bndrinterp_type.h' 
+  type(bndrinterp_type) :: bdint !data structure    
+ 
+  real,dimension(:,:,:,:,:),allocatable::var
+
+  allocate(var(mt,i1min:i1max,i2min:i2max,i3min:i3max,nv))
+
+end subroutine bndr_real_alloc
+
+!-----------------------------------------------------------------!
+! deallocate memory for real values at boundary area for
+! Kaiser windowed sinc interpolation + Lagrange polynomial interpolation
+!-----------------------------------------------------------------!
+subroutine bndr_real_free(pbdir)
+  implicit none
+  include 'bndrinterp_type.h' 
+  type(bndrinterp_type) :: bdint !data structure    
+
+  deallocate(var)
+end subroutine bndr_real_free

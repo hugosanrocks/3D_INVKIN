@@ -1,0 +1,567 @@
+module mesh_writers_mod
+
+  use dd_common_mod
+
+  implicit none
+
+  integer, public, parameter :: CELL_CENTERED_DATA = 1
+  integer, public, parameter :: POINT_DATA         = 2
+
+  contains
+
+  subroutine write_medit_mesh(filename, nV, coorV, nE, nEdeg, EtoV, Etag, nF, nFdeg, FtoV, nFtag, FtagtoF, Ftag)
+    character(len=100),                         intent(in) :: filename
+    integer,                                    intent(in) :: nV, nE, nEdeg, nF, nFdeg, nFtag
+    real,          dimension(:,:), allocatable, intent(in) :: coorV
+    integer,       dimension(:,:), allocatable, intent(in) :: EtoV, FtoV
+    integer,       dimension(:),   allocatable, intent(in) :: FtagtoF, Ftag, Etag
+    
+    character(len=*),                           parameter  :: proc_name = "write_medit_mesh"
+    integer                                                :: istat
+    integer                                                :: i, ifac, ifactag, tag = 0
+    character(len=3)                                       :: str1
+    character(len=20)                                      :: fmt1
+
+    write(*,*)
+    write(*,*) "Write mesh ... ", trim(adjustl(filename))
+    write(*,*) '    nV, nF, nFtag, nE =', nV, nF, nFtag, nE
+
+    open(unit_dd, file = trim(filename), iostat = istat, status = "replace" )
+    if (istat /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), istat
+      call stop_mpi()
+    end if
+    rewind(unit_dd)
+
+    write(unit_dd,'(a)') "MeshVersionFormatted 2"
+    write(unit_dd,'(a)') "Dimension"
+    write(unit_dd,'(a)') "3"
+
+    write(unit_dd,'(a)') "Vertices"
+    write(unit_dd,'(i8)') nV
+
+    tag = 0
+    do i = 1, nV
+      write(unit_dd,'(3(f12.4,1x),i2)') coorV(:,i), tag
+    end do
+    if (dd_debug_level > 1) write(*,*) 'coorV ok'
+
+    !if (.not. allocated(Ftag))    write(*,*) '(.not. allocated(Ftag))'
+    !if (.not. allocated(FtoV))    write(*,*) '(.not. allocated(FtoV))'
+    !if (.not. allocated(FtagtoF)) write(*,*) '(.not. allocated(FtagtoF))'
+
+    if (nFtag > 0 .and. allocated(FtagtoF) .and. allocated(FtoV) .and. allocated(Ftag)) then
+
+      if (nFdeg == 3) then
+        write(unit_dd,'(a)') "Triangles"
+      else if (nFdeg == 4) then
+        write(unit_dd,'(a)') "Quadrilaterals"
+      end if
+      write(str1,'(i3)') nFdeg
+      fmt1 = '(' // str1 // '(i8,1x),i3))'
+      write(unit_dd,'(i8)') nFtag
+      do ifactag = 1, nFtag
+        ifac = FtagtoF(ifactag)
+        write(unit_dd,fmt1) FtoV(:,ifac), Ftag(ifactag)
+      end do
+      if (dd_debug_level > 1) write(*,*) 'FtagtoV ok'
+
+    else if (nF > 0 .and. allocated(FtoV)) then
+
+      if (nFdeg == 3) then
+        write(unit_dd,'(a)') "Triangles"
+      else if (nFdeg == 4) then
+        write(unit_dd,'(a)') "Quadrilaterals"
+      end if
+      write(str1,'(i3)') nFdeg
+      fmt1 = '(' // str1 // '(i8,1x),i3))'
+      write(unit_dd,'(i8)') nF
+      do ifac = 1, nF
+        write(unit_dd,fmt1) FtoV(:,ifac), ifac
+      end do
+      if (dd_debug_level > 1) write(*,*) 'FtoV ok'
+    end if
+
+    if (nEdeg == 4) then
+      write(unit_dd,'(a)') "Tetrahedra"
+    else if (nEdeg == 8) then
+      write(unit_dd,'(a)') "Hexahedra"
+    end if
+    write(str1,'(i3)') nEdeg
+    fmt1 = '(' // str1 // '(i8,1x),i3))'
+    write(unit_dd,'(i8)') nE
+
+    if (allocated(Etag)) then
+      do i = 1, nE
+        write(unit_dd,fmt1) EtoV(:,i), Etag(i)
+      end do
+    else
+      do i = 1, nE
+        write(unit_dd,fmt1) EtoV(:,i), i
+      end do
+    end if
+    if (dd_debug_level > 1) write(*,*) 'EtoV ok'
+
+    write(unit_dd,fmt='(a)') "End"
+
+    close(unit_dd)
+
+    write(*,*)
+  end subroutine write_medit_mesh
+
+
+  subroutine write_paraview_parallel_vtu_xml_format(rootname, npart, data_location)
+
+    character(len=100),               intent(in)   :: rootname
+    integer,                          intent(in)   :: npart, data_location
+    character(len=*),                 parameter    :: proc_name = "write_paraview_parallel_vtu_xml_format"
+
+    character(len=100)                             :: filename
+    character(len=4)                               :: ipart_str
+    integer                                        :: ipart
+
+    open(unit_dd,file= trim(adjustl(rootname)) // '.pvtu',form='formatted')
+
+    write(unit_dd, '(A)') '<?xml version="1.0"?>'
+    write(unit_dd, '(A)') '<VTKFile type="PUnstructuredGrid" version="0.1" byte_order="LittleEndian">'
+    write(unit_dd, '(A)') '<PUnstructuredGrid GhostLevel="0">'
+    write(unit_dd, '(A)') '  <PPoints>'
+    write(unit_dd, '(A)') '    <DataArray type="Float32" NumberOfComponents="3" Name="coordinates"   format="ascii"/>'
+    write(unit_dd, '(A)') '  </PPoints>'
+    write(unit_dd, '(A)') '  <PCells>'
+    write(unit_dd, '(A)') '    <DataArray type="Int32"   NumberOfComponents="1" Name="connectivity"  format="ascii"/>'
+    write(unit_dd, '(A)') '    <DataArray type="Int32"   NumberOfComponents="1" Name="offsets"       format="ascii"/>'
+    write(unit_dd, '(A)') '    <DataArray type="Int32"   NumberOfComponents="1" Name="types"         format="ascii"/>'
+    write(unit_dd, '(A)') '  </PCells>'
+    if (data_location == CELL_CENTERED_DATA) then
+    write(unit_dd, '(A)') '  <PCellData>'
+    write(unit_dd, '(A)') '    <DataArray type="Float32" NumberOfComponents="1" Name="scalar"        format="ascii"/>'
+    write(unit_dd, '(A)') '  </PCellData>'
+    else if (data_location == POINT_DATA) then
+    write(unit_dd, '(A)') '  <PPointData>'
+    write(unit_dd, '(A)') '    <DataArray type="Float32" NumberOfComponents="1" Name="scalar"        format="ascii"/>'
+    write(unit_dd, '(A)') '  </PPointData>'
+    end if
+    do ipart = 1, npart
+      write(ipart_str,'(i4)') ipart
+      filename = trim(adjustl(rootname)) // '_' // trim(adjustl(ipart_str)) // '.vtu'
+      write(unit_dd, '(A)') '  <Piece Source="' // trim(adjustl(filename)) // '"/>'
+    end do
+    write(unit_dd, '(A)') '</PUnstructuredGrid>'
+    write(unit_dd, '(A)') "</VTKFile>"
+
+    close(unit_dd)
+
+  end subroutine write_paraview_parallel_vtu_xml_format
+
+
+  subroutine write_paraview_ascii_vtu_xml_format(filename, coorV, EtoV, scal, nEdeg, nV, nE, data_location)!, vec
+
+    character(len=100),                 intent(in)   :: filename
+    integer,                            intent(in)   :: nEdeg, nV, nE, data_location
+    real,    dimension(3,nV),           intent(in)   :: coorV ! nodal coordinates
+    integer, dimension(nEdeg,nE),       intent(in)   :: EtoV  ! Element conectivity
+    real,    dimension(:), allocatable, intent(in)   :: scal  ! scalar field
+!   real,         dimension(3,nV),      intent(in)   :: vec
+    character(len=*),                   parameter    :: proc_name = "write_paraview_ascii_vtu_xml_format"
+
+    integer                                          :: i
+    integer                                          :: etype ! Element Type 10 = tetrahedra, 12 = hexahedra
+
+    if (nEdeg == 4) then ! tetrahedra
+      etype = 10
+    else if (nEdeg == 8) then ! hexahedra
+      etype = 12
+    end if
+
+    open(unit_dd,file= trim(adjustl(filename)) // '.vtu',form='formatted')
+
+  ! ----------- file header -----------
+    write(unit_dd, '(A)') '<?xml version="1.0" encoding="UTF-8"?>'
+    write(unit_dd, '(A)') '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'
+    write(unit_dd, '(A)') '<UnstructuredGrid>'
+    write(unit_dd, '(A, I9, A, I9, A)') '<Piece NumberOfPoints="', nV, '" NumberOfCells="', nE, '">'
+
+  ! ----------- nodes coordinates -----------
+    write(unit_dd, '(A)') '<Points>'
+    write(unit_dd, '(A)') '<DataArray type="Float32" Name="coordinates" NumberOfComponents="3"  format="ascii">'
+    do i = 1, nV
+      write(unit_dd, '(3ES25.15E3)') coorV(:, i)
+    end do
+    write(unit_dd, '(A)') '</DataArray>'
+    write(unit_dd, '(A)') '</Points>'
+
+    write(unit_dd, '(A)') '<Cells>' ! Begin cells definition
+
+  ! ----------- elements connectivity -----------
+    write(unit_dd, '(A)') '<DataArray type="Int32" NumberOfComponents="1" Name="connectivity"  format="ascii">'
+    do i =1, nE
+      write(unit_dd, '(8I10)') EtoV(:,i) - 1 ! element connectivity (0-offset)
+    end do
+    write(unit_dd, '(A)') '</DataArray>'
+
+  ! ----------- elements offsets -----------
+    write(unit_dd, '(A)') '<DataArray type="Int32" NumberOfComponents="1" Name="offsets" format="ascii">'
+    do i = 1, nE
+      write(unit_dd, '(I10)') i*nEdeg ! next element offset
+    end do
+    write(unit_dd, *) '</DataArray>'
+
+  ! ----------- elements types -----------
+    write(unit_dd, '(A)') '<DataArray type="Int32" NumberOfComponents="1" Name="types" format="ascii">'
+    do i = 1, nE
+      write(unit_dd, '(4I10)') etype ! element type
+    end do
+    write(unit_dd, '(A)') '</DataArray>'
+
+    write(unit_dd, '(A)') '</Cells>' ! End cells definition
+
+    if (allocated(scal)) then
+
+      if (data_location == CELL_CENTERED_DATA) then ! cell centered values
+
+        write(unit_dd, *) '<CellData>'
+
+      ! ----------- cell centered values -----------
+        write(unit_dd, '(5A)') '<DataArray type="Float32" Name="scalar" NumberOfComponents="1" format="ascii">'
+        do i = 1, nE
+            write(unit_dd, *) scal(i)
+        end do
+        write(unit_dd, *) '</DataArray>'
+
+        write(unit_dd, *) '</CellData>'
+
+      else if (data_location == POINT_DATA) then ! point values
+
+        write(unit_dd, *) '<PointData>'
+
+      ! ----------- point values -----------
+        write(unit_dd, '(5A)') '<DataArray type="Float32" Name="scalar" NumberOfComponents="1" format="ascii">'
+        do i = 1, nV
+            write(unit_dd, *) scal(i)
+        end do
+        write(unit_dd, *) '</DataArray>'
+
+        write(unit_dd, *) '</PointData>'
+
+      end if
+
+    end if
+
+    write(unit_dd, '(A)') '</Piece>'
+    write(unit_dd, '(A)') '</UnstructuredGrid>'
+    write(unit_dd, '(A)') '</VTKFile>'
+
+    close(unit_dd)
+
+  end subroutine write_paraview_ascii_vtu_xml_format
+
+
+  ! Subroutine to debug: the produced file is not readable by paraview...
+  subroutine write_paraview_binary_vtu_xml_format(filename, coorV, EtoV, scal, nEdeg, nV, nE, data_location)!, vec
+
+    character(len=100),                 intent(in)   :: filename
+    integer,                            intent(in)   :: nEdeg, nV, nE, data_location
+    real,         dimension(3,nV),      intent(in)   :: coorV ! nodal coordinates
+    integer,      dimension(nEdeg,nE),  intent(in)   :: EtoV  ! Element conectivity
+    real,         dimension(nV),        intent(in)   :: scal  ! scalar field
+!   real,         dimension(3,nV),      intent(in)   :: vec
+    character(len=*),                   parameter    :: proc_name = "write_paraview_binary_vtu_xml_format"
+
+    character(len=200) :: buffer
+    character(len=1)   :: lf
+    character(len=8)   :: offset, str1, str2
+    integer            :: int0
+    real               :: float0
+    integer            :: nbytes_scal, nbytes_coorV, nbytes_EtoV, nbytes_offset, nbytes_etype!, nbytes_vec
+    integer            :: ioff0, ioff2, ioff3, ioff4, ioff5!, ioff1
+    integer            :: i, j
+    integer            :: etype ! Element Type 10 = tetrahedra, 12 = hexahedra
+
+    lf = char(10) ! line feed character
+
+    ! Layout for the Appended Data Section
+    !
+    ! _ length | SCAL |      [length | VEC |]     lenght | XYZ |     lenght | IEN |     lenght | OFFSET |    lenght | ETYPE
+
+    if (data_location == CELL_CENTERED_DATA) then ! cell centered values
+      nbytes_scal =         nV * int(sizeof(float0),kind=4)
+    else if (data_location == POINT_DATA) then ! cell centered values
+      nbytes_scal =         nE * int(sizeof(float0),kind=4)
+    else
+      nbytes_scal =          0
+    end if
+
+!   nbytes_vec    = 3     * nV * int(sizeof(float0),kind=4)
+    nbytes_coorV  = 3     * nV * int(sizeof(float0),kind=4)
+    nbytes_EtoV   = nEdeg * nE * int(sizeof(  int0),kind=4)
+    nbytes_offset =         nE * int(sizeof(  int0),kind=4)
+    nbytes_etype  =         nE * int(sizeof(  int0),kind=4)
+
+    ioff0 = 0                                                ! scal
+!     ioff1 = ioff0 + sizeof(int) + nbytes_scal   ! vec
+!     ioff2 = ioff1 + sizeof(int) + nbytes_vec    ! coorV
+    ioff2 = ioff0 + int(sizeof(int0),kind=4) + nbytes_scal   ! coorV
+    ioff3 = ioff2 + int(sizeof(int0),kind=4) + nbytes_coorV  ! EtoV
+    ioff4 = ioff3 + int(sizeof(int0),kind=4) + nbytes_EtoV   ! offset
+    ioff5 = ioff4 + int(sizeof(int0),kind=4) + nbytes_offset ! etype
+
+    if (nEdeg == 4) then ! tetrahedra
+      etype = 10
+    else if (nEdeg == 8) then ! hexahedra
+      etype = 12
+    end if
+
+    open(unit_dd,file=trim(adjustl(filename)) // '.vtu',form='unformatted')!,form='binary')
+
+    buffer = '<?xml version="1.0" encoding="UTF-8"?>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '<VTKFile type="UnstructuredGrid" version="0.1" byte_order="LittleEndian">'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '  <UnstructuredGrid>'//lf
+    write(unit_dd) trim(buffer)
+    write(str1(1:8),'(i8)') nV
+    write(str2(1:8),'(i8)') nE
+    buffer = '    <Piece NumberOfPoints="'//str1//'" NumberOfCells="'//str2//'">'//lf
+    write(unit_dd) trim(buffer)
+
+    if (data_location == CELL_CENTERED_DATA) then ! cell centered values
+      buffer = '      <CellData> '//lf
+      write(unit_dd) trim(buffer)
+      write(offset(1:8),'(i8)') ioff0
+      buffer = '         <DataArray type="Float32" Name="scalar" format="appended" offset="'//offset//'"           />'//lf
+      write(unit_dd) trim(buffer)
+      buffer = '      </CellData>'//lf
+      write(unit_dd) trim(buffer)
+    else if (data_location == POINT_DATA) then ! cell centered values
+      buffer = '      <PointData> '//lf
+      write(unit_dd) trim(buffer)
+      write(offset(1:8),'(i8)') ioff0
+      buffer = '         <DataArray type="Float32" Name="scalar" format="appended" offset="'//offset//'"           />'//lf
+      write(unit_dd) trim(buffer)
+!     write(offset(1:8),'(i8)') ioff1
+!     buffer = '         <DataArray type="Float32" Name="vectors" NumberOfComponents="3" format="appended" offset="'&
+!     &//offset//'" />'//lf
+!     write(unit_dd) trim(buffer)
+      buffer = '      </PointData>'//lf
+      write(unit_dd) trim(buffer)
+    end if
+
+    buffer = '      <CellData>  </CellData>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '      <Points>'//lf
+    write(unit_dd) trim(buffer)
+    write(offset(1:8),'(i8)') ioff2
+    buffer = '        <DataArray type="Float32" Name="coordinates" NumberOfComponents="3" format="appended" offset="'&
+    &//offset//'" />'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '      </Points>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '      <Cells>'//lf
+    write(unit_dd) trim(buffer)
+    write(offset(1:8),'(i8)') ioff3
+    buffer = '        <DataArray type="Int32" Name="connectivity" format="appended" offset="'//offset//'" />'//lf
+    write(unit_dd) trim(buffer)
+    write(offset(1:8),'(i8)') ioff4
+    buffer = '        <DataArray type="Int32" Name="offsets" format="appended" offset="'//offset//'" />'//lf
+    write(unit_dd) trim(buffer)
+    write(offset(1:8),'(i8)') ioff5
+    buffer = '        <DataArray type="Int32" Name="types" format="appended" offset="'//offset//'" />'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '      </Cells>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '    </Piece>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '  </UnstructuredGrid>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '  <AppendedData encoding="raw">'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '_'
+    write(unit_dd) trim(buffer)
+    write(unit_dd) nbytes_scal  , (scal(i),i=1,nV)
+!   write(unit_dd) nbytes_vec   , ((vec(i,j),i=1,3),j=1,nV)
+    write(unit_dd) nbytes_coorV , ((coorV(i,j),i=1,3),j=1,nV)
+    write(unit_dd) nbytes_EtoV  , ((EtoV(i,j),i=1,nEdeg),j=1,nE)
+    write(unit_dd) nbytes_offset, (i,i=nEdeg,nEdeg*nE,nEdeg)
+    write(unit_dd) nbytes_etype , (etype,i=1,nE)
+    buffer = lf//'  </AppendedData>'//lf
+    write(unit_dd) trim(buffer)
+    buffer = '</VTKFile>'//lf
+    write(unit_dd) trim(buffer)
+
+    close(unit_dd)
+
+  end subroutine write_paraview_binary_vtu_xml_format
+
+
+  subroutine write_paraview_binary_vtk_legacy_format(filename, coorV, EtoV, scal, nEdeg, nV, nE, data_location)!, vec
+
+    character(len=100),                 intent(in)    :: filename
+    integer,                            intent(in)    :: nEdeg, nV, nE, data_location
+    real,    dimension(3,nV),           intent(in)    :: coorV
+    integer, dimension(nEdeg,nE),       intent(in)    :: EtoV
+    real,    dimension(:), allocatable, intent(in)    :: scal
+!   real,    dimension(3,nV),           intent(in)    :: vec
+    character(len=*),                   parameter     :: proc_name = "write_paraview_binary_vtk_legacy_format"
+
+    character(len=80) :: buffer
+    character(len=1)  :: lf
+    character(len=8)  :: str1, str2
+    integer           :: etype, i, j, ierr
+
+    lf = char(10) ! line feed character
+
+    if (nEdeg == 4) then ! tetrahedra
+      etype = 10
+    else if (nEdeg == 8) then ! hexahedra
+      etype = 12
+    end if
+
+    open(unit_dd, file = trim(adjustl(filename)) // '_bin.vtk', status='replace', access='STREAM', convert='big_endian', &
+    &    iostat=ierr)
+    if (ierr /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), ierr
+      call stop_mpi()
+    end if
+
+    buffer = '# vtk DataFile Version 3.0'//lf                                             ; write(unit_dd) trim(buffer)
+    buffer = 'vtk output'//lf                                                             ; write(unit_dd) trim(buffer)
+    buffer = 'BINARY'//lf                                                                 ; write(unit_dd) trim(buffer)
+    buffer = 'DATASET UNSTRUCTURED_GRID'//lf//lf                                          ; write(unit_dd) trim(buffer)
+
+    ! POINTS SECTION
+    write(str1(1:8),'(i8)') nV
+    buffer = 'POINTS '//str1//'  float'//lf                                               ; write(unit_dd) trim(buffer)
+    write(unit_dd) ((coorV(i,j),i=1,3),j=1,nV)
+
+    ! CELLS SECTION
+    write(str1(1:8),'(i8)') nE            ! number of elements (cells)
+    write(str2(1:8),'(i8)') nE*(1+nEdeg)  ! size of the following element list (nE*(nEdeg+1))
+    buffer = lf//lf//'CELLS '//str1//' '//str2//lf                                        ; write(unit_dd) trim(buffer)
+    write(unit_dd) (nEdeg,(EtoV(i,j)-1,i=1,nEdeg),j=1,nE)
+
+    ! CELL_TYPES SECTION
+    write(str1(1:8),'(i8)') nE   ! number of elements (cells)
+    buffer = lf//lf//'CELL_TYPES'//str1//lf                                               ; write(unit_dd) trim(buffer)
+    write(unit_dd) (etype,i=1,nE)
+
+    if (allocated(scal)) then
+
+      if (data_location == CELL_CENTERED_DATA) then ! cell centered values
+
+        ! CELL_DATA SECTION
+        write(str1(1:8),'(i8)') nE
+        buffer = lf//lf//'CELL_DATA '//str1//lf                                           ; write(unit_dd) trim(buffer)
+
+        buffer = 'SCALARS scalar float'//lf                                              ; write(unit_dd) trim(buffer)
+        buffer = 'LOOKUP_TABLE default'//lf                                               ; write(unit_dd) trim(buffer)
+        write(unit_dd) (scal(i),i=1,nE)
+
+      else if (data_location == POINT_DATA) then ! point values
+
+        ! POINT_DATA SECTION
+        write(str1(1:8),'(i8)') nV
+        buffer = lf//lf//'POINT_DATA '//str1//lf                                          ; write(unit_dd) trim(buffer)
+
+        buffer = 'SCALARS scalar float'//lf                                               ; write(unit_dd) trim(buffer)
+        buffer = 'LOOKUP_TABLE default'//lf                                               ; write(unit_dd) trim(buffer)
+        write(unit_dd) (scal(i),i=1,nV)
+
+      end if
+
+    end if
+
+!     buffer = lf//lf//'VECTORS vectors float'//lf                                          ; write(unit_dd) trim(buffer)
+!     write(unit_dd) ((vec(i,j),i=1,nEdeg),j=1,nV)
+
+    close(unit_dd)
+
+  end subroutine write_paraview_binary_vtk_legacy_format
+
+
+  subroutine write_paraview_ascii_vtk_legacy_format(filename, coorV, EtoV, scal, nEdeg, nV, nE, data_location)!, vec
+
+    character(len=100),                 intent(in)    :: filename
+    integer,                            intent(in)    :: nEdeg, nV, nE, data_location
+    real,    dimension(3,nV),           intent(in)    :: coorV
+    integer, dimension(nEdeg,nE),       intent(in)    :: EtoV
+    real,    dimension(:), allocatable, intent(in)    :: scal
+!   real,    dimension(3,nV),           intent(in)    :: vec
+    character(len=*),                   parameter     :: proc_name = "write_paraview_ascii_vtk_legacy_format"
+
+    character(len=80) :: buffer
+    character(len=1)  :: lf
+    character(len=8)  :: str1, str2
+    integer           :: etype, i, j, ierr
+
+    lf = char(10) ! line feed character
+
+    if (nEdeg == 4) then ! tetrahedra
+      etype = 10
+    else if (nEdeg == 8) then ! hexahedra
+      etype = 12
+    end if
+
+    open(unit_dd, file = trim(adjustl(filename)) // '_ascii.vtk', status='unknown', form='formatted', iostat=ierr)
+    if (ierr /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), ierr
+      call stop_mpi()
+    end if
+
+    buffer = '# vtk DataFile Version 3.0'                                             ; write(unit_dd,'(A)') trim(buffer)
+    buffer = 'vtk output'                                                             ; write(unit_dd,'(A)') trim(buffer)
+    buffer = 'ASCII'                                                                  ; write(unit_dd,'(A)') trim(buffer)
+    buffer = 'DATASET UNSTRUCTURED_GRID'                                              ; write(unit_dd,'(A)') trim(buffer)
+
+    ! POINTS SECTION
+    write(str1(1:8),'(i8)') nV
+    buffer = 'POINTS '//str1//' float'                                                ; write(unit_dd,'(A)') trim(buffer)
+    write(str2(1:8),'(i8)') nV*3
+    write(unit_dd,'('//str2//'f14.7)') ((coorV(i,j),i=1,3),j=1,nV)
+
+    ! CELLS SECTION
+    write(str1(1:8),'(i8)') nE            ! number of elements (cells)
+    write(str2(1:8),'(i8)') nE*(1+nEdeg)  ! size of the following element list (nE*(nEdeg+1))
+    buffer = 'CELLS '//str1//' '//str2                                                ; write(unit_dd,'(A)') trim(buffer)
+    write(unit_dd,'('//str2//'i8)') (nEdeg,(EtoV(i,j)-1,i=1,nEdeg),j=1,nE)
+
+    ! CELL_TYPES SECTION
+    write(str1(1:8),'(i8)') nE   ! number of elements (cells)
+    buffer = 'CELL_TYPES '//str1                                                      ; write(unit_dd,'(A)') trim(buffer)
+    write(unit_dd,'('//str1//'i8)') (etype,i=1,nE)
+
+    if (allocated(scal)) then
+
+      if (data_location == CELL_CENTERED_DATA) then ! cell centered values
+
+        ! CELL_DATA SECTION
+        write(str1(1:8),'(i8)') nE
+        buffer = 'CELL_DATA '//str1                                                   ; write(unit_dd,'(A)') trim(buffer)
+
+        buffer = 'SCALARS scalar float'                                               ; write(unit_dd,'(A)') trim(buffer)
+        buffer = 'LOOKUP_TABLE default'                                               ; write(unit_dd,'(A)') trim(buffer)
+        write(unit_dd,'('//str1//'f14.7)') (scal(i),i=1,nE)
+
+      else if (data_location == POINT_DATA) then ! point values
+
+        ! POINT_DATA SECTION
+        write(str1(1:8),'(i8)') nV
+        buffer = 'POINT_DATA '//str1                                                  ; write(unit_dd,'(A)') trim(buffer)
+
+        buffer = 'SCALARS scalar float'                                               ; write(unit_dd,'(A)') trim(buffer)
+        buffer = 'LOOKUP_TABLE default'                                               ; write(unit_dd,'(A)') trim(buffer)
+        write(unit_dd,'('//str1//'f14.7)') (scal(i),i=1,nV)
+
+      end if
+
+    end if
+
+!     buffer = 'VECTORS vectors float'                                                  ; write(unit_dd,'(A)') trim(buffer)
+!     write(unit_dd) ((vec(i,j),i=1,nEdeg),j=1,nV)
+
+    close(unit_dd)
+
+  end subroutine write_paraview_ascii_vtk_legacy_format
+
+
+end module mesh_writers_mod

@@ -1,0 +1,540 @@
+module tetra_glob_dof_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use tetra_ref_dof_mod
+  use tetra_mesh_struct_mod
+  use mat_csr_mod
+
+  implicit none
+
+  !--------------------------------------------------------------------------------
+  ! This module implementation specialized for :
+  ! - unstructured 3D meshes of tetrahedra 
+  ! - and discontinuous Galerkin finite elements methods with adaptative Pk order
+  !
+  ! The discontinuities between elements involve that degree of freedom points are 
+  ! created independently by elements (no dof shared at faces between elements)
+  !--------------------------------------------------------------------------------
+
+  public :: build_tetra_glob_dof
+  public :: init_dof_CSR_matrix
+  public :: connect_dof_dof
+
+  contains
+
+
+  ! Build mappings needed for global matrix of dof relations:
+  ! - Ftodof: mapping between faces and dof located on faces (involved on surface integration when computing fluxes)
+  ! - Etodof: mapping between elements and all its dof (involved on volume integration), stored in an adjacency table
+  ! and build dof coordinates
+  ! - coordof
+  subroutine build_tetra_glob_dof(ref_dof, mesh)
+
+    type(tetra_ref_dof_t), dimension(:), allocatable, intent(in)  :: ref_dof
+    type(tetra_mesh_struct_type),                 intent(in out)  :: mesh
+    character(len=*),                                     parameter   :: proc_name = "build_tetra_glob_dof"
+    integer                                                           :: i, idof, idof1, idofend, nedof, ie, iv, k, npk, cptdof
+    real(kind=FP),       dimension(3,4)                               :: coor_vert    ! vertex coordinates in real tetra
+
+    if (dd_call_trace > 0) write(*,*) myid_1, " : ", proc_name, ' : nE, nF =', mesh%nE, mesh%nF
+    if (dd_debug_level > 0) then
+      write(*,*) myid_1, " : ", proc_name, ' : nE, nF =', mesh%nE, mesh%nF
+    end if
+
+    if (mesh%nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    call alloc_(mesh%Etodof_adj, 1, mesh%nE+1, 'Etodof_adj')
+    mesh%Etodof_adj(1) = 1
+    
+    ! 1/ Loop on elements 
+    ! to compute the total number of dof
+    ! and fulfill Etodof adjacency table
+    !-----------------------------------
+    cptdof = 0
+    do ie = 1, mesh%nE
+
+      k = mesh%PkE(ie)               ! Pk order associated to the element
+      npk = ref_dof(k)%nP
+      cptdof = cptdof + npk     ! increment the total number of dof
+
+      mesh%Etodof_adj(ie+1) = cptdof + 1
+
+    end do ! loop on elements
+
+    mesh%ndof  = cptdof
+
+    write(*,*) myid_1, " : ", proc_name, ' : Total number of dof =', mesh%ndof
+
+    call alloc_(mesh%coordof, 1, 3, 1, mesh%ndof, 'coordof')
+    call alloc_(mesh%weight_vol, 1, mesh%ndof, 'weight_vol')
+
+    call alloc_(mesh%drdx, 1, mesh%ndof, 'drdx')
+    call alloc_(mesh%drdy, 1, mesh%ndof, 'drdy')
+    call alloc_(mesh%drdz, 1, mesh%ndof, 'drdz')
+    
+    call alloc_(mesh%dsdx, 1, mesh%ndof, 'dsdx')
+    call alloc_(mesh%dsdy, 1, mesh%ndof, 'dsdy')
+    call alloc_(mesh%dsdz, 1, mesh%ndof, 'dsdz')
+    
+    call alloc_(mesh%dtdx, 1, mesh%ndof, 'dtdx')
+    call alloc_(mesh%dtdy, 1, mesh%ndof, 'dtdy')
+    call alloc_(mesh%dtdz, 1, mesh%ndof, 'dtdz')
+
+    call alloc_(mesh%normal, 1, 3,  1, mesh%ndof, 1, 4, 'normal')
+    call alloc_(mesh%jacobian_2D, 1, mesh%ndof, 1, 4, 'jacobian_2D')
+
+    mesh%normal(:,:,:)    = 0._fp
+    mesh%jacobian_2D(:,:) = 0._fp
+
+    ! 2/ Loop on elements and ref dof associated to it
+    ! to build real dof and mapping data 
+    ! (dof coordinates, face <-> dof, element<->dof)
+    !-------------------------------------------------
+    idof  = 0
+    do ie = 1, mesh%nE
+
+      k   = mesh%PkE(ie)           ! Pk order associated to the element
+      npk = ref_dof(k)%nP     ! Number of dof of the element
+
+      ! Retrieve vertex coordinates of the real tetrahedron
+      do i = 1, 4
+        iv = mesh%EtoV(i,ie)
+        coor_vert(:,i) = mesh%coorV(:,iv)
+      end do
+
+      ! Compute coordinates of all the dof of the element using real tetrahedron vertices coordinates and reference element
+      ! + dof weight involved in volumic integration
+      call rsttoxyz(mesh%coordof   (:,idof+1:idof+npk), &
+      &             mesh%weight_vol(  idof+1:idof+npk), &
+      & mesh%drdx(  idof+1:idof+npk), mesh%drdy(  idof+1:idof+npk), mesh%drdz(  idof+1:idof+npk), &
+      & mesh%dsdx(  idof+1:idof+npk), mesh%dsdy(  idof+1:idof+npk), mesh%dsdz(  idof+1:idof+npk), &
+      & mesh%dtdx(  idof+1:idof+npk), mesh%dtdy(  idof+1:idof+npk), mesh%dtdz(  idof+1:idof+npk), &
+      & mesh%normal, mesh%jacobian_2D,&
+      &             ref_dof(k)%coor, coor_vert, npk, k, 4, idof, npk)
+
+      idof = idof + npk
+
+    end do ! loop on elements
+
+    if (debug_graph > 3) then
+      write(*,*)
+      write(*,*) 'global dof info:'
+      write(*,*)
+      write(*,'(A,I8)') ' Nb dof:', mesh%ndof
+      do idof = 1, mesh%ndof
+        write(*,'(I8,A,3F8.4,A,F8.4)') idof, ' coor =', mesh%coordof(:,idof), ' weight_vol =', mesh%weight_vol(idof)
+      end do
+      write(*,*)
+      if (allocated(mesh%Etodof_adj)) then
+      do ie = 1, mesh%nE
+        idof1   = mesh%Etodof_adj(ie)
+        idofend = mesh%Etodof_adj(ie+1) - 1
+        nEdof   = idofend - idof1 + 1
+        write(*,'(4(A,I8))') ' ie   = ', ie, ' nEdof =', nEdof, ' from ', idof1, ' to ', idofend
+      end do
+      end if
+      write(*,*)
+    end if
+
+  end subroutine build_tetra_glob_dof
+
+
+  ! Insertion sort algorithm efficient for small arrays (1-based)
+  ! Sort performed on 'a' array values and permutation is reported on 'aref' array
+  pure subroutine sort(n, a, aref)
+    integer,               intent(in)     :: n
+    integer, dimension(n), intent(in out) :: a, aref
+    integer                               :: i, j
+  
+    do i = 2, n
+      j = i - 1
+      do while (j>1 .and. a(j) > a(i))
+          j = j - 1
+      end do
+      a   (j+1:i) = cshift(a   (j+1:i),-1)
+      aref(j+1:i) = cshift(aref(j+1:i),-1)
+    end do
+    
+  ! variant algorithm without cshift instruction use
+  !   real :: temp, tempref
+  !   do i = 2, n
+  !      j = i - 1
+  !      temp    = a(i)
+  !      tempref = aref(i)
+  !      do while (j>1 .and. a(j)>temp)
+  !         a(j+1)    = a(j)
+  !         aref(j+1) = aref(j)
+  !         j = j - 1
+  !      end do
+  !      a   (j+1) = temp
+  !      aref(j+1) = tempref
+  !   end do
+  end subroutine sort
+
+  subroutine init_dof_CSR_matrix(nvar, nterm, ndof, nF, nFdeg, nE, nEdeg, EtoF, FtoE, EtoE, Etodof_adj, ref_dof, PkE, &
+  &                              mat)
+    integer,                                            intent(in)  :: nvar, nterm, ndof, nF, nE, nFdeg, nEdeg
+    integer,               dimension(:,:), allocatable, intent(in)  :: EtoF, FtoE, EtoE
+    integer,               dimension(:),   allocatable, intent(in)  :: Etodof_adj
+    type(tetra_ref_dof_t), dimension(:),   allocatable, intent(in)  :: ref_dof
+    integer,               dimension(:),   allocatable, intent(in)  :: PkE
+    type(mat_csr_t),                                    intent(out) :: mat
+
+    character(len=*),                                   parameter   :: proc_name = "init_dof_CSR_matrix"
+    integer,               dimension(:),   allocatable              :: nnghb, tmp_offsets, ordered_list, ordered_list_ref
+    integer                                                         :: ie, i, idof, idof1, idofend, nEdof, j, jdof, k, npf
+    integer                                                         :: ifacref, ifac, k_nghb, npf_nghb, ifacref_nghb, ie_nghb
+    integer                                                         :: iref, size_list, ie_ordered, j1, jend, irow
+    character(len=8)                                                :: str2
+    character(len=30)                                               :: fmt2
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid_1, " : ", proc_name, ' : nvar, nterm, ndof, nE, nF =', nvar, nterm, ndof, nE, nF
+    end if
+
+    if (nEdeg /= 4) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non tetrahedron elements"
+      return
+    end if
+
+    call alloc_(nnghb, 1, ndof, proc_name // 'nnghb')
+
+    ! First retrieve the number of neighbors of each dof
+    !---------------------------------------------------
+    do ie = 1, nE
+
+      ! 1/ Count neighbors involved in volumic integration (dof of element x dof of element)
+      ! Retrieve starting and ending endices (as they are contiguous) of dof associated to the current element
+      idof1   = Etodof_adj(ie)
+      nEdof   = Etodof_adj(ie+1) - Etodof_adj(ie)
+      nnghb(idof1:idof1 + nEdof - 1) = nEdof ! add the dof itself in the count of its neighbors
+
+      k   = PkE(ie)
+      npf = ref_dof(k)%npf
+
+      ! 2/ Count neighbours involved in surfacic integration of fluxes computations
+      ! - (dof of face of element x dof of face of element) -> neighbours already taken into account in 1/, do not recompute them
+      ! + (dof of face of element x dof of adjacent faces of adjacent elements)
+      do ifacref = 1, 4
+        ifac = EtoF(ifacref, ie)
+
+        ! Retrieve the neighbour element index
+        ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+        if (ie_nghb > 0) then
+
+          k_nghb   = PkE(ie_nghb)
+          npf_nghb = ref_dof(k_nghb)%npf
+
+          do j = 1, npf
+            ! Retrieve global indices of dofs linked to this face: 
+            ! first index of dofs linked to the current element + iterator on dofs of the reference face
+            jdof = Etodof_adj(ie) + ref_dof(k)%Ftodof(j,ifacref) - 1
+            
+            nnghb(jdof) = nnghb(jdof) + npf_nghb 
+
+          end do ! j = 1, npf
+        end if ! (ie_nghb > 0)
+          
+      end do ! ifacref = 1, 4
+      !if (mod(ie,1000000) == 0) write(*,*) '... ie = ', ie, ' ... nnz = ', sum(nnghb)
+    end do ! ie = 1, nE
+
+    ! Allocate the matrix
+    !--------------------
+    mat = mat_csr_t(n = ndof*nvar, nnz = sum(nnghb)*nvar*nterm, IA = null(), JA = null())
+    write(*,*) myid_1, " : ", proc_name, ' : n, nnz = ', mat%n, mat%nnz
+
+    if (mat%nnZ < 0) then
+      write(*,*) proc_name, ' :: ERROR : nnz greater than allowed in address space which is :', huge(0_4), &
+      &                     ' for integer kind = ', selected_int_kind(8)
+      write(error_message,*) proc_name, ' :: ERROR'
+      call stop_mpi()
+    end if
+
+    call alloc_(mat%IA, 1, mat%n+1, 'mat%IA')
+    call alloc_(mat%JA, 1, mat%nnz, 'mat%JA')
+    call alloc_(tmp_offsets, 1, ndof, proc_name // 'tmp_offsets')
+
+    ! Fulfill row offsets in IA
+    !--------------------------
+    mat%IA(1) = 1
+    do idof = 1, ndof
+      mat%IA(idof + 1) = mat%IA(idof) + nnghb(idof) ! take into account the diagonal term
+    end do
+
+    ! Initialize offsets array associated to the filling-in rate of the matrix
+    tmp_offsets(1) = 1
+    do idof = 2, ndof
+      tmp_offsets(idof) = tmp_offsets(idof-1) + nnghb(idof-1)
+    end do
+
+    ! Create a list to be fulfilled with the indices of the currrent element and its neighbors element
+    ! The purpose is to sort it and fulfill the vector JA of the CSR matrix with a loop on this lits
+    ! such that the vector JA containing the neighbours of dofs will be ordered too
+    size_list = 5 !current element + 4 faces of the tetrahedron
+    call alloc_(ordered_list,     1, size_list, proc_name // 'ordered_list')
+    call alloc_(ordered_list_ref, 1, size_list, proc_name // 'ordered_list_ref')
+
+    ! Fulfill JA with neighbors dof indices
+    !--------------------------------------
+    do ie = 1, nE
+
+      k   = PkE(ie)
+      npf = ref_dof(k)%npf
+
+      ! Store in an array to be ordered current element and neighbors element indices
+      ! and keep the face reference in ordered_list_ref (set 0 for the current element itself)
+      ordered_list     = (/ ie, (EtoE(:, ie)) /)
+      ordered_list_ref = (/ (i, i = 0, size_list-1) /)
+      call sort(size_list, ordered_list, ordered_list_ref)
+
+      do iref = 1, size_list
+
+        ie_ordered = ordered_list(iref)
+
+        if (ie_ordered == ie) then
+
+          ! 1/ Neighbors inside the current element involved in volumic integration (dof of element x dof of element)
+          idof1   = Etodof_adj(ie)
+          idofend = Etodof_adj(ie+1) - 1
+          nEdof   = idofend - idof1 + 1
+
+          do idof = idof1, idofend
+
+            mat%JA(tmp_offsets(idof) : tmp_offsets(idof) + nEdof - 1) = (/ (jdof, jdof = idof1, idofend) /)
+
+            tmp_offsets(idof) = tmp_offsets(idof) + nEdof
+
+          end do
+
+        else
+
+          ifacref    = ordered_list_ref(iref)
+
+          ! 2/ Count neighbours involved in surfacic integration of fluxes computations
+          ! - (dof of face of element x dof of face of element) -> neighbours already taken into account in 1/, do not recompute them
+          ! + (dof of face of element x dof of adjacent faces of adjacent elements)
+          ifac = EtoF(ifacref, ie)
+
+          ! Retrieve the neighbour element index
+          ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+          if (ie_nghb > 0) then
+
+            k_nghb   = PkE(ie_nghb)
+
+            if (k_nghb > 0) then
+
+              npf_nghb = ref_dof(k_nghb)%npf
+              ifacref_nghb = sum(FtoE(3:4,ifac)) - ifacref
+
+              do j = 1, npf
+
+                ! Retrieve global indices of dofs linked to this face: 
+                ! first index of dofs linked to the current element + iterator on dofs of the reference face
+                jdof = Etodof_adj(ie) + ref_dof(k)%Ftodof(j,ifacref) - 1
+      
+                mat%JA(tmp_offsets(jdof) : tmp_offsets(jdof) + npf_nghb - 1) =   Etodof_adj(ie_nghb) - 1 &
+                &                                                              + ref_dof(k_nghb)%Ftodof(:,ifacref_nghb)
+
+                tmp_offsets(jdof) = tmp_offsets(jdof) + npf_nghb
+
+              end do ! j = 1, npf
+            end if ! (k_nghb > 0) 
+          end if ! (ie_nghb > 0)
+        end if ! (ifacref /= 0)
+      end do ! iref = 1, size_list
+!       if (mod(ie,1000) == 0) write(*,*) '... ie = ', ie
+    end do ! ie = 1, nE
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'CSR matrix info:'
+      write(*,*)
+      write(*,'(A,I8)') ' mat%n   : ', mat%n
+      write(*,'(A,I8)') ' mat%nnz : ', mat%nnz
+      write(*,*)
+      do irow = 1, mat%n
+        j1 = mat%IA(irow)
+        jend = mat%IA(irow+1) - 1
+
+        write(str2,'(I8)') jend-j1+1
+        fmt2 = '(A,I8,A,' // trim(adjustl(str2)) // 'I8)'
+        write(*,fmt2) ' row = ', irow, ' JA =', mat%JA(j1:jend)
+      end do
+      write(*,*)
+    end if
+
+    call dealloc_(nnghb,            proc_name // 'nnghb')
+    call dealloc_(tmp_offsets,      proc_name // 'tmp_offsets')
+    call dealloc_(ordered_list,     proc_name // 'ordered_list')
+    call dealloc_(ordered_list_ref, proc_name // 'ordered_list_ref')
+
+  end subroutine init_dof_CSR_matrix
+
+
+  !! ---- in case of uniform polynomial order, compute connection between dofs on shared face by 2 thetrahedra
+
+
+  subroutine connect_dof_dof(ref_matrix, ref_dof, perm, mesh)
+
+    type(ref_matrix_t),    dimension(:),   allocatable, intent(in)     :: ref_matrix
+    type(tetra_ref_dof_t), dimension(:),   allocatable, intent(in)     :: ref_dof
+    type(permu_tri),       dimension(:),   allocatable, intent(in)     :: perm
+
+    type(tetra_mesh_struct_type),                       intent(in out) :: mesh
+   
+    integer                                                            :: ifacref, ifac, ie_nghb, ivertex, ifac_nghb, ifacref_nghb
+    integer                                                            :: k_nghb, l, ldof, ldof_local, npf_nghb
+    integer                                                            :: lvdof, lvdof_local
+    integer                                                            :: k, npf, id, ie
+    integer,               dimension(3)                                :: face_1,face_2
+    integer                                                            :: iiv0,iiv1,kface,ivertex_tmp 
+    integer,               dimension(4)                                :: ie_nghb_store
+    character(len=*),     parameter                                    :: proc_name = 'connect_dof_dof'
+
+    allocate(mesh%dof_dof(mesh%nE))
+
+    do ie=1, mesh%nE
+
+       k=mesh%PkE(ie)
+       npf=ref_dof(k)%npf
+
+       allocate(mesh%dof_dof(ie)%my_dof(npf,4))
+       allocate(mesh%dof_dof(ie)%nei_dof(npf,4))
+       allocate(mesh%dof_dof(ie)%my_local_dof(npf,4))
+       allocate(mesh%dof_dof(ie)%nei_local_dof(npf,4))
+       allocate(mesh%dof_dof(ie)%id(4))
+
+       do ifacref = 1, 4
+          
+          ! global face numerotation
+          ifac = mesh%EtoF(ifacref, ie)
+
+          !! extract face in initial order (my face)
+          kface=0;face_1(:)=0
+          do ivertex=1,4
+             iiv0= mesh%EtoV(ivertex,ie)
+             do ivertex_tmp=1,3
+                iiv1 = mesh%FtoV(ivertex_tmp,ifac)
+                if (iiv0==iiv1) then
+                   kface=kface+1
+                   face_1(kface)=iiv0
+                end if
+             end do
+          end do
+
+          ! Retrieve the neighbour element index  ----- info voisin -------------------
+          ie_nghb = mesh%FtoE(1,ifac) + mesh%FtoE(2,ifac) - ie
+
+          if (ie_nghb > 0) then
+             k_nghb=mesh%PkE(ie_nghb)
+             npf_nghb=ref_dof(k_nghb)%npf
+
+             if (npf_nghb .ne. npf) then
+              write(error_message,*) proc_name, ' :: ERROR : P adaptivity not yet implemented'
+              call stop_mpi()
+             end if
+
+             ie_nghb_store(ifacref) = ie_nghb
+             ifacref_nghb = mesh%FtoE(3,ifac) + mesh%FtoE(4,ifac) - ifacref  !! local face number 
+             ifac_nghb=mesh%EtoF(ifacref_nghb, ie_nghb)
+
+             !! extract face in initial order (neighb face)
+             kface=0;face_2(:)=0
+             do ivertex=1,4
+                iiv0= mesh%EtoV(ivertex,ie_nghb)
+                do ivertex_tmp=1,3
+                   iiv1 = mesh%FtoV(ivertex_tmp,ifac_nghb)
+                   if (iiv0==iiv1) then
+                      kface=kface+1
+                      face_2(kface)=iiv0
+                   end if
+                end do
+             end do
+
+             call find_right_permutation(id,face_1,face_2)
+
+             !! dof _ dof connextion known now
+             do l=1,npf_nghb
+                !! permutted dof in neighbour face (order k_nghb should be k)
+                
+                ldof_local =  ref_dof(k_nghb)%Ftodof(perm(k_nghb)%perm(id,l),ifacref_nghb)
+                ldof =  mesh%Etodof_adj(ie_nghb) + ldof_local - 1
+
+                !! dof in reference face
+                lvdof_local =  ref_dof(k)%Ftodof(l,ifacref)
+                lvdof =  mesh%Etodof_adj(ie) + lvdof_local - 1
+
+               
+
+                ! numerotation locale a chaque element
+                mesh%dof_dof(ie)%my_dof(l,ifacref)=lvdof !! le dof sur ma face
+                mesh%dof_dof(ie)%nei_dof(l,ifacref)=ldof  !! le meme dof sur la face du voisin
+                
+                !numerotation globale
+                mesh%dof_dof(ie)%my_local_dof(l,ifacref)=lvdof_local !! le dof sur ma face
+                mesh%dof_dof(ie)%nei_local_dof(l,ifacref)=ldof_local  !! le meme dof sur la face du voisin
+                mesh%dof_dof(ie)%id(ifacref)=id
+
+                
+
+             end do
+          end if
+
+
+       end do
+
+    end do
+
+  end subroutine connect_dof_dof 
+
+
+  subroutine find_right_permutation(id,IV0,IV1)
+
+    integer, dimension(3) :: IV0,IV1
+    integer               :: id
+    character(len=*),     parameter  :: proc_name = 'find_right_permutation'
+
+    id = 0
+
+    if ( IV1(1) == IV1(1) .and. &
+         IV1(2) == IV1(2) .and. &
+         IV1(3) == IV1(3)   )  id = 1
+
+    if ( IV0(1) == IV1(1) .and. &
+         IV0(2) == IV1(3) .and. &
+         IV0(3) == IV1(2)   )  id = 2
+
+    if ( IV0(1) == IV1(2) .and. &
+         IV0(2) == IV1(1) .and. &
+         IV0(3) == IV1(3)   ) id = 3
+
+    if ( IV0(1) == IV1(2) .and. &
+         IV0(2) == IV1(3) .and. &
+         IV0(3) == IV1(1)   ) id = 4
+
+    if ( IV0(1) == IV1(3) .and. &
+         IV0(2) == IV1(1) .and. &
+         IV0(3) == IV1(2)   ) id = 5
+
+    if ( IV0(1) == IV1(3) .and. &
+         IV0(2) == IV1(2) .and. &
+         IV0(3) == IV1(1)   ) id = 6
+
+    if (id==0) then
+      write(error_message,*) proc_name, ' :: ERROR : PERMUTATION DOES NOT EXIST'
+      call stop_mpi()
+    end if
+
+  end subroutine find_right_permutation
+
+
+end module tetra_glob_dof_mod

@@ -1,0 +1,12 @@
+#MASTER Makefile for the SU_IO
+include ../Makefile.inc
+
+all : compile
+
+
+compile : 
+	cd src ; $(MAKE)
+
+clean :	
+	cd src ; $(MAKE) clean
+

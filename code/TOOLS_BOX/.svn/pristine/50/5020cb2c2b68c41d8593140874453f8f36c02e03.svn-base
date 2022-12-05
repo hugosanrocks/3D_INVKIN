@@ -1,0 +1,119 @@
+!!$  Copyright (C) 2015 Seiscope- University Grenoble Alpes (Pengliang Yang)
+!!$			ypl.2100@gmail.com; pengliang.yang@ujf-grenoble.fr
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. M\'etivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, 2016 page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!-----------------------------------------------------------------!
+! part ii: kaiser windowed sinc interpolation for boundary values
+!-----------------------------------------------------------------!
+!---------------------------------------------------------------------------
+subroutine ksinc_interp(v2b,var,var0,i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,l)
+  !interpolate the boundary elements by Kaiser window sinc interpolant
+  implicit none
+
+  logical::v2b !v to bourndary or reverse
+  integer::i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,l
+  real::var(mt,i1min:i1max,i2min:i2max,i3min:i3max)
+  real::var0(i1min:i1max,i2min:i2max,i3min:i3max)
+
+  integer::r,i1,i2,i3,m,n,i,id(2*l)
+  real::kwsinc,kw(2*l)
+
+  r=nt/mt
+
+  if(v2b) then !v to bourndary
+     !"it" originates from 1 rather than 0
+     if(mod(it-1,r)==r-1) then !only every r-step, store fourier coefficients
+        m=it/r
+        do i3=i3min,i3max
+           do i2=i2min,i2max
+              do i1=i1min,i1max
+                 var(m,i1,i2,i3)=var0(i1,i2,i3)
+              enddo
+           enddo
+        enddo
+     endif
+  else !boundary to v, this part is done at every backward step
+     n=it-1; m=n/r ! 0<=m<=mt-1
+     if(m<l) then !the starting points
+        kw=(/(kwsinc(real(it-i),l,r),i=r,(2*l)*r,r)/)
+        id=(/(i,i=1,2*l)/)
+     else if (m+l>mt-1) then !the ending points
+        kw=(/(kwsinc(real(it-i),l,r),i=(mt-2*l+1)*r,mt*r,r)/)
+        id=(/(i,i=mt-2*l+1,mt)/)
+     else !the points in between
+        kw=(/(kwsinc(real(it-i),l,r),i=(m-l+1)*r,(m+l)*r,r)/)
+        id=(/(i,i=m-l+1,m+l)/)
+     endif
+
+     !kaiser windowed sinc interpolation
+     do i3=i3min,i3max
+        do i2=i2min,i2max
+           do i1=i1min,i1max
+              var0(i1,i2,i3)=sum(kw*var(id,i1,i2,i3))
+           enddo
+        enddo
+     enddo
+  endif
+end subroutine ksinc_interp
+
+!------------------------------------------------------------
+!compute weights of the kaiser window
+real function kwsinc(x,l,r)
+  implicit none
+  integer::l	!half window length of kaiser window
+  integer::r	!subsampling rate
+  real::x  	!actual shift, x=real(n-i*r)
+
+  real::bessi0
+  real:: b 	!parameter of kaiser window
+  real:: a  	!intermediate variable
+  real::tab(10)  !table for optimal b in 0-order bessel function
+  data tab /1.24,2.94,4.53,6.31,7.91,9.42,10.95,12.53,14.09,14.18/
+
+  b=tab(l) 	!optimal b according to kaiser window length
+  kwsinc=0.
+  a=x/real(l*r)
+  if(abs(a)<1.) then
+     kwsinc=bessi0(b*sqrt(1.-a*a))/bessi0(b)
+     a=3.14159265359*x/real(r)
+     if(abs(a)>1.e-7)  kwsinc=kwsinc*sin(a)/a
+  endif
+end function kwsinc
+
+! ------------------------------------------------------------
+! function bessi0 (from numerical recipes)
+function bessi0(x)
+  real bessi0, x, ax
+  real*8 y,p1,p2,p3,p4,p5,p6,p7,q1,q2,q3,q4,q5,q6,q7,q8,q9
+  data p1,p2,p3,p4,p5,p6,p7/1.0d0,3.5156229d0,3.0899424d0,&
+       1.2067492d0,0.2659732d0,0.360768d-1,0.45813d-2/
+  data q1,q2,q3,q4,q5,q6,q7,q8,q9/0.39894228d0,0.1328592d-1,&
+       0.225319d-2,-0.157565d-2,0.916281d-2,-0.2057706d-1,&
+       0.2635537d-1,-0.1647633d-1,0.392377d-2/
+
+  if (abs(x).lt.3.75) then
+     y=(x/3.75)**2
+     bessi0=p1+y*(p2+y*(p3+y*(p4+y*(p5+y*(p6+y*p7)))))
+  else
+     ax=abs(x)
+     y=3.75/ax
+     bessi0=(exp(ax)/sqrt(ax))* &
+          (q1+y*(q2+y*(q3+y*(q4+y*(q5+y*(q6+y*(q7+y*(q8+y*q9))))))))
+  endif
+end function bessi0
+
+

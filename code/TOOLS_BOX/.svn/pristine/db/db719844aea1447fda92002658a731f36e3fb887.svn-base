@@ -1,0 +1,841 @@
+!!-- Header --!!
+
+module hexa_mesh_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use grid_mod
+  use hexa_mesh_struct_mod
+  use hexa_ref_dof_mod
+  use hexa_glob_dof_mod
+  use mpi, only: mpi_proc_null
+
+  implicit none
+
+  !=========================================================
+  type, extends(grid_type), public :: hexa_mesh_type
+
+    ! Data members
+    type(hexa_ref_dof_t)              :: hexa_ref_dof
+    type(hexa_mesh_struct_type)       :: pMesh_struct
+    type(hexa_master_struct_type)     :: pMaster_struct
+
+    character(len=250)                :: rootname
+
+    real, dimension(3)                :: min_bbox = 0., max_bbox = 0. ! min anx max coordinates of the subdomain
+!     real, dimension(:,:), allocatable :: Ecenter
+
+  contains
+
+    procedure, pass :: hexa_mesh_constructor
+    procedure, pass :: hexa_mesh_parameterized_constructor
+    procedure, pass :: grid_read_config => hexa_mesh_read_config
+    procedure, pass :: grid_init        => hexa_mesh_init
+    procedure, pass :: grid_destructor  => hexa_mesh_destructor
+    procedure, pass :: hexa_mesh_is_point_inside_sub_domain
+    ! services on continuous fields (i.e. dof compacted)
+    procedure, pass :: hexa_mesh_allocate_continuous_scalar_field
+    procedure, pass :: hexa_mesh_allocate_global_continuous_scalar_field
+    procedure, pass :: hexa_mesh_read_global_continuous_scalar_field
+    procedure, pass :: hexa_mesh_deallocate_global_continuous_scalar_field
+    procedure, pass :: hexa_mesh_allocate_continuous_vector_field
+    procedure, pass :: hexa_mesh_allocate_global_continuous_vector_field
+    procedure, pass :: hexa_mesh_read_global_continuous_vector_field
+    procedure, pass :: hexa_mesh_deallocate_global_continuous_vector_field
+    ! services on discontinuous fields (i.e. dof expanded)
+    procedure, pass :: hexa_mesh_allocate_discontinuous_scalar_field
+    procedure, pass :: hexa_mesh_allocate_global_discontinuous_scalar_field
+    procedure, pass :: hexa_mesh_read_global_discontinuous_scalar_field
+    procedure, pass :: hexa_mesh_deallocate_global_discontinuous_scalar_field
+    procedure, pass :: hexa_mesh_allocate_discontinuous_vector_field
+    procedure, pass :: hexa_mesh_allocate_global_discontinuous_vector_field
+    procedure, pass :: hexa_mesh_read_global_discontinuous_vector_field
+    procedure, pass :: hexa_mesh_deallocate_global_discontinuous_vector_field
+  end type hexa_mesh_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_hexa_mesh_type
+
+  contains
+
+
+    function as_hexa_mesh_type(grid)
+      class(grid_type), target, intent(in) :: grid
+      type(hexa_mesh_type),     pointer    :: as_hexa_mesh_type
+      character(len=*),         parameter  :: proc_name = "as_hexa_mesh_type"
+
+      grid_selector: select type(grid)
+      type is (hexa_mesh_type)
+        as_hexa_mesh_type => grid
+      class default
+        write(*,*) myid, " : ", proc_name, " :: ERROR : Wrong grid type. Attempted: hexa_mesh_type"
+        stop
+      end select grid_selector
+
+    end function as_hexa_mesh_type
+
+
+    subroutine hexa_mesh_constructor(this)
+      class(hexa_mesh_type), intent(in out) :: this
+      character(len=*),      parameter      :: proc_name = "hexa_mesh_constructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call grid_constructor(this)
+
+      !! BODY ++
+
+      !! BODY --
+
+    end subroutine hexa_mesh_constructor
+
+ 
+    subroutine hexa_mesh_parameterized_constructor(this, ngll1D, rootname)
+      class(hexa_mesh_type), intent(in out) :: this
+      integer,               intent(in)     :: ngll1D
+      character(len=*),      intent(in)     :: rootname
+      character(len=*),      parameter      :: proc_name = 'hexa_mesh_parameterized_constructor'
+      character(len=1500)                   :: buffer_config_grid
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      ! Propagate object creation on parent class
+      call grid_constructor(this)
+
+      !! BODY ++
+      this%rootname = rootname
+      this%pMesh_struct%ngll1D = ngll1D
+
+      if (dd_debug_level > 3) then
+        write(buffer_config_grid,*) end_of_line, &
+        &' Mesh config         : ', end_of_line, &
+        &' rootname         = ', this%rootname, end_of_line, &
+        &' ngll1D           = ', this%pMesh_struct%ngll1D, end_of_line, &
+        & end_of_line
+        write(*,'(A)') trim(buffer_config_grid)
+      end if
+      !! BODY --
+
+    end subroutine hexa_mesh_parameterized_constructor
+
+
+    subroutine hexa_mesh_destructor(this)
+      class(hexa_mesh_type), intent(in out) :: this
+      character(len=*),      parameter      :: proc_name = "hexa_mesh_destructor"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+      !! BODY ++
+      call free_hexa_mesh_struct(this%pMesh_struct)
+
+      if (myid == 0) call free_hexa_master_struct(this%pMaster_struct)
+
+!       if (allocated(this%Ecenter)) call dealloc_(this%Ecenter, 'Ecenter')
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call grid_destructor(this)
+
+    end subroutine hexa_mesh_destructor
+
+
+    subroutine hexa_mesh_init(this)
+      class(hexa_mesh_type), intent(in out) :: this
+      character(len = *),    parameter      :: proc_name = "hexa_mesh_init"
+!       integer,               parameter      :: nEdeg = 8, nEtoCP_deg = 19
+      character(len=3)                      :: str1
+      character(len=250)                    :: iMeshFileName, iMasterFileName
+      integer                               :: ie, nE, i , iv
+      real, dimension(3)                    :: s
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      end if
+
+      write(str1,'(I3)') myid+1
+      iMeshFileName = trim(adjustl(this%rootName)) // '_' // trim(adjustl(str1)) // '.mesh'
+      if (dd_debug_level > 3) then
+        write(*,*) trim(adjustl(str1)), ' ', trim(adjustl(iMeshFileName))
+      end if
+
+      call read_hexa_mesh_struct(this%pMesh_struct, iMeshFileName)
+
+      call build_hexa_ref_dof(this%pMesh_struct%ngll1D, this%hexa_ref_dof)
+
+      call assembly_hexa_glob_dof(this%hexa_ref_dof, this%pMesh_struct)
+
+      if (myid == 0) then
+        iMasterFileName = trim(adjustl(this%rootName)) // '.master'
+        call read_hexa_master_struct(this%pMaster_struct, iMasterFileName)
+      end if
+
+      ! Compute the bounding box of the subdomain
+      if (this%pMesh_struct%hexa_type == HEXA_27 .and. this%pMesh_struct%nCP > 0) then
+        this%min_bbox(1) = min(minval(this%pMesh_struct%CoorV(1,:)),minval(this%pMesh_struct%CoorCP(1,:)))
+        this%min_bbox(2) = min(minval(this%pMesh_struct%CoorV(2,:)),minval(this%pMesh_struct%CoorCP(2,:)))
+        this%min_bbox(3) = min(minval(this%pMesh_struct%CoorV(3,:)),minval(this%pMesh_struct%CoorCP(3,:)))
+        this%max_bbox(1) = max(maxval(this%pMesh_struct%CoorV(1,:)),maxval(this%pMesh_struct%CoorCP(1,:)))
+        this%max_bbox(2) = max(maxval(this%pMesh_struct%CoorV(2,:)),maxval(this%pMesh_struct%CoorCP(2,:)))
+        this%max_bbox(3) = max(maxval(this%pMesh_struct%CoorV(3,:)),maxval(this%pMesh_struct%CoorCP(3,:)))
+      else
+        this%min_bbox(1) = minval(this%pMesh_struct%CoorV(1,:))
+        this%min_bbox(2) = minval(this%pMesh_struct%CoorV(2,:))
+        this%min_bbox(3) = minval(this%pMesh_struct%CoorV(3,:))
+        this%max_bbox(1) = maxval(this%pMesh_struct%CoorV(1,:))
+        this%max_bbox(2) = maxval(this%pMesh_struct%CoorV(2,:))
+        this%max_bbox(3) = maxval(this%pMesh_struct%CoorV(3,:))
+      end if
+
+!       ! Compute center points of elements
+!       nE = this%pMesh_struct%nE
+!       call alloc_(this%Ecenter,1, 3, 1, nE, 'Ecenter')
+! 
+!       if (this%pMesh_struct%hexa_type == HEXA_27 .and. this%pMesh_struct%nCP > 0) then
+! 
+!         !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(ie, i, iv, s)
+!         !$OMP DO SCHEDULE(DYNAMIC)
+!          do ie = 1, nE
+!           s(:) = 0.
+!           do i = 1, nEdeg
+!             iv = this%pMesh_struct%EtoV(i,ie)
+!             s(:) = s(:) + this%pMesh_struct%CoorV(:,iv)
+!           end do
+!           do i = 1, nEtoCP_deg
+!             iv = this%pMesh_struct%EtoCP(i,ie)
+!             s(:) = s(:) + this%pMesh_struct%CoorCP(:,iv)
+!           end do
+!           s(:) = s(:) / (nEdeg + nEtoCP_deg)
+!           this%Ecenter(:,ie) = s(:)
+!         end do
+!         !$OMP END DO
+!         !$OMP END PARALLEL
+!        
+!       else
+! 
+!         !$OMP PARALLEL NUM_THREADS(nthreads) DEFAULT(SHARED) PRIVATE(ie, i, iv, s)
+!         !$OMP DO SCHEDULE(DYNAMIC)
+!         do ie = 1, nE
+!           s(:) = 0.
+!           do i = 1, nEdeg
+!             iv = this%pMesh_struct%EtoV(i,ie)
+!             s(:) = s(:) + this%pMesh_struct%CoorV(:,iv)
+!           end do
+!           s(:) = s(:) / nEdeg
+!           this%Ecenter(:,ie) = s(:)
+!         end do
+!         !$OMP END DO
+!         !$OMP END PARALLEL
+! 
+!       end if
+
+    end subroutine hexa_mesh_init
+
+ 
+    subroutine hexa_mesh_set_overlap(this, novlp)
+      class(hexa_mesh_type), intent(in out) :: this
+      integer,               intent(in)     :: novlp
+      character(len=*),      parameter      :: proc_name = 'hexa_mesh_set_overlap'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      ! do nothing as we define no overlap for SEM discretization
+    end subroutine hexa_mesh_set_overlap
+
+
+    subroutine hexa_mesh_read_config(this, config_file)
+      class(hexa_mesh_type), intent(in out) :: this
+      character(len = *),    intent(in)     :: config_file
+      character(len = *),    parameter      :: proc_name = "hexa_mesh_read_config"
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, " : ", proc_name
+      endif
+
+    end subroutine hexa_mesh_read_config
+
+
+    subroutine hexa_mesh_allocate_continuous_scalar_field(this, F, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:), allocatable,     intent(in out) :: F
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_allocate_continuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      call alloc_(F, 1, this%pMesh_struct%ndof, trim(adjustl(name)))
+
+    end subroutine hexa_mesh_allocate_continuous_scalar_field
+
+  
+    subroutine hexa_mesh_allocate_global_continuous_scalar_field(this, Fglob, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:),     allocatable, intent(in out) :: Fglob
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_allocate_global_continuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      if (myid == 0) then
+
+        call alloc_(Fglob, 1,  this%pMaster_struct%ndofglob, trim(adjustl(name)))
+
+      end if
+
+    end subroutine hexa_mesh_allocate_global_continuous_scalar_field
+
+ 
+    subroutine hexa_mesh_read_global_continuous_scalar_field(this, Fglob, filename)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:), allocatable,     intent(in out) :: Fglob
+      character(len=*),                    intent(in)     :: filename
+      integer                                             :: unitfile, l_rec, nglob
+      logical                                             :: exist
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_read_global_continuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,'(I12,4A)') myid, '  : ', proc_name, ' : ', filename
+      endif
+
+      if (myid == 0) then
+
+        ! Number of points of the global grid
+        nglob = this%pMaster_struct%ndofglob
+
+        ! suppose that values stored in the file are real simple precision
+        l_rec = nglob * 4
+
+        ! allocate table for read on global grid
+        if (.not.allocated(Fglob)) then
+          call this%hexa_mesh_allocate_global_continuous_scalar_field(Fglob, trim(adjustl(filename)) // "_glob")
+        end if
+
+        unitfile = 11
+
+        inquire(FILE = filename, EXIST = exist)
+        if (.not. exist) then
+          write(*,*) proc_name, " :: ERROR : file not found : ", trim(filename)
+          stop
+        end if
+
+        ! open file
+        open(UNIT = unitfile, FILE = filename, ACCESS='DIRECT', FORM='UNFORMATTED', STATUS ='UNKNOWN', RECL=l_rec)
+        read(unitfile, rec = 1) Fglob
+        close(UNIT = unitfile)
+
+        if ((dd_debug_level > 1) .AND. (myid_world == 0)) write(*,*) 'Read file ok : ', trim(filename)
+
+      end if
+
+    end subroutine hexa_mesh_read_global_continuous_scalar_field
+
+  
+    subroutine hexa_mesh_deallocate_global_continuous_scalar_field(this, Fglob, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:), allocatable,     intent(in out) :: Fglob
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_deallocate_global_continuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      if (myid == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field is not allocated on master processor of MPI_COMM_1"
+          stop
+        end if
+
+        call dealloc_(Fglob, name)
+
+      end if
+
+    end subroutine hexa_mesh_deallocate_global_continuous_scalar_field
+
+
+    subroutine hexa_mesh_allocate_continuous_vector_field(this, F, nv, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:,:), allocatable,   intent(in out) :: F
+      integer,                             intent(in)     :: nv
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_allocate_continuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      call alloc_(F, 1, nv, 1, this%pMesh_struct%ndof, trim(adjustl(name)))
+
+    end subroutine hexa_mesh_allocate_continuous_vector_field
+
+  
+    subroutine hexa_mesh_allocate_global_continuous_vector_field(this, Fglob, nv, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:,:),   allocatable, intent(in out) :: Fglob
+      integer,                             intent(in)     :: nv
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_allocate_global_continuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+
+      if (myid == 0) then
+
+        call alloc_(Fglob, 1, nv, 1,  this%pMaster_struct%ndofglob, trim(adjustl(name)))
+
+      end if
+
+    end subroutine hexa_mesh_allocate_global_continuous_vector_field
+
+ 
+    subroutine hexa_mesh_read_global_continuous_vector_field(this, Fglob, nv, filename)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:,:), allocatable,   intent(in out) :: Fglob
+      character(len=*),                    intent(in)     :: filename
+      integer,                             intent(in)     :: nv
+      integer                                             :: unitfile, l_rec, nglob
+      logical                                             :: exist
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_read_global_continuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,'(I12,4A)') myid, '  : ', proc_name, ' : ', filename
+      endif
+
+      if (myid == 0) then
+
+        ! Number of points of the global grid
+        nglob = this%pMaster_struct%ndofglob
+
+        ! suppose that values stored in the file are real simple precision
+        l_rec = nv * nglob * 4
+
+        ! allocate table for read on global grid
+        if (.not.allocated(Fglob)) then
+          call this%hexa_mesh_allocate_global_continuous_vector_field(Fglob, nv, trim(adjustl(filename)) // "_glob")
+        end if
+
+        unitfile = 11
+
+        inquire(FILE = filename, EXIST = exist)
+        if (.not. exist) then
+          write(*,*) proc_name, " :: ERROR : file not found : ", trim(filename)
+          stop
+        end if
+
+        ! open file
+        open(UNIT = unitfile, FILE = filename, ACCESS='DIRECT', FORM='UNFORMATTED', STATUS ='UNKNOWN', RECL=l_rec)
+        read(unitfile, rec = 1) Fglob
+        close(UNIT = unitfile)
+
+        if ((dd_debug_level > 1) .AND. (myid_world == 0)) write(*,*) 'Read file ok : ', trim(filename)
+
+      end if
+
+    end subroutine hexa_mesh_read_global_continuous_vector_field
+
+  
+    subroutine hexa_mesh_deallocate_global_continuous_vector_field(this, Fglob, name)
+      class(hexa_mesh_type),               intent(in out) :: this
+      real, dimension(:,:), allocatable,   intent(in out) :: Fglob
+      character(len=*),                    intent(in)     :: name
+      character(len=*),                    parameter      :: proc_name = 'hexa_mesh_deallocate_global_continuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      if (myid == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field is not allocated on master processor of MPI_COMM_1"
+          stop
+        end if
+
+        call dealloc_(Fglob, name)
+
+      end if
+
+    end subroutine hexa_mesh_deallocate_global_continuous_vector_field
+
+
+    subroutine hexa_mesh_allocate_discontinuous_scalar_field(this, F, name)
+      class(hexa_mesh_type),                 intent(in out) :: this
+      real, dimension(:,:,:,:), allocatable, intent(in out) :: F
+      character(len=*),                      intent(in)     :: name
+      character(len=*),                      parameter      :: proc_name = 'hexa_mesh_allocate_discontinuous_scalar_field'
+      integer                                               :: ngll1D, nE
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      ngll1D = this%pMesh_struct%ngll1D
+      nE     = this%pMesh_struct%nE
+      call alloc_(F, 1, ngll1D, 1, ngll1D, 1, ngll1D, 1, nE, trim(adjustl(name)))
+
+    end subroutine hexa_mesh_allocate_discontinuous_scalar_field
+
+  
+    subroutine hexa_mesh_allocate_global_discontinuous_scalar_field(this, Fglob, name)
+      class(hexa_mesh_type),                 intent(in out) :: this
+      real, dimension(:,:,:,:), allocatable, intent(in out) :: Fglob
+      character(len=*),                      intent(in)     :: name
+      character(len=*),                      parameter      :: proc_name = 'hexa_mesh_allocate_global_discontinuous_scalar_field'
+      integer                                               :: ngll1D, nEglob
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      if (myid == 0) then
+
+        ngll1D = this%pMesh_struct%ngll1D
+        nEglob = this%pMaster_struct%nEglob
+        call alloc_(Fglob, 1,  ngll1D, 1, ngll1D, 1, ngll1D, 1, nEglob, trim(adjustl(name)))
+
+      end if
+
+    end subroutine hexa_mesh_allocate_global_discontinuous_scalar_field
+
+ 
+    subroutine hexa_mesh_read_global_discontinuous_scalar_field(this, Fglob, filename)
+      class(hexa_mesh_type),                 intent(in out) :: this
+      real, dimension(:,:,:,:), allocatable, intent(in out) :: Fglob
+      character(len=*),                      intent(in)     :: filename
+      integer                                               :: unitfile, l_rec, ngll1D, nEglob
+      logical                                               :: exist
+      character(len=*),                      parameter      :: proc_name = 'hexa_mesh_read_global_discontinuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,'(I12,4A)') myid, '  : ', proc_name, ' : ', filename
+      endif
+
+      if (myid == 0) then
+
+        ngll1D = this%pMesh_struct%ngll1D
+        nEglob = this%pMaster_struct%nEglob
+
+        ! suppose that values stored in the file are real simple precision
+        l_rec = ngll1D * ngll1D * ngll1D * nEglob * 4
+
+        ! allocate table for read on global grid
+        if (.not.allocated(Fglob)) then
+          call this%hexa_mesh_allocate_global_discontinuous_scalar_field(Fglob, trim(adjustl(filename)) // "_glob")
+        end if
+
+        unitfile = 11
+
+        inquire(FILE = filename, EXIST = exist)
+        if (.not. exist) then
+          write(*,*) proc_name, " :: ERROR : file not found : ", trim(filename)
+          stop
+        end if
+
+        ! open file
+        open(UNIT = unitfile, FILE = filename, ACCESS='DIRECT', FORM='UNFORMATTED', STATUS ='UNKNOWN', RECL=l_rec)
+        read(unitfile, rec = 1) Fglob
+        close(UNIT = unitfile)
+
+        if ((dd_debug_level > 1) .AND. (myid_world == 0)) write(*,*) 'Read file ok : ', trim(filename)
+
+      end if
+
+    end subroutine hexa_mesh_read_global_discontinuous_scalar_field
+
+  
+    subroutine hexa_mesh_deallocate_global_discontinuous_scalar_field(this, Fglob, name)
+      class(hexa_mesh_type),                 intent(in out) :: this
+      real, dimension(:,:,:,:), allocatable, intent(in out) :: Fglob
+      character(len=*),                      intent(in)     :: name
+      character(len=*),                      parameter      :: proc_name = 'hexa_mesh_deallocate_global_discontinuous_scalar_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      if (myid == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field is not allocated on master processor of MPI_COMM_1"
+          stop
+        end if
+
+        call dealloc_(Fglob, name)
+
+      end if
+
+    end subroutine hexa_mesh_deallocate_global_discontinuous_scalar_field
+
+
+    subroutine hexa_mesh_allocate_discontinuous_vector_field(this, F, nv, name)
+      class(hexa_mesh_type),                   intent(in out) :: this
+      real, dimension(:,:,:,:,:), allocatable, intent(in out) :: F
+      integer,                                 intent(in)     :: nv
+      character(len=*),                        intent(in)     :: name
+      character(len=*),                        parameter      :: proc_name = 'hexa_mesh_allocate_discontinuous_vector_field'
+      integer                                                 :: ngll1D, nE
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      ngll1D = this%pMesh_struct%ngll1D
+      nE     = this%pMesh_struct%nE
+      call alloc_(F, 1, nv, 1, ngll1D, 1, ngll1D, 1, ngll1D, 1, nE, trim(adjustl(name)))
+
+    end subroutine hexa_mesh_allocate_discontinuous_vector_field
+
+  
+    subroutine hexa_mesh_allocate_global_discontinuous_vector_field(this, Fglob, nv, name)
+      class(hexa_mesh_type),                   intent(in out) :: this
+      real, dimension(:,:,:,:,:), allocatable, intent(in out) :: Fglob
+      integer,                                 intent(in)     :: nv
+      character(len=*),                        intent(in)     :: name
+      character(len=*),                        parameter      :: proc_name = 'hexa_mesh_allocate_global_discontinuous_vector_field'
+      integer                                                 :: ngll1D, nEglob
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name, ' : ', name
+      endif
+
+      if (myid == 0) then
+
+        ngll1D = this%pMesh_struct%ngll1D
+        nEglob = this%pMaster_struct%nEglob
+        call alloc_(Fglob, 1, nv, 1,  ngll1D, 1, ngll1D, 1, ngll1D, 1, nEglob, trim(adjustl(name)))
+
+      end if
+
+    end subroutine hexa_mesh_allocate_global_discontinuous_vector_field
+
+ 
+    subroutine hexa_mesh_read_global_discontinuous_vector_field(this, Fglob, nv, filename)
+      class(hexa_mesh_type),                   intent(in out) :: this
+      real, dimension(:,:,:,:,:), allocatable, intent(in out) :: Fglob
+      character(len=*),                        intent(in)     :: filename
+      integer,                                 intent(in)     :: nv
+      integer                                                 :: unitfile, l_rec, ngll1D, nEglob
+      logical                                                 :: exist
+      character(len=*),                        parameter      :: proc_name = 'hexa_mesh_read_global_discontinuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,'(I12,4A)') myid, '  : ', proc_name, ' : ', filename
+      endif
+
+      if (myid == 0) then
+
+        ngll1D = this%pMesh_struct%ngll1D
+        nEglob = this%pMaster_struct%nEglob
+
+        ! suppose that values stored in the file are real simple precision
+        l_rec = nv * ngll1D * ngll1D * ngll1D * nEglob * 4
+
+        ! allocate table for read on global grid
+        if (.not.allocated(Fglob)) then
+          call this%hexa_mesh_allocate_global_discontinuous_vector_field(Fglob, nv, trim(adjustl(filename)) // "_glob")
+        end if
+
+        unitfile = 11
+
+        inquire(FILE = filename, EXIST = exist)
+        if (.not. exist) then
+          write(*,*) proc_name, " :: ERROR : file not found : ", trim(filename)
+          stop
+        end if
+
+        ! open file
+        open(UNIT = unitfile, FILE = filename, ACCESS='DIRECT', FORM='UNFORMATTED', STATUS ='UNKNOWN', RECL=l_rec)
+        read(unitfile, rec = 1) Fglob
+        close(UNIT = unitfile)
+
+        if ((dd_debug_level > 1) .AND. (myid_world == 0)) write(*,*) 'Read file ok : ', trim(filename)
+
+      end if
+
+    end subroutine hexa_mesh_read_global_discontinuous_vector_field
+
+  
+    subroutine hexa_mesh_deallocate_global_discontinuous_vector_field(this, Fglob, name)
+      class(hexa_mesh_type),                   intent(in out) :: this
+      real, dimension(:,:,:,:,:), allocatable, intent(in out) :: Fglob
+      character(len=*),                        intent(in)     :: name
+      character(len=*),                        parameter      :: proc_name='hexa_mesh_deallocate_global_discontinuous_vector_field'
+
+      if (dd_debug_level > 3) then
+        write(*,*) myid, ' : ', proc_name
+      endif
+
+      if (myid == 0) then
+
+        if (.not.allocated(Fglob)) then
+          write(*,*) proc_name, " :: ERROR : global field is not allocated on master processor of MPI_COMM_1"
+          stop
+        end if
+
+        call dealloc_(Fglob, name)
+
+      end if
+
+    end subroutine hexa_mesh_deallocate_global_discontinuous_vector_field
+
+
+    logical function hexa_mesh_is_point_inside_sub_domain(this, pt_coor)
+      class(hexa_mesh_type),        intent(in)  :: this
+      real,    dimension(3),        intent(in)  :: pt_coor
+      character(len=*),             parameter   :: proc_name = 'hexa_mesh_is_point_inside_sub_domain'
+
+      !------------------------------------------------------------------------
+      !
+      ! Check if the point defined by its coordinates (x, y, z)
+      ! belongs to the subdomain bounding box
+      !
+      ! IN : x, y, z
+      ! OUT : true if the point belongs to the local domain 
+      !
+      !-------------------------------------------------------------------------
+
+      if (dd_debug_level > 10) then
+        write(*,*) myid, ' : ', proc_name
+      end if
+
+      hexa_mesh_is_point_inside_sub_domain = .false.
+
+      ! Check if the element belongs to the bounding box of the subdomain
+      if (      pt_coor(1) > this%min_bbox(1) .and. pt_coor(1) < this%max_bbox(1) &
+      &   .and. pt_coor(2) > this%min_bbox(2) .and. pt_coor(2) < this%max_bbox(2) &
+      &   .and. pt_coor(3) > this%min_bbox(3) .and. pt_coor(3) < this%max_bbox(3)) then
+
+        hexa_mesh_is_point_inside_sub_domain = .true.
+
+      end if
+
+    end function hexa_mesh_is_point_inside_sub_domain
+
+
+!     logical function hexa_mesh_is_point_inside_sub_domain(this, pt_coor, ieloc)
+!       class(hexa_mesh_type),        intent(in)  :: this
+!       real,    dimension(3),        intent(in)  :: pt_coor
+!       integer,                      intent(out) :: ieloc
+!       character(len=*),             parameter   :: proc_name = 'hexa_mesh_is_point_inside_sub_domain'
+!       integer                                   :: cpt, nE, ie, ie_ref, i, iv, nEtoCP_deg
+!       real                                      :: dist, dist_ref
+!       real, dimension(3)                        :: min_bbox_elem, max_bbox_elem
+!       integer,                      parameter   :: nEdeg = 8
+! 
+!       !------------------------------------------------------------------------
+!       !
+!       ! Estimate if the point defined by its coordinates (x, y, z)
+!       ! belongs to the local subdomain and in this case to which element
+!       !
+!       ! IN : x, y, z
+!       ! OUT : true if the point belongs to the local domain 
+!       !       [+ local index of the element it belongs to]
+!       !
+!       !-------------------------------------------------------------------------
+! 
+!       if (dd_debug_level > 10) then
+!         write(*,*) myid, ' : ', proc_name
+!       end if
+! 
+!       if (this%pMesh_struct%hexa_type == HEXA_27) then
+!         nEtoCP_deg = 19
+!       else
+!         nEtoCP_deg = 0
+!       end if
+! 
+!       hexa_mesh_is_point_inside_sub_domain = .false.
+! 
+!       ! Check if the element belongs to the bounding box of the subdomain
+!       if (      pt_coor(1) > this%min_bbox(1) .and. pt_coor(1) < this%max_bbox(1) &
+!       &   .and. pt_coor(2) > this%min_bbox(2) .and. pt_coor(2) < this%max_bbox(2) &
+!       &   .and. pt_coor(3) > this%min_bbox(3) .and. pt_coor(3) < this%max_bbox(3)) then
+! 
+!         hexa_mesh_is_point_inside_sub_domain = .true.
+!         ieloc  = -1
+! 
+!         nE     = this%pMesh_struct%nE
+!         cpt    = 0
+!         ie_ref = 1
+! 
+!         dist_ref = sqrt(  (pt_coor(1)-this%Ecenter(1,ie_ref)) * (pt_coor(1)-this%Ecenter(1,ie_ref)) &
+!         &               + (pt_coor(2)-this%Ecenter(2,ie_ref)) * (pt_coor(2)-this%Ecenter(2,ie_ref)) &
+!         &               + (pt_coor(3)-this%Ecenter(3,ie_ref)) * (pt_coor(3)-this%Ecenter(3,ie_ref)))
+! 
+!         ! Find the element having the nearest center from the point
+!         do while (cpt < nE)
+! 
+!           do i = 1, 6
+!             ie = this%pMesh_struct%EtoE(i, ie_ref)
+!             dist = sqrt(  (pt_coor(1)-this%Ecenter(1,ie)) * (pt_coor(1)-this%Ecenter(1,ie)) &
+!             &           + (pt_coor(2)-this%Ecenter(2,ie)) * (pt_coor(2)-this%Ecenter(2,ie)) &
+!             &           + (pt_coor(3)-this%Ecenter(3,ie)) * (pt_coor(3)-this%Ecenter(3,ie)))
+!             if (dist < dist_ref) then
+!               dist_ref = dist
+!               ie_ref   = ie
+!               exit
+!             end if
+!           end do
+! 
+!           cpt = cpt + 1
+!         end do
+! 
+!         ! Compute the bounding box of the found element
+!         iv = this%pMesh_struct%EtoV(1,ie)
+!         min_bbox_elem(:) = this%pMesh_struct%CoorV(:,iv)
+!         max_bbox_elem(:) = this%pMesh_struct%CoorV(:,iv)
+!         do i = 2, nEdeg
+!           iv = this%pMesh_struct%EtoV(i,ie)
+!           min_bbox_elem(1) = min(min_bbox_elem(1), this%pMesh_struct%CoorV(1,iv))
+!           min_bbox_elem(2) = min(min_bbox_elem(2), this%pMesh_struct%CoorV(2,iv))
+!           min_bbox_elem(3) = min(min_bbox_elem(3), this%pMesh_struct%CoorV(3,iv))
+!           max_bbox_elem(1) = max(max_bbox_elem(1), this%pMesh_struct%CoorV(1,iv))
+!           max_bbox_elem(2) = max(max_bbox_elem(2), this%pMesh_struct%CoorV(2,iv))
+!           max_bbox_elem(3) = max(max_bbox_elem(3), this%pMesh_struct%CoorV(3,iv))
+!         end do
+!         do i = 1, nEtoCP_deg
+!           min_bbox_elem(1) = min(min_bbox_elem(1), this%pMesh_struct%CoorCP(1,iv))
+!           min_bbox_elem(2) = min(min_bbox_elem(2), this%pMesh_struct%CoorCP(2,iv))
+!           min_bbox_elem(3) = min(min_bbox_elem(3), this%pMesh_struct%CoorCP(3,iv))
+!           max_bbox_elem(1) = max(max_bbox_elem(1), this%pMesh_struct%CoorCP(1,iv))
+!           max_bbox_elem(2) = max(max_bbox_elem(2), this%pMesh_struct%CoorCP(2,iv))
+!           max_bbox_elem(3) = max(max_bbox_elem(3), this%pMesh_struct%CoorCP(3,iv))
+!         end do
+! 
+!         ! Check if the found element belongs to the bounding box of the element
+!         if (this%pMesh_struct%hexa_type == HEXA_8) then
+! 
+!           if (      pt_coor(1) > min_bbox_elem(1) .and. pt_coor(1) < max_bbox_elem(1) &
+!           &   .and. pt_coor(2) > min_bbox_elem(2) .and. pt_coor(2) < max_bbox_elem(2) &
+!           &   .and. pt_coor(3) > min_bbox_elem(3) .and. pt_coor(3) < max_bbox_elem(3)) then
+!             ieloc = ie_ref
+!           end if
+! 
+!         else ! HEXA_27
+! 
+!           ! TODO
+!           if (.true.) then
+!             ieloc = ie_ref
+!           end if
+! 
+!         end if
+!       end if
+! 
+!     end function hexa_mesh_is_point_inside_sub_domain
+
+end module hexa_mesh_mod

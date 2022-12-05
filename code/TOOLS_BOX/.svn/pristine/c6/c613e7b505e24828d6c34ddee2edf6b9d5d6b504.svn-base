@@ -1,0 +1,122 @@
+\relax 
+\ifx\hyper@anchor\@undefined
+\global \let \oldcontentsline\contentsline
+\gdef \contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global \let \oldnewlabel\newlabel
+\gdef \newlabel#1#2{\newlabelxx{#1}#2}
+\gdef \newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\let \contentsline\oldcontentsline
+\let \newlabel\oldnewlabel}
+\else
+\global \let \hyper@last\relax 
+\fi
+
+\select@language{english}
+\@writefile{toc}{\select@language{english}}
+\@writefile{lof}{\select@language{english}}
+\@writefile{lot}{\select@language{english}}
+\newlabel{figlogo}{{}{1}{\relax }{}{}}
+\citation{Metivier_2015_SOT}
+\citation{Metivier_2014_FWI}
+\citation{Metivier_2013_TRU}
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{6}{section.1}}
+\citation{Nocedal_2006_NO}
+\@writefile{toc}{\contentsline {section}{\numberline {2}An overview of the routines in the toolbox}{7}{section.2}}
+\newlabel{min_pb}{{2.1}{7}{An overview of the routines in the toolbox\relax }{equation.2.1}{}}
+\newlabel{min_seq}{{2.3}{7}{An overview of the routines in the toolbox\relax }{equation.2.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Preconditioned steepest descent: PSTD}{7}{subsection.2.1}}
+\citation{DAI_1999_NCG}
+\citation{Byrd_1995_LMB}
+\citation{Nocedal_2006_NO}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Preconditioned nonlinear conjugate gradient: PNLCG}{8}{subsection.2.2}}
+\newlabel{nlcg}{{2.5}{8}{Preconditioned nonlinear conjugate gradient: PNLCG\relax }{equation.2.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Quasi-Newton $l$-BFGS method: LBFGS}{8}{subsection.2.3}}
+\citation{Byrd_1995_LMB}
+\citation{Nocedal_2006_NO}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}{9}{subsection.2.4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Truncated Newton method: TRN}{9}{subsection.2.5}}
+\citation{Eisenstat_1994_TRN}
+\citation{Metivier_2013_TRU}
+\citation{Eisenstat_1994_TRN}
+\citation{Metivier_2013_TRU}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Preconditioned truncated Newton method: PTRN}{10}{subsection.2.6}}
+\@writefile{toc}{\contentsline {section}{\numberline {3}Installation}{11}{section.3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Compilation}{11}{subsection.3.1}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Compiling and running the test programs}{12}{subsection.3.2}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}How to use the optimization routines?}{15}{section.4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Preconditioned Steepest Descent: PSTD}{15}{subsection.4.1}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}Variables declaration}{15}{subsubsection.4.1.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PSTD/declaration.f90}{16}{lstlisting.-1}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Initialization}{16}{subsubsection.4.1.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PSTD/init.f90}{17}{lstlisting.-2}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Minimization within the reverse communication loop}{17}{subsubsection.4.1.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PSTD/reverse\textunderscore communication\textunderscore loop.f90}{18}{lstlisting.-3}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.4}End of the loop and output file}{18}{subsubsection.4.1.4}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PSTD/iterate\textunderscore ST.dat}{19}{lstlisting.-4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Preconditioned nonlinear conjugate gradient: PNLCG}{19}{subsection.4.2}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.1}Variables declaration}{19}{subsubsection.4.2.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PNLCG/declaration.f90}{19}{lstlisting.-5}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.2}Initialization}{20}{subsubsection.4.2.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PNLCG/init.f90}{21}{lstlisting.-6}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.3}Minimization within the reverse communication loop}{21}{subsubsection.4.2.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PNLCG/reverse\textunderscore communication\textunderscore loop.f90}{22}{lstlisting.-7}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.2.4}End of the loop and output file}{22}{subsubsection.4.2.4}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PNLCG/iterate\textunderscore CG.dat}{23}{lstlisting.-8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Quasi-Newton $l$-BFGS method: LBFGS}{23}{subsection.4.3}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Variables declaration}{23}{subsubsection.4.3.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/LBFGS/declaration.f90}{23}{lstlisting.-9}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Initialization}{24}{subsubsection.4.3.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/LBFGS/init.f90}{25}{lstlisting.-10}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.3}Minimization within the reverse communication loop}{25}{subsubsection.4.3.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/LBFGS/reverse\textunderscore communication\textunderscore loop.f90}{25}{lstlisting.-11}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/LBFGS/iterate\textunderscore LB.dat}{26}{lstlisting.-12}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.4}End of the loop and output file}{26}{subsubsection.4.3.4}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}{27}{subsection.4.4}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.1}Variables declaration}{27}{subsubsection.4.4.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PLBFGS/declaration.f90}{27}{lstlisting.-13}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.2}Initialization}{27}{subsubsection.4.4.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PLBFGS/init.f90}{29}{lstlisting.-14}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.3}Minimization within the reverse communication loop}{29}{subsubsection.4.4.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PLBFGS/reverse\textunderscore communication\textunderscore loop.f90}{30}{lstlisting.-15}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.4.4}End of the loop and output file}{30}{subsubsection.4.4.4}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PLBFGS/iterate\textunderscore PLB.dat}{31}{lstlisting.-16}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Truncated Newton method: TRN}{31}{subsection.4.5}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.1}Variables declaration}{31}{subsubsection.4.5.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/declaration.f90}{31}{lstlisting.-17}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.2}Initialization}{32}{subsubsection.4.5.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/init.f90}{33}{lstlisting.-18}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.3}Minimization within the reverse communication loop}{33}{subsubsection.4.5.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/reverse\textunderscore communication\textunderscore loop.f90}{34}{lstlisting.-19}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.5.4}End of the loop and output file}{34}{subsubsection.4.5.4}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/iterate\textunderscore TRN.dat}{35}{lstlisting.-20}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/iterate\textunderscore TRN\textunderscore CG.dat}{36}{lstlisting.-21}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.6}Preconditioned truncated Newton method: PTRN}{36}{subsection.4.6}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.1}Variables declaration}{36}{subsubsection.4.6.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PTRN/declaration.f90}{37}{lstlisting.-22}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.2}Initialization}{37}{subsubsection.4.6.2}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PTRN/init.f90}{38}{lstlisting.-23}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.3}Minimization within the reverse communication loop}{39}{subsubsection.4.6.3}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PTRN/reverse\textunderscore communication\textunderscore loop.f90}{39}{lstlisting.-24}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/PTRN/iterate\textunderscore PTRN.dat}{40}{lstlisting.-25}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.6.4}End of the loop and output file}{40}{subsubsection.4.6.4}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/TRN/iterate\textunderscore TRN\textunderscore CG.dat}{41}{lstlisting.-26}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Technical details}{42}{section.5}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Writing intermediate values of $x$}{42}{subsection.5.1}}
+\@writefile{lol}{\contentsline {lstlisting}{./src\textunderscore code/new\textunderscore step/reverse\textunderscore communication\textunderscore loop.f90}{42}{lstlisting.-27}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Linesearch algorithm}{42}{subsection.5.2}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.1}The Wolfe criterion}{42}{subsubsection.5.2.1}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.2}Linesearch algorithm}{43}{subsubsection.5.2.2}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.3}Initialization of the linesearch parameter $\alpha $}{43}{subsubsection.5.2.3}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.4}Bound constraints: projection into the feasible set}{44}{subsubsection.5.2.4}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.2.5}Output files and debug option}{44}{subsubsection.5.2.5}}
+\newlabel{ls_info}{{5.2.5}{44}{Output files and debug option\relax }{subsubsection.5.2.5}{}}
+\citation{Nocedal_2006_NO}
+\citation{DAI_1999_NCG}
+\citation{Eisenstat_1994_TRN}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Nonlinear conjugate gradient}{45}{subsection.5.3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Practical issues for the truncated Newton method}{45}{subsection.5.4}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.1}Choice of $\eta _0$ for the truncated Newton method}{45}{subsubsection.5.4.1}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.4.2}Output files and debug option}{46}{subsubsection.5.4.2}}
+\newlabel{qk}{{5.4.2}{46}{Output files and debug option\relax }{subsubsection.5.4.2}{}}
+\bibstyle{apalike}
+\bibdata{/home/laure/BIBLIO/biblioseiscope.bib,/home/laure/BIBLIO/bibliotmp.bib}

@@ -1,0 +1,94 @@
+#Options for all Makefile defined here
+
+# ---------------------------------------------------------- #
+# --- Env. variables
+# ---------------------------------------------------------- #
+SHELL=/bin/bash
+TOOLS_BOX_DIR=/home/ltavard/checkTOOLBOX/TOOLS_BOX/branch_ltavard
+
+
+# ---------------------------------------------------------- #
+# --- Intel compiler by default (make -j 16)
+# ---------------------------------------------------------- #
+
+FC = ifort
+## -- OPTIMIZATION library
+CC =  icc
+CXX = icpc
+FL =  ifort
+MPIFC  = mpif90
+MPICC  = mpicc
+MPICXX = mpicxx
+
+# ---------------------------------------------------------- #
+# --- Preprocessing commandes
+# ---------------------------------------------------------- #
+OPTRE =  -openmp -fpp #-DTIME_PROFILING
+FFLAGS = -O3 -assume byterecl $(OPTRE)
+# --- Debug preprocessing commandes
+#FFLAGS = -C -g -warn  -DEBUG -check -assume byterecl
+#         -check all -gen_interfaces -traceback  $(OPTPRE)
+
+# ---------------------------------------------------------- #
+# --- OPTIMIZATION library: OPTIONS COMPILE
+# ---------------------------------------------------------- #
+OPTF   = -O3 -assume byterecl -xHost -inline
+#OPTF   = -C -g -DEBUG -check -assume byterecl -check all
+#         -gen_interfaces -traceback -check bounds
+#         -fpe0 -warn all
+#OPTF   += -ipo
+OPTL   = -O3 
+#OPTL   = -C -g -DEBUG -check -assume byterecl -check all 
+#        -gen_interfaces -traceback -check bounds
+OPTC   = -O3
+OPTCXX = -O3
+#OPTCXX = -g
+OPTFF = $(OPTF)
+
+# --- 
+LD_LIB = -lstdc++
+
+# --- variables for the libraries
+AR = xiar
+ARFUNCT = cruv
+ARFUNCT2 = rcvfs
+
+# ---------------------------------------------------------- #
+# --- Overload some variables for the case of gnu compilers
+# --- (make GNU=1 -j 16)
+# ---------------------------------------------------------- #
+ifeq ($(GNU),1)
+  FC = gfortran
+  # --- PREPR.
+  OPTPRE = -fopenmp -cpp -ffree-line-length-0 #-DTIME_PROFILING
+  FFLAGS = -O3  $(OPTPRE)
+  # Debug
+  #FFLAGS = -g -pedantic -fbounds-check $(OPTPRE)
+  # --- variables for the libraries
+  AR = ar
+
+  # --- OPTIMIZATION library
+  CC     = gcc
+  CXX    = gcc
+  FL     = gfortran
+  OPTF   = -O3
+  # Debug
+  #OPTF   = -g -pedantic -fbounds-check -ffpe-trap=invalid,overflow,zero $(OPTPRE)
+  OPTC   = -O3  
+  OPTCXX = -O3  
+  OPTL   = -O3
+endif
+
+
+# ---------------------------------------------------------- #
+# --- overload some variables for the case of IBM compilers
+# --- (make XL=1 -j 16)
+# ---------------------------------------------------------- #
+ifeq ($(XL),1)
+  FC =  xlf90_r
+  # --- PREPR.
+  OPTPRE = -qsuffix=cpp=f90 #-WF,-DTIME_PROFILING
+  FFLAGS =  -O3 -qsmp=omp -qalign=struct=natural  $(OPTPRE)
+  # --- variables for the libraries
+  AR = ar
+endif

@@ -1,0 +1,135 @@
+!!-- Header --!!
+
+module tetra_mesh_mod
+
+  use dd_common_mod
+  use grid_mod
+  use tetra_ref_dof_mod
+  use tetra_mesh_struct_mod
+  use tetra_glob_dof_mod
+
+  implicit none
+
+  !=========================================================
+  type, extends(grid_type), public :: tetra_mesh_type
+
+    ! Data members
+    type(tetra_ref_dof_t),    dimension(:), allocatable :: ref_dof
+    type(ref_matrix_t),       dimension(:), allocatable :: ref_matrix
+    type(permu_tri),          dimension(:), allocatable :: perm
+    type(tetra_mesh_struct_type)                        :: pMesh_struct
+
+    character(len=250)                                  :: rootname
+
+  contains
+
+    procedure, pass :: tetra_mesh_constructor
+    procedure, pass :: grid_read_config => tetra_mesh_read_config
+    procedure, pass :: grid_init        => tetra_mesh_init
+    procedure, pass :: grid_destructor  => tetra_mesh_destructor
+
+  end type tetra_mesh_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_tetra_mesh_type
+
+  contains
+
+
+    function as_tetra_mesh_type(grid)
+      class(grid_type), target, intent(in) :: grid
+      type(tetra_mesh_type),    pointer    :: as_tetra_mesh_type
+      character(len=*),         parameter  :: proc_name = "as_tetra_mesh_type"
+
+      grid_selector: select type(grid)
+      type is (tetra_mesh_type)
+        as_tetra_mesh_type => grid
+      class default
+        write(error_message,*) proc_name, ' :: ERROR : Wrong grid type. Attempted: tetra_mesh_type'
+        call stop_mpi()
+      end select grid_selector
+
+    end function as_tetra_mesh_type
+
+
+    subroutine tetra_mesh_constructor(this)
+      class(tetra_mesh_type), intent(in out) :: this
+      character(len=*),       parameter      :: proc_name = "tetra_mesh_constructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      ! Propagate object creation on parent class
+      call grid_constructor(this)
+
+      !! BODY ++
+
+      !! BODY --
+
+    end subroutine tetra_mesh_constructor
+
+
+    subroutine tetra_mesh_destructor(this)
+      class(tetra_mesh_type), intent(in out) :: this
+      character(len=*),       parameter      :: proc_name = "tetra_mesh_destructor"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      !! BODY ++
+      call free_tetra_mesh_struct(this%pMesh_struct)
+      call free_tetra_ref_dof(this%ref_dof)
+      call free_tetra_permu_tri(this%perm)
+      call free_tetra_ref_matrix(this%ref_matrix)
+      !! BODY --
+
+      ! Propagate object deletion on parent class
+      call grid_destructor(this)
+
+    end subroutine tetra_mesh_destructor
+
+
+    subroutine tetra_mesh_init(this)
+      class(tetra_mesh_type), intent(in out) :: this
+      character(len=*),       parameter      :: proc_name = "tetra_mesh_init"
+      character(len=3)                       :: str1
+      character(len=250)                     :: iMeshFileName
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+      write(str1,'(I3)') myid_1+1
+      iMeshFileName = trim(adjustl(this%rootName)) // '_' // trim(adjustl(str1)) // '.mesh'
+      if (dd_debug_level > 3) write(*,*) trim(adjustl(str1)), ' ', trim(adjustl(iMeshFileName))
+
+      call read_tetra_mesh_struct(this%pMesh_struct, iMeshFileName)
+
+      call build_tetra_ref_dof(this%pMesh_struct%Pkmax, this%ref_dof)
+      call build_permutation_on_triangle(this%pMesh_struct%Pkmax, this%perm)
+      call build_ref_matrix3D(this%pMesh_struct%Pkmax, this%ref_matrix, this%ref_dof)
+      call build_ref_matrix2D(this%pMesh_struct%Pkmax, this%ref_matrix, this%ref_dof)
+
+      call build_tetra_glob_dof(this%ref_dof, this%pMesh_struct)
+      call connect_dof_dof(this%ref_matrix, this%ref_dof, this%perm, this%pMesh_struct)
+
+    end subroutine tetra_mesh_init
+
+ 
+    subroutine tetra_mesh_set_overlap(this, novlp)
+      class(tetra_mesh_type), intent(in out) :: this
+      integer,                intent(in)     :: novlp
+      character(len=*),       parameter      :: proc_name = 'tetra_mesh_set_overlap'
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    end subroutine tetra_mesh_set_overlap
+
+
+    subroutine tetra_mesh_read_config(this, config_file)
+      class(tetra_mesh_type), intent(in out) :: this
+      character(len=*),       intent(in)     :: config_file
+      character(len=*),       parameter      :: proc_name = "tetra_mesh_read_config"
+
+      if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    end subroutine tetra_mesh_read_config
+
+end module tetra_mesh_mod

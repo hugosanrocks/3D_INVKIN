@@ -1,0 +1,478 @@
+subroutine startup_DG_preprocessing()
+  use global_parameters_mod
+  use mesh_readers_mod
+  use tetra_mesh_struct_mod
+  use tetra_mesh_graphs_mod
+  use tetra_glob_dof_mod
+  implicit none
+  integer :: ie
+  type(tetra_mesh_struct_type) :: mesh
+
+  write(*,*) '*******************************************************************'
+  write(*,*)
+  write(*,*) '            PRE-PROCESSING  '   
+  !==============================================================================
+  !! 1.  define generic element, ref matrices
+  write(*,*) '            ... build generic element'
+  call build_tetra_ref_dof(Pkmax, ref_dof)
+  call build_permutation_on_triangle(Pkmax, perm)
+  write(*,*) '            ... build all references matrices in ref tetra'
+  call build_ref_matrix3D(Pkmax, ref_matrix, ref_dof)
+  call build_ref_matrix2D(Pkmax, ref_matrix, ref_dof)
+  !call allocate_surf_basis_function(Pkmax, surface_basis_function)
+
+  !==============================================================================
+  ! 2. read mesh  
+  call read_medit_mesh (iFileName, &
+  &      mesh%nV, mesh%coorV, mesh%nE, mesh%nEdeg, mesh%EtoV, mesh%wholeEtag, mesh%nFtag, mesh%nFdeg, mesh%FtagtoV, mesh%Ftag)
+
+  !==============================================================================
+  ! associate free surface or absorbing surface type to tagged faces
+  call build_tagged_faces_identity(mesh)
+
+  !==============================================================================
+  ! Assign order to each element... Hard-coded for test
+  write(*,*) '            ... order ', Pkmax
+  call alloc_(mesh%PkE, 1, mesh%nE,    'PkE')
+  do ie = 1, mesh%nE
+     k=Pkmax
+     mesh%PkE(ie) = k ! fixed
+  end do
+  
+  norder_simu=k
+  ndof_local=ref_dof(k)%nP
+  ndof_local_face=ref_dof(k)%npF
+
+  !==============================================================================
+  ! 3. Build mesh graphs     -> fulfill mesh structure
+  call build_tetra_mesh_graphs(mesh)
+  !==============================================================================
+
+  !==============================================================================
+  ! 4. Build dofs            -> fulfill mesh structure
+  call build_tetra_glob_dof(ref_dof, mesh)
+  !==============================================================================
+  ! 5. Dof-Dof relations     -> fulfill mesh structure
+  write(*,*) '            ... connect_dof_dof'
+  call connect_dof_dof(ref_matrix, ref_dof, perm, mesh)
+  !==============================================================================
+
+  !==============================================================================
+  ! 6. Do not disturb kernels of proto_dg:
+  !    copy mesh structure in global_parameters variables and delete mesh structure
+  call mesh_struct_to_global_parameters(mesh)
+  call free_tetra_mesh_struct(mesh)
+  !==============================================================================
+  
+  !==============================================================================
+  ! 7 . define acquisition
+  write(*,*) '            ... read/build acquisition '
+  call build_acquisition(ref_matrix(Pkmax)%InvVandermonde )   !! hardcoded for test
+  call initialise_source_arrays
+  call initialise_station_arrays
+  
+  !==============================================================================
+  
+  
+  !=============================================================================
+  ! 8. initialise snapshot
+  write(*,*) '             ...initialise snapshots  '
+  call compute_bounding_box
+!!$ if (myrank == 0 ) then
+  call initialize_snapshot_x
+  call initialize_snapshot_y
+!!$ end if
+  !=============================================================================
+  
+  write(*,*) '****************    END OF PRE-PROCESSING  *****************'
+  write(*,*) 
+
+end subroutine startup_DG_preprocessing
+
+!=============================================================
+
+subroutine build_tagged_faces_identity(mesh)
+  use global_parameters_mod
+  use tetra_mesh_struct_mod
+  implicit none
+  type(tetra_mesh_struct_type), intent(in out) :: mesh
+  integer                                      :: itagfac
+
+  do itagfac = 1, mesh%nFtag
+    if (mesh%Ftag(itagfac) == 102) mesh%Ftag(itagfac) = free_surface_tag
+    if (mesh%Ftag(itagfac) == 103) mesh%Ftag(itagfac) = absorbing_surface_tag
+  end do
+
+end subroutine build_tagged_faces_identity
+
+!=============================================================
+
+subroutine define_local_acoustic_DG_matrices(k)
+  implicit none
+  integer :: k 
+
+  call initialise_local_acoustic_matrices
+  call define_derivative_matrix
+  call define_lift_matrix(k)
+
+end subroutine define_local_acoustic_DG_matrices
+
+!------
+
+subroutine define_local_elastic_DG_matrices(k)
+  implicit none
+  integer :: k 
+
+  call initialise_local_elastic_matrices
+  call define_derivative_matrix
+  call define_lift_matrix(k)
+
+end subroutine define_local_elastic_DG_matrices
+
+
+!-----
+
+subroutine initialise_local_acoustic_matrices()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  write(*,*) 'initialise local acoustic matrices '
+
+
+
+  call alloc_(Drx,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / X (acosutic)')
+  call alloc_(Dry,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Y (acosutic)')
+  call alloc_(Drz,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Z (acosutic)')
+  call alloc_(Dr_x,    1,   ndof_local,  1,   ndof_local, 'local Derivative / X (acosutic)')
+  call alloc_(Dr_y,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Y (acosutic)')
+  call alloc_(Dr_z,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Z (acosutic)')
+
+  call alloc_(Lift,  1,   ndof_local, 1,  4*ndof_local_face, 'Lift for Stress equation (acoustic)')
+ 
+  Lift(:,:)=0._fp
+  Drx(:,:,:)=0._fp
+
+
+  !! Working arrays 
+  call alloc_(stress_jump,   1, 4*ndof_local_face, ' stress jump')
+  call alloc_(velocity_jump, 1, 4*ndof_local_face, ' velocity jump')
+  call alloc_(Jface, 1, 4*ndof_local_face, ' Jface')
+  call alloc_(TauP, 1, 4*ndof_local_face, ' TauP')
+  call alloc_(TauV, 1, 4*ndof_local_face, ' TauV')
+  call alloc_(nx, 1, 4*ndof_local_face, ' nx')
+  call alloc_(ny, 1, 4*ndof_local_face, ' ny')
+  call alloc_(nz, 1, 4*ndof_local_face, ' nz')
+  call alloc_(wksp, 1, ndof_local, ' wksp ')
+  
+  
+end subroutine initialise_local_acoustic_matrices
+
+!!---
+
+subroutine initialise_local_elastic_matrices()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  write(*,*) 'initialise local elastic matrices '
+
+
+
+  call alloc_(Drx,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / X (elastic)')
+  call alloc_(Dry,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Y (elastic)')
+  call alloc_(Drz,    1,   ndof_local,  1,   ndof_local,      1, nE, 'Derivative / Z (elastic)')
+  call alloc_(Dr_x,    1,   ndof_local,  1,   ndof_local, 'local Derivative / X (elastic)')
+  call alloc_(Dr_y,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Y (elastic)')
+  call alloc_(Dr_z,    1,   ndof_local,  1,   ndof_local, 'local Derivative / Z (elastic)')
+
+  call alloc_(Lift,  1,   ndof_local, 1,  4*ndof_local_face, 'Lift for Stress equation (elastic)')
+ 
+  Lift(:,:)=0._fp
+  Drx(:,:,:)=0._fp
+
+
+  !! Working arrays 
+  call alloc_(stress_jump_el, 1, 6,   1, 4*ndof_local_face, ' stress jump')
+  call alloc_(velocity_jump_el, 1, 3, 1, 4*ndof_local_face, ' velocity jump')
+  call alloc_(Jface, 1, 4*ndof_local_face, ' Jface')
+!!$  call alloc_(TauP, 1, 4*ndof_local_face, ' TauP')
+!!$  call alloc_(TauV, 1, 4*ndof_local_face, ' TauV')
+  call alloc_(nx, 1, 4*ndof_local_face, ' nx')
+  call alloc_(ny, 1, 4*ndof_local_face, ' ny')
+  call alloc_(nz, 1, 4*ndof_local_face, ' nz')
+  call alloc_(wksp, 1, ndof_local, ' wksp ')
+  
+  
+end subroutine initialise_local_elastic_matrices
+
+!-----------------
+
+
+subroutine define_derivative_matrix()
+  use global_parameters_mod
+  implicit none
+  integer ie, jdof, idof_global
+
+
+  do ie=1, nE
+     k=PkE(ie)
+
+     idof_global = Etodof_adj(ie) - 1
+
+     do idof=1,ref_matrix(k)%np
+        idof_global = idof_global + 1 
+
+        do jdof=1,ref_matrix(k)%np
+
+
+           Drx(idof,jdof,ie) = drdx(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdx(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdx(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+           
+           Dry(idof,jdof,ie) = drdy(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdy(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdy(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+
+           
+           Drz(idof,jdof,ie) = drdz(idof_global) * ref_matrix(k)%Dr(idof,jdof) + &
+                               dsdz(idof_global) * ref_matrix(k)%Ds(idof,jdof) + &
+                               dtdz(idof_global) * ref_matrix(k)%Dt(idof,jdof)
+        end do
+     end do
+  end do
+end subroutine define_derivative_matrix
+
+!-----------------
+
+
+subroutine define_lift_matrix(ik)
+  use global_parameters_mod
+  implicit none
+  integer :: i, j, jk, ik 
+    
+  LIFT(:,:)=0.
+  do i=1,ref_matrix(ik)%np
+     do j=1,4*ref_matrix(ik)%npf
+        do jk=1,ref_matrix(ik)%np
+           LIFT(i,j) =  LIFT(i,j) + ref_matrix(ik)%invMassVolume(i,jk)*ref_matrix(ik)%MassFace(jk,j)
+        end do
+     end do
+  end do
+  
+end subroutine define_lift_matrix
+
+  
+
+subroutine compute_bounding_box()
+  use global_parameters_mod
+  implicit none
+
+  xmin_value=minval(coorV(1,:))
+  xmax_value=maxval(coorV(1,:))
+
+  ymin_value=minval(coorV(2,:))
+  ymax_value=maxval(coorV(2,:))
+
+  zmin_value=minval(coorV(3,:))
+  zmax_value=maxval(coorV(3,:))
+
+  write(*,*)
+  write(*,*) '          bounding box '
+  write(*,*) 
+  write(*,*) 'X :', xmin_value, xmax_value
+  write(*,*) 'Y :', ymin_value, ymax_value
+  write(*,*) 'Z :', zmin_value, zmax_value
+  write(*,*) 
+
+end subroutine compute_bounding_box
+
+
+!----------------------------------------
+
+subroutine define_dof_dof()
+  use global_parameters_mod
+  implicit none
+  integer ie, ifacref, l
+
+  !allocate(dof_dof_array(2,ndof_local_face,4,nE))
+
+  do ie=1,nE
+     do ifacref=1,4
+        do l=1,ndof_local_face
+           dof_dof_array(1,l,ifacref,ie)=dof_dof(ie)%my_local_dof(l,ifacref) 
+           dof_dof_array(2,l,ifacref,ie)=dof_dof(ie)%nei_local_dof(l,ifacref)
+        end do
+     end do
+  end do
+
+
+end subroutine define_dof_dof
+
+
+!-----------------------------------------
+!!$
+!!$subroutine distrib_mpi_elements
+!!$
+!!$  use global_parameters_mod
+!!$  implicit none
+!!$  integer  :: nb_by_pc,left
+!!$
+!!$  nb_by_pc=(nE/nbrank)
+!!$  left=nE-nb_by_pc*nbrank
+!!$  if (myrank < left) then
+!!$     irecmin = (myrank*(nb_by_pc+1)) + 1
+!!$     irecmax = irecmin + nb_by_pc
+!!$   else
+!!$      irecmin = myrank*(nb_by_pc) + left + 1
+!!$      irecmax = irecmin + nb_by_pc - 1
+!!$   endif
+!!$
+!!$   write(*,*) ' MYRANK ',   myrank, irecmin, irecmax
+!!$   
+!!$end subroutine distrib_mpi_elements
+
+subroutine mesh_struct_to_global_parameters(mesh)
+  use global_parameters_mod
+  use tetra_mesh_graphs_mod
+  implicit none
+  type(tetra_mesh_struct_type), intent(in) :: mesh
+  integer                                  :: ie, ki ,npf
+
+  nFdeg     = 3 ! 3 points define a face
+  nEdeg     = 4 ! 4 points define a tetra
+
+  nV = mesh%nV
+  nF = mesh%nF
+  nE = mesh%nE
+  nFtag = mesh%nFtag
+  nEtag = mesh%nEtag
+  ndof = mesh%ndof
+
+  if (nE > 0) then
+
+    call alloc_(EtoV, 1, nEdeg,     1, nE, 'EtoV')
+    EtoV = mesh%EtoV
+
+    call alloc_(EtoF, 1, 4, 1, nE, 'EtoF')
+    EtoF = mesh%EtoF
+
+    call alloc_(EtoE, 1, 4, 1, nE, 'EtoE')
+    EtoE = mesh%EtoE
+
+    call alloc_(wholeEtag, 1, nE, 'wholeEtag')
+    wholeEtag = mesh%wholeEtag
+
+    if (nFtag > 0) then
+      call alloc_(EtoFtag, 1, 4, 1, nE, 'EtoFtag')
+      EtoFtag = mesh%EtoFtag
+    end if
+
+    call alloc_(PkE, 1, nE, 'PkE')
+    PkE = mesh%PkE
+
+    call alloc_(Etodof_adj, 1, nE+1, 'Etodof_adj')
+    Etodof_adj = mesh%Etodof_adj
+
+  end if
+
+  if (nF > 0) then
+    call alloc_(FtoV, 1, nFdeg, 1, nF, 'FtoV')
+    FtoV = mesh%FtoV
+
+    ! To store the informations linking the faces to the elements
+    ! indices 1..2:          e1,          e2 as the two elements sharing the face (a single element for boundary faces) 
+    ! indices 3..4:   facref_e1,   facref_e2 as the reference index of the face in the elements e1, e2
+    call alloc_(FtoE, 1, 4, 1, nF, 'FtoE')
+    FtoE = mesh%FtoE
+  end if
+
+  if (nFtag > 0) then
+    call alloc_(FtagtoV, 1, nFdeg, 1, nFtag, 'FtagtoV')
+    FtagtoV = mesh%FtagtoV
+
+    call alloc_(FtagtoF, 1, nFtag, 'FtagtoF')
+    FtagtoF = mesh%FtagtoF
+
+    call alloc_(Ftag, 1, nFtag, 'Ftag')
+    Ftag = mesh%Ftag
+  end if
+
+  if (nEtag > 0) then
+    call alloc_(EtagtoE, 1, nEtag, 'EtagtoE')
+    EtagtoE = mesh%EtagtoE
+
+    call alloc_(Etag, 1, nEtag, 'Etag')
+    Etag = mesh%Etag
+  end if
+
+  if (nV > 0) then
+    call alloc_(coorV, 1, 3, 1, nV, 'coorV')
+    coorV = mesh%coorV
+  end if
+
+  if (ndof > 0) then
+    call alloc_(coordof, 1, 3, 1, ndof, 'coordof')
+    coordof = mesh%coordof
+
+    allocate(dof_dof(nE))
+
+    do ie=1, nE
+
+       ki=PkE(ie)
+       npf=ref_dof(ki)%npf
+
+       allocate(dof_dof(ie)%my_dof(npf,4))
+       dof_dof(ie)%my_dof = mesh%dof_dof(ie)%my_dof
+       allocate(dof_dof(ie)%nei_dof(npf,4))
+       dof_dof(ie)%nei_dof = mesh%dof_dof(ie)%nei_dof
+       allocate(dof_dof(ie)%my_local_dof(npf,4))
+       dof_dof(ie)%my_local_dof = mesh%dof_dof(ie)%my_local_dof
+       allocate(dof_dof(ie)%nei_local_dof(npf,4))
+       dof_dof(ie)%nei_local_dof = mesh%dof_dof(ie)%nei_local_dof
+       allocate(dof_dof(ie)%id(4))
+       dof_dof(ie)%id = mesh%dof_dof(ie)%id
+
+    end do
+
+    call alloc_(weight_vol, 1, ndof, 'weight_vol')
+    weight_vol = mesh%weight_vol
+
+    call alloc_(drdx, 1, ndof, 'drdx')
+    drdx = mesh%drdx
+
+    call alloc_(drdy, 1, ndof, 'drdy')
+    drdy = mesh%drdy
+
+    call alloc_(drdz, 1, ndof, 'drdz')
+    drdz = mesh%drdz
+
+    call alloc_(dsdx, 1, ndof, 'dsdx')
+    dsdx = mesh%dsdx
+
+    call alloc_(dsdy, 1, ndof, 'dsdy')
+    dsdy = mesh%dsdy
+
+    call alloc_(dsdz, 1, ndof, 'dsdz')
+    dsdz = mesh%dsdz
+
+    call alloc_(dtdx, 1, ndof, 'dtdx')
+    dtdx = mesh%dtdx
+
+    call alloc_(dtdy, 1, ndof, 'dtdy')
+    dtdy = mesh%dtdy
+
+    call alloc_(dtdz, 1, ndof, 'dtdz')
+    dtdz = mesh%dtdz
+
+    call alloc_(normal, 1, 3,  1, ndof, 1, 4, 'normal')
+    normal = mesh%normal
+
+    call alloc_(jacobian_2D, 1, ndof, 1, 4, 'jacobian_2D')
+    jacobian_2D = mesh%jacobian_2D
+
+  end if
+
+end subroutine mesh_struct_to_global_parameters

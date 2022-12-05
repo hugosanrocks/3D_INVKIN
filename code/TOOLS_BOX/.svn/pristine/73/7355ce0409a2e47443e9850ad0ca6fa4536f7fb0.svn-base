@@ -1,0 +1,13 @@
+!*******************************************************!
+! 3 versions of routine get_nr exist in the directory   !
+! the user can swith to a other version by changing the !
+! makefile if some problem are encountered              !
+!-------------------------------------------------------!
+! 10/2013 Romain Brossier & Jean Virieux                !
+!*******************************************************!
+
+-> get_nr_su.f90 : generic and used version (in Makefile) to search size of file through a dichotomy with a bloc size equal to the trace 
+ 
+-> get_nr.f90 : generic and not-used version (not in Makefile, but can be put) to search size of file through a dichotomy with a bloc size equal to 1 byte, less efficient than  get_nr_su.f90 
+
+-> get_nr_stat.f90 : not-generic (not in the Fortran norm, but supported by several compilers) version using the fstat command

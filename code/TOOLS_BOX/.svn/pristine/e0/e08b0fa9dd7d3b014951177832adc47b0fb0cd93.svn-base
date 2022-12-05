@@ -1,0 +1,151 @@
+module tetra_comm_struct_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use tetra_mesh_struct_mod
+  use mesh_partition_struct_mod
+
+  implicit none
+
+
+  type, public :: tetra_comm_struct_type
+    integer                                   :: nEdeg  = 0, nFdeg = 0
+    integer                                   :: nV     = 0, nF = 0, nE = 0
+
+    integer                                   :: nnghb_part ! number of partitions neighbour to the current partition
+    integer, dimension(:),        allocatable :: nghb_part  ! identifier of the partitions neighbour to the current partition
+    !                                                       ! nghb_part(relative nghb index) = absolute nghb index
+
+  end type tetra_comm_struct_type
+
+
+  public :: read_tetra_comm_struct
+  public :: write_tetra_comm_struct
+  public :: free_tetra_comm_struct
+  public :: compute_tetra_comm_struct
+
+
+  contains
+
+
+  subroutine read_tetra_comm_struct(comm_part, filename)
+    type(tetra_comm_struct_type), intent(in out) :: comm_part
+    character(len=*),            intent(in)     :: filename
+    character(len=*),            parameter      :: proc_name = "read_tetra_comm_struct"
+    integer                                     :: istat
+    logical                                     :: exist
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, filename
+
+    inquire(file = trim(adjustl(filename)), exist = exist)
+    if (.not. exist) then
+      write(error_message,*) proc_name, " :: ERROR : unexisting file : ", trim(adjustl(filename))
+      call stop_mpi()
+    end if
+
+    open(unit_dd, file = trim(adjustl(filename)), form='unformatted', action='read', iostat = istat)
+    if (istat /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), istat
+      call stop_mpi()
+    end if
+    rewind(unit_dd)
+
+    read(unit_dd) comm_part%nEdeg, comm_part%nFdeg
+    read(unit_dd) comm_part%nV, comm_part%nF, comm_part%nE
+    if (dd_debug_level > 3) then
+      write(*,*) comm_part%nEdeg, comm_part%nFdeg
+      write(*,*) comm_part%nV, comm_part%nF, comm_part%nE
+    end if
+
+    read(unit_dd) comm_part%nnghb_part
+    if (comm_part%nnghb_part > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read nghb_part'
+      call alloc_(comm_part%nghb_part, 1, comm_part%nnghb_part, 'comm_part%nghb_part')
+      read(unit_dd) comm_part%nghb_part(1:comm_part%nnghb_part)
+    end if
+
+    close(unit_dd)
+
+  end subroutine read_tetra_comm_struct
+
+
+  subroutine write_tetra_comm_struct(comm_part, filename)
+    type(tetra_comm_struct_type), intent(in) :: comm_part
+    character(len=*),            intent(in) :: filename
+    character(len=*),            parameter  :: proc_name = "write_tetra_comm_struct"
+    integer                                 :: istat
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, filename
+
+    write(*,*)
+    write(*,*) "Write comm struct ... ", trim(adjustl(filename))
+
+    open(unit_dd, file = trim(adjustl(filename)), form='unformatted', status = 'replace', action='write', iostat = istat)
+    if (istat /= 0) then
+      write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), istat
+      call stop_mpi()
+    end if
+    rewind(unit_dd)
+
+    write(unit_dd) comm_part%nEdeg, comm_part%nFdeg
+    write(unit_dd) comm_part%nV, comm_part%nF, comm_part%nE
+    if (dd_debug_level > 3) then
+      write(*,*) comm_part%nEdeg, comm_part%nFdeg
+      write(*,*) comm_part%nV, comm_part%nF, comm_part%nE
+    end if
+
+    if (comm_part%nnghb_part > 0 .and. allocated(comm_part%nghb_part)) then
+      if (dd_debug_level > 3) write(*,*) ' write nghb_part'
+      write(unit_dd) comm_part%nnghb_part
+      write(unit_dd) comm_part%nghb_part(1:comm_part%nnghb_part)
+    else
+      write(unit_dd) 0
+    end if
+
+    close(unit_dd)
+
+  end subroutine write_tetra_comm_struct
+
+
+  subroutine free_tetra_comm_struct(comm_part)
+    type(tetra_comm_struct_type), intent(in out) :: comm_part
+    character(len=*),             parameter      :: proc_name = "free_tetra_comm_struct"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call dealloc_(comm_part%nghb_part,        'comm_part%nghb_part')
+
+  end subroutine free_tetra_comm_struct
+
+
+  subroutine compute_tetra_comm_struct(npart, mesh, mesh_part, comm_part, nnghb_part, nghb_part, map_nghb_part)
+    integer,                                                     intent(in)     :: npart
+    type(tetra_mesh_struct_type),                                intent(in)     :: mesh
+    type(tetra_mesh_struct_type), dimension(npart),     target,  intent(in)     :: mesh_part
+    type(tetra_comm_struct_type), dimension(npart),     target,  intent(in out) :: comm_part
+    integer,         dimension(npart),                           intent(in)     :: nnghb_part    ! nb neighbour subdomains per partition
+    integer,         dimension(npart,npart),                     intent(in)     :: nghb_part     ! (relative nghb index, part id) = absolute nghb id
+    integer,         dimension(npart,npart),                     intent(in)     :: map_nghb_part ! (absolute part id, absolute part id) = >1 (relative nghb index) or 0 (not nghb)
+    integer                                                                     :: ipart, nnghb
+    character(len=*),                                            parameter      :: proc_name = "compute_tetra_comm_struct"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! Set up the comm structure for each partition
+    do ipart = 1, npart
+      comm_part(ipart)%nEdeg        = mesh_part(ipart)%nEdeg
+      comm_part(ipart)%nFdeg        = mesh_part(ipart)%nFdeg
+      comm_part(ipart)%nV           = mesh_part(ipart)%nV
+      comm_part(ipart)%nF           = mesh_part(ipart)%nF
+      comm_part(ipart)%nE           = mesh_part(ipart)%nE
+      nnghb                         = nnghb_part(ipart)
+      comm_part(ipart)%nnghb_part   = nnghb
+      if (nnghb > 0) then
+        call alloc_(comm_part(ipart)%nghb_part, 1, nnghb, 'nghb_part')
+        comm_part(ipart)%nghb_part(:) = nghb_part(1:nnghb,ipart)
+      end if
+    end do
+
+  end subroutine compute_tetra_comm_struct
+
+end module tetra_comm_struct_mod

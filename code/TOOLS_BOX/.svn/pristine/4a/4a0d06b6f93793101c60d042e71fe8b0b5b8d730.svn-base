@@ -1,0 +1,62 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+subroutine ksinc_interp(v2b,var,var0,i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,l)
+  !interpolate the boundary elements by Kaiser window sinc interpolant
+  implicit none
+
+  logical::v2b !v to bourndary or reverse
+  integer::i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,l
+  real::var(mt,i1min:i1max,i2min:i2max,i3min:i3max)
+  real::var0(i1min:i1max,i2min:i2max,i3min:i3max)
+
+  integer::r,i1,i2,i3,m,n,i,id(2*l)
+  real::kwsinc,kw(2*l)
+
+  r=nt/mt
+
+  if(v2b) then !v to bourndary
+     !"it" originates from 1 rather than 0
+     if(mod(it-1,r)==r-1) then !only every r-step, store fourier coefficients
+        m=it/r
+        do i3=i3min,i3max
+           do i2=i2min,i2max
+              do i1=i1min,i1max
+                 var(m,i1,i2,i3)=var0(i1,i2,i3)
+              enddo
+           enddo
+        enddo
+     endif
+  else !boundary to v, this part is done at every backward step
+     n=it-1; m=n/r ! 0<=m<=mt-1
+     if(m<l) then !the starting points
+        kw=(/(kwsinc(real(it-i),l,r),i=r,(2*l)*r,r)/)
+        id=(/(i,i=1,2*l)/)
+     else if (m+l>mt-1) then !the ending points
+        kw=(/(kwsinc(real(it-i),l,r),i=(mt-2*l+1)*r,mt*r,r)/)
+        id=(/(i,i=mt-2*l+1,mt)/)
+     else !the points in between
+        kw=(/(kwsinc(real(it-i),l,r),i=(m-l+1)*r,(m+l)*r,r)/)
+        id=(/(i,i=m-l+1,m+l)/)
+     endif
+
+     !kaiser windowed sinc interpolation
+     do i3=i3min,i3max
+        do i2=i2min,i2max
+           do i1=i1min,i1max
+              var0(i1,i2,i3)=sum(kw*var(id,i1,i2,i3))
+           enddo
+        enddo
+     enddo
+  endif
+end subroutine ksinc_interp
+

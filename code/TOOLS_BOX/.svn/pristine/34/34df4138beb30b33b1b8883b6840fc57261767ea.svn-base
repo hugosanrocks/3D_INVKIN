@@ -1,0 +1,22 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortium, All rights reserved.
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$==========================================================================
+!!$ References: 
+!!$[1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$[2]  Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$==========================================================================
+subroutine carfs_close(carfs)
+  implicit none
+  include "carfs_type.h"
+
+  type(carfs_type)::carfs
+
+  deallocate(carfs%cpit)
+end subroutine carfs_close

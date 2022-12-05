@@ -1,0 +1,620 @@
+module hexa_glob_dof_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use hexa_ref_dof_mod
+  use hexa_mesh_struct_mod
+
+  implicit none
+
+  !--------------------------------------------------------------------------------
+  ! This module implementation is specialized for :
+  ! - unstructured 3D meshes of hexahedra 
+  ! - and spectral elements methods with fixed Pk order
+  ! - and Gauss-Lobatto-Legendre quadrature
+  !
+  ! The continuity between elements involves that degree of freedom points 
+  ! located on corners, edges and faces of elements
+  ! are shared between neighbours elements
+  !--------------------------------------------------------------------------------
+
+  contains
+
+
+  ! Build
+  ! - dof (not duplicated), preserve dof shared between neighbour elements
+  ! - mapping between local dof numbering (i,j,k) = (1,..,ngll1D)**3 and global dof numbering (1,..,ndof)
+  ! - dof coordinates
+  subroutine assembly_hexa_glob_dof(hexa_ref_dof, mesh)
+    type(hexa_ref_dof_t),        intent(in)     :: hexa_ref_dof
+    type(hexa_mesh_struct_type), intent(in out) :: mesh
+
+    character(len=*),     parameter       :: proc_name = "assembly_hexa_glob_dof"
+    integer                               :: i, j, k, ngll1D
+    integer                               :: ie, ivref, iv1, iv2, iedgeref, iedge, ifaceref, iface
+    integer                               :: ndofperVertex, ndofperEdge, ndofperFace, ndofperElement
+    integer                               :: ndofVertices,  ndofEdges,   ndofFaces,   ndofElements
+    integer                               :: i1dofVertices, i1dofEdges,  i1dofFaces,  i1dofElements
+    integer, dimension(4)                 :: iv
+    integer, dimension(1)                 :: ivminpos
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (dd_debug_level > 3) then
+      write(*,'(A,5I8)') ' nE, nF, nEdge, nV, ngll1D =', mesh%nE, mesh%nF, mesh%nEdge, mesh%nV, mesh%ngll1D
+      write(*,*)
+    end if
+
+    ngll1D = mesh%ngll1D
+    mesh%ndof = 0
+
+    if (mesh%nEdeg /= 8) then
+      write(*,*) proc_name, " :: ERROR : function not implemented for non hexahedron elements"
+      return
+    end if
+
+    ! 1/ Compute the total number of non duplicated dof
+    !--------------------------------------------------
+    ! Assume dof points associated to corner of elements collocated
+    ! on vertices (Gauss-Lobatto-Legendre polynomial quadrature)
+
+    ! The global dof numbering will be distributed as following:
+    !
+    ! !--------------------------------------------------------------------------------------------------!
+    ! ! 1                                         ...                                               ndof !
+    ! !--------------------------------------------------------------------------------------------------!
+    ! ! 1 ... ndof on Vertices | 1 ... ndof on Edges | 1 ... ndof on Faces | 1 ... ndof inside elements  !
+    ! !--------------------------------------------------------------------------------------------------!
+
+    ndofperVertex   = 1                                     ! one gll per vertex
+    ndofperEdge     = (ngll1D-2)                            ! ngll1D gll per edge minus the two extremities already linked to vertices
+    ndofperFace     = (ngll1D-2)*(ngll1D-2)                 ! ngll1D**2 gll per face minus the gll linked to boundary edges
+    ndofperElement  = (ngll1D-2)*(ngll1D-2)*(ngll1D-2)      ! ngll1D**3 gll per element minus the gll linked to boundary faces
+
+    ndofVertices    = mesh%nV    * ndofperVertex
+    ndofEdges       = mesh%nEdge * ndofperEdge
+    ndofFaces       = mesh%nF    * ndofperFace
+    ndofElements    = mesh%nE    * ndofperElement
+
+    ! starting index of each category of dof in global numbering
+    i1dofVertices   = 0
+    i1dofEdges      = ndofVertices
+    i1dofFaces      = ndofEdges + ndofVertices
+    i1dofElements   = ndofFaces + ndofEdges + ndofVertices
+    
+    mesh%ndof = ndofVertices + ndofEdges + ndofFaces + ndofElements
+
+    write(*,*) myid_1, " : ", proc_name, ' : Total number of gll =', mesh%ndof
+
+    if (dd_debug_level > 3) then
+      write(*,*)
+      write(*,*)      'ndof per Vertex, Edge,  Face,  Element ='
+      write(*,'(4I8)') ndofperVertex,  ndofperEdge,  ndofperFace,  ndofperElement
+      write(*,*)      'ndof   Vertices, Edges, Faces, Elements ='
+      write(*,'(4I8)') ndofVertices,  ndofEdges,  ndofFaces,  ndofElements
+      write(*,*)      'i1dof  Vertices, Edges, Faces, Elements ='
+      write(*,'(4I8)') i1dofVertices, i1dofEdges, i1dofFaces, i1dofElements
+      do iedge = 1, mesh%nEdge
+        write(*,'(3(A,I8))') ' edge =', iedge, ' gll numbering =', i1dofEdges + (iedge-1) * ndofperEdge + 1, &
+        &                                                  ' .. ', i1dofEdges + (iedge-1) * ndofperEdge + ngll1D-2
+      end do
+      write(*,*)
+    end if
+
+    ! Allocate the array of the mapping between 
+    ! the local coordinates of a dof inside an element (i,j,k,ie) = (1,..,ngll1D)**3 x (1..nE)
+    ! and the single global dof numbering              idof       = 1,..,ndof
+    ! such that collocated dofs are not duplicated and returns the same idof indice
+    call alloc_(mesh%gllelemtoglob, 1, ngll1D, 1, ngll1D, 1, ngll1D, 1, mesh%nE, 'gllelemtoglob')
+
+    ! 2/ Loop on elements
+    ! to fulfill mapping gllelemtoglob array
+    !--------------------------------------------------
+    
+    ! Fulfill table with dof located on vertices
+    do ie = 1, mesh%nE
+      do k = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+        do j = 1, ngll1D, ngll1D-1    ! (1, ngll1D) values
+          do i = 1, ngll1D, ngll1D-1  ! (1, ngll1D) values
+            ivref = hexa_ref_dof%doftoEref(i,j,k,VERTEX_ID)
+            iv1 = mesh%EtoV(ivref,ie)
+            mesh%gllelemtoglob(i,j,k,ie) = iv1 ! a single gll per vertex <=> (iv1-1)*ndofperVertices + 1
+!             write(*,'(2(A,I3),A,3I3,A,I3)') 'ie:',ie,' VERTEX:',iv1, ' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+          end do
+        end do
+      end do
+    end do
+
+    ! Fulfill table with dof located on edges and on faces
+
+    if (ngll1D > 2) then
+
+      ! Fulfill table with dof located on edges
+      ! Convention: gll on edges are numbered in the increasing order from the min extremum vertex to the max one
+      do ie = 1, mesh%nE
+        do k = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+          do j = 1, ngll1D, ngll1D-1    ! (1, ngll1D) values
+
+            ! Retrieve the edge
+            iedgeref = hexa_ref_dof%doftoEref(2,j,k,EDGE_ID)
+            iedge    = abs(mesh%EtoEdge(iedgeref,ie))
+
+            ! Retrieve vertices at edge extrema
+            iv1 = mesh%gllelemtoglob(1,     j,k,ie)
+            iv2 = mesh%gllelemtoglob(ngll1D,j,k,ie)
+
+            if (iv1 < iv2) then
+              do i = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + i-1
+              end do
+            else
+              do i = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + ngll1D-i
+              end do
+            end if
+
+!             do i = 2, ngll1D-1
+!               write(*,'(3(A,I3),A,2I3,A,3I3,A,I3)') 'ie:',ie,' EDGE ref:',iedgeref,' EDGE:', mesh%EtoEdge(iedgeref,ie),&
+!               & ' iv1,iv2=',iv1,iv2,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+
+          end do
+        end do
+
+        do i = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+          do k = 1, ngll1D, ngll1D-1    ! (1, ngll1D) values
+
+            ! Retrieve the edge
+            iedgeref = hexa_ref_dof%doftoEref(i,2,k,EDGE_ID)
+            iedge    = abs(mesh%EtoEdge(iedgeref,ie))
+
+            ! Retrieve vertices at edge extrema
+            iv1 = mesh%gllelemtoglob(i, 1,     k,ie)
+            iv2 = mesh%gllelemtoglob(i, ngll1D,k,ie)
+
+            if (iv1 < iv2) then
+              do j = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + j-1
+              end do
+            else
+              do j = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + ngll1D-j
+              end do
+            end if
+
+!             do j = 2, ngll1D-1
+!               write(*,'(3(A,I3),A,2I3,A,3I3,A,I3)') 'ie:',ie,' EDGE ref:',iedgeref,' EDGE:',mesh%EtoEdge(iedgeref,ie),&
+!               & ' iv1,iv2=',iv1,iv2,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+
+          end do
+        end do
+
+        do j = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+          do i = 1, ngll1D, ngll1D-1    ! (1, ngll1D) values
+
+            ! Retrieve the edge
+            iedgeref = hexa_ref_dof%doftoEref(i,j,2,EDGE_ID)
+            iedge    = abs(mesh%EtoEdge(iedgeref,ie))
+
+            ! Retrieve vertices at edge extrema
+            iv1 = mesh%gllelemtoglob(i, j, 1,     ie)
+            iv2 = mesh%gllelemtoglob(i, j, ngll1D,ie)
+
+            if (iv1 < iv2) then
+              do k = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + k-1
+              end do
+            else
+              do k = 2, ngll1D-1
+                mesh%gllelemtoglob(i,j,k,ie) = i1dofEdges + (iedge-1) * ndofperEdge + ngll1D-k
+              end do
+            end if
+
+!             do k = 2, ngll1D-1
+!               write(*,'(3(A,I3),A,2I3,A,3I3,A,I3)') 'ie:',ie,' EDGE ref:',iedgeref,' EDGE:',mesh%EtoEdge(iedgeref,ie),&
+!               & ' iv1,iv2=',iv1,iv2,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+
+          end do
+        end do
+
+      end do ! ie = 1, nE
+
+      ! Fulfill table with dof located on faces
+      do ie = 1, mesh%nE
+
+        do k = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+
+          ! Retrieve the face
+          ifaceref  = hexa_ref_dof%doftoEref(2,2,k,FACE_ID)
+          iface     = mesh%EtoF(ifaceref,   ie)
+
+          !                                                 ! 3 ________ 4
+          iv(1) = mesh%gllelemtoglob(     1,      1, k, ie) !  |        |
+          iv(2) = mesh%gllelemtoglob(ngll1D,      1, k, ie) !  |        |
+          iv(3) = mesh%gllelemtoglob(     1, ngll1D, k, ie) ! j^        |
+          iv(4) = mesh%gllelemtoglob(ngll1D, ngll1D, k, ie) !  |___\____|
+          !                                                 ! 1  i /     2
+          ivminpos = minloc(iv)
+
+          if (ivminpos(1) == 1) then ! min = iv(1)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(1) -> iv(2) : (+i,+j)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (j-2)*(ngll1D-2) + i-1
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(1) -> iv(3) : (+j,+i)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (i-2)*(ngll1D-2) + j-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 2) then ! min = iv(2)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(2) -> iv(1) : (-i,+j)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (j-2)*(ngll1D-2) + ngll1D-i
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(2) -> iv(4) : (+j,-i)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-i-1)*(ngll1D-2) + j-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 3) then ! min = iv(3)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(3) -> iv(1) : (-j,+i)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (i-2)*(ngll1D-2) + ngll1D-j
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(3) -> iv(4) : (+i,-j)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-j-1)*(ngll1D-2) + i-1
+                end do
+              end do
+
+            end if
+
+          else ! if (ivminpos(1) == 4) then ! min = iv(4)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(4) -> iv(2) : (-j,-i)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-i-1)*(ngll1D-2) + ngll1D-j
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(4) -> iv(3) : (-i,-j)
+
+              do j = 2, ngll1D-1
+                do i = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-j-1)*(ngll1D-2) + ngll1D-i
+                end do
+              end do
+
+            end if
+
+          end if
+
+!           do j = 2, ngll1D-1
+!             do i = 2, ngll1D-1
+!               write(*,'(2(A,I3),A,3I3,A,I3)') 'ie:',ie,' FACE:',iface,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+!           end do
+
+        end do
+
+        do i = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+
+          ! Retrieve the face
+          ifaceref  = hexa_ref_dof%doftoEref(i,2,2,FACE_ID)
+          iface     = mesh%EtoF(ifaceref,   ie)
+
+          !                                                 ! 3 ________ 4
+          iv(1) = mesh%gllelemtoglob(i,      1,      1, ie) !  |        |
+          iv(2) = mesh%gllelemtoglob(i, ngll1D,      1, ie) !  |        |
+          iv(3) = mesh%gllelemtoglob(i,      1, ngll1D, ie) ! k^        |
+          iv(4) = mesh%gllelemtoglob(i, ngll1D, ngll1D, ie) !  |___\____|
+          !                                                 ! 1  j /     2
+          ivminpos = minloc(iv)
+
+          if (ivminpos(1) == 1) then ! min = iv(1)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(1) -> iv(2) : (+j,+k)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (k-2)*(ngll1D-2) + j-1
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(1) -> iv(3) : (+k,+j)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (j-2)*(ngll1D-2) + k-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 2) then ! min = iv(2)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(2) -> iv(1) : (-j,+k)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (k-2)*(ngll1D-2) + ngll1D-j
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(2) -> iv(4) : (+k,-j)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-j-1)*(ngll1D-2) + k-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 3) then ! min = iv(3)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(3) -> iv(1) : (-k,+j)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (j-2)*(ngll1D-2) + ngll1D-k
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(3) -> iv(4) : (+j,-k)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-k-1)*(ngll1D-2) + j-1
+                end do
+              end do
+
+            end if
+
+          else ! if (ivminpos(1) == 4) then ! min = iv(4)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(4) -> iv(2) : (-k,-j)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-j-1)*(ngll1D-2) + ngll1D-k
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(4) -> iv(3) : (-j,-k)
+
+              do k = 2, ngll1D-1
+                do j = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-k-1)*(ngll1D-2) + ngll1D-j
+                end do
+              end do
+
+            end if
+
+          end if
+
+!           do k = 2, ngll1D-1
+!             do j = 2, ngll1D-1
+!               write(*,'(2(A,I3),A,3I3,A,I3)') 'ie:',ie,' FACE:',iface,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+!           end do
+
+        end do
+
+        do j = 1, ngll1D, ngll1D-1      ! (1, ngll1D) values
+
+          ! Retrieve the face
+          ifaceref  = hexa_ref_dof%doftoEref(2,j,2,FACE_ID)
+          iface     = mesh%EtoF(ifaceref,   ie)
+
+          !                                                 ! 3 ________ 4
+          iv(1) = mesh%gllelemtoglob(     1, j,      1, ie) !  |        |
+          iv(2) = mesh%gllelemtoglob(ngll1D, j,      1, ie) !  |        |
+          iv(3) = mesh%gllelemtoglob(     1, j, ngll1D, ie) ! k^        |
+          iv(4) = mesh%gllelemtoglob(ngll1D, j, ngll1D, ie) !  |___\____|
+          !                                                 ! 1  i /     2
+          ivminpos = minloc(iv)
+
+          if (ivminpos(1) == 1) then ! min = iv(1)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(1) -> iv(2) : (+i,+k)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (k-2)*(ngll1D-2) + i-1
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(1) -> iv(3) : (+k,+i)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (i-2)*(ngll1D-2) + k-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 2) then ! min = iv(2)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(2) -> iv(1) : (-i,+k)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (k-2)*(ngll1D-2) + ngll1D-i
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(2) -> iv(4) : (+k,-i)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-i-1)*(ngll1D-2) + k-1
+                end do
+              end do
+
+            end if
+
+          else if (ivminpos(1) == 3) then ! min = iv(3)
+
+            if (iv(1) < iv(4)) then ! major order for numbering holded by edge iv(3) -> iv(1) : (-k,+i)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (i-2)*(ngll1D-2) + ngll1D-k
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(3) -> iv(4) : (+i,-k)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-k-1)*(ngll1D-2) + i-1
+                end do
+              end do
+
+            end if
+
+          else ! if (ivminpos(1) == 4) then ! min = iv(4)
+
+            if (iv(2) < iv(3)) then ! major order for numbering holded by edge iv(4) -> iv(2) : (-k,-i)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-i-1)*(ngll1D-2) + ngll1D-k
+                end do
+              end do
+
+            else                    ! major order for numbering holded by edge iv(4) -> iv(3) : (-i,-k)
+
+              do i = 2, ngll1D-1
+                do k = 2, ngll1D-1
+                  mesh%gllelemtoglob(i,j,k,ie) = i1dofFaces + (iface-1) * ndofperFace + (ngll1D-k-1)*(ngll1D-2) + ngll1D-i
+                end do
+              end do
+
+            end if
+
+          end if
+
+!           do i = 2, ngll1D-1
+!             do k = 2, ngll1D-1
+!               write(*,'(2(A,I3),A,3I3,A,I3)') 'ie:',ie,' FACE:',iface,' i,j,k:',i,j,k,' gll:', mesh%gllelemtoglob(i,j,k,ie)
+!             end do
+!           end do
+
+        end do
+
+      end do ! ie = 1, nE
+
+      ! Fulfill table with dof inside element (not shared with neighbours elements)
+      do ie = 1, mesh%nE
+        do k = 2, ngll1D-1
+          do j = 2, ngll1D-1
+            do i = 2, ngll1D-1
+              mesh%gllelemtoglob(i,j,k,ie) = i1dofElements + (ie-1)*ndofperElement &
+              &                            + (k-2)*(ngll1D-2)*(ngll1D-2) + (j-2)*(ngll1D-2) + i-1
+            end do
+          end do
+        end do
+      end do ! ie = 1, mesh%nE
+
+    end if ! ngll1D > 2
+
+!     call alloc_(mesh%coordof, 1, 3, 1, mesh%ndof, 'coordof')
+!     call alloc_(weight_vol,         1, ndof,      'weight_vol')
+! 
+!     ! 2/ Loop on elements and ref dof associated to it
+!     ! to build real dof and mapping data 
+!     ! (dof coordinates, face <-> dof, element<->dof)
+!     !-------------------------------------------------
+!     idof  = 0
+!     do ie = 1, mesh%nE
+! 
+!       k   = PkE(ie)           ! Pk order associated to the element
+!       npk = ref_dof(k)%nP     ! Number of dof of the element
+! 
+!       ! Retrieve vertex coordinates of the real tetrahedron
+!       do i = 1, 4
+!         iv = mesh%EtoV(i,ie)
+!         coor_vert(:,i) = mesh%coorV(:,iv)
+!       end do
+! 
+!       ! Compute coordinates of all the dof of the element using real tetrahedron vertices coordinates and reference element
+!       ! + dof weight involved in volumic integration
+!       call rsttoxyz(mesh%coordof(:,idof+1:idof+npk), &
+!       &             weight_vol  (  idof+1:idof+npk), &
+!       &             ref_dof(k)%coor, coor_vert, npk, 4)
+! 
+!       idof = idof + npk
+! 
+!     end do ! loop on elements
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'global dof info:'
+      write(*,*)
+      write(*,'(A,I3)') ' Nb dof:', mesh%ndof
+      write(*,*)
+      if (allocated(mesh%gllelemtoglob)) then
+        do ie = 1, mesh%nE
+          do k = 1, ngll1D
+            do j = 1, ngll1D
+              do i = 1, ngll1D
+                write(*,'(A,I3,A,3I8,A,I8)') 'ie = ', ie, ' idof=(i,j,k)=', i, j, k, &
+                &                            ' gllelemtoglob =', mesh%gllelemtoglob(i,j,k,ie)
+              end do
+            end do
+          end do
+        end do
+      end if
+      write(*,*)
+!       do k = 1, ngll1D
+!         do j = 1, ngll1D
+!           do i = 1, ngll1D
+!             write(*,'(A,3I3,A,3F8.4)') '(i,j,k)=', i, j, k, ' coor =', coordof(:,i,j,k)
+!   !       write(*,'(I3,A,3F8.4,A,F8.4)') idof, ' coor =', coordof(:,idof), ' weight_vol =', weight_vol(idof)
+!           end do
+!         end do
+!       end do
+!       do idof = 1, ndof
+!         write(*,'(A,I3,A,3F8.4)') 'idof=', idof, ' coor =', coordof(:,idof)
+!       end do
+      write(*,*)
+    end if
+
+  end subroutine assembly_hexa_glob_dof
+
+
+end module hexa_glob_dof_mod

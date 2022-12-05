@@ -1,0 +1,50 @@
+from rsf.proj import *
+
+nt=1000
+dt=0.001
+
+Flow('ef1','ef.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d n2=1 d1=%g d2= data_format=native_float|
+	put label1="Energy" unit1=
+	'''%(nt,dt))
+Flow('eb1','eb.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d n2=1 d1=%g d2= data_format=native_float|
+	put label1="Energy" unit1=
+	'''%(nt,dt))
+Flow('trf1','trf.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d n2=1 d1=%g d2= data_format=native_float|
+	put label1="Energy" unit1=
+	'''%(nt,dt))
+Flow('trb1','trb.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d n2=1 d1=%g d2= data_format=native_float|
+	put label1="Energy" unit1=
+	'''%(nt,dt))
+
+
+
+Plot('energy','ef1 eb1',
+	'''
+	cat axis=2 ${SOURCES[1]}|
+	graph dash=0,1 grid=y plotfat=3 label1=Time unit1=s label2= unit2= 
+	title="(a) Energy: solid-forw;dash-back"  labelfat=4 font=2 titlefat=4
+	''')
+
+Flow('err1','trf1 trb1','add ${SOURCES[1]} scale=1,-1')
+Plot('trfb1','trf1 trb1',
+	'''
+	cat axis=2 ${SOURCES[1]}|
+	graph dash=0,1 grid=y plotfat=3 label1=Time unit1=s label2= unit2= 
+	title="(b) Trace: solid-forw;dash-back" labelfat=4 font=2 titlefat=4
+	''')
+Plot('err1',
+	'''
+	graph grid=y plotfat=3 label1=Time unit1=s label2= unit2= 
+	title="(c) Trace error"  labelfat=4 font=2 titlefat=4
+	''')
+Result('trcarfs','energy trfb1 err1','SideBySideIso')#OverUnderAniso
+
+End()

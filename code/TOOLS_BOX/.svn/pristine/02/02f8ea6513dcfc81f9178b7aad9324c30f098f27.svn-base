@@ -1,0 +1,31 @@
+\newcommand{\SortNoop}[1]{}
+\begin{thebibliography}{}
+
+\bibitem[Byrd et~al., 1995]{Byrd_1995_LMB}
+Byrd, R.~H., Lu, P., and Nocedal, J. (1995).
+\newblock A limited memory algorithm for bound constrained optimization.
+\newblock {\em {SIAM} Journal on Scientific and Statistical Computing},
+  16:1190--1208.
+
+\bibitem[Dai and Yuan, 1999]{DAI_1999_NCG}
+Dai, Y. and Yuan, Y. (1999).
+\newblock A nonlinear conjugate gradient method with a strong global
+  convergence property.
+\newblock {\em SIAM Journal on Optimization}, 10:177--182.
+
+\bibitem[Eisenstat and Walker, 1994]{Eisenstat_1994_TRN}
+Eisenstat, S.~C. and Walker, H.~F. (1994).
+\newblock {C}hoosing the forcing terms in an inexact {N}ewton method.
+\newblock {\em SIAM Journal on Scientific Computing}, 17:16--32.
+
+\bibitem[M\'etivier et~al., 2013]{Metivier_2013_TRU}
+M\'etivier, L., Brossier, R., Virieux, J., and Operto, S. (2013).
+\newblock Full waveform inversion and the truncated newton method.
+\newblock {\em SIAM Journal On Scientific Computing}, 35(2):B401--B437.
+
+\bibitem[Nocedal and Wright, 2006]{Nocedal_2006_NO}
+Nocedal, J. and Wright, S.~J. (2006).
+\newblock {\em Numerical Optimization}.
+\newblock Springer, 2nd edition.
+
+\end{thebibliography}

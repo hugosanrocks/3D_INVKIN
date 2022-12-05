@@ -1,0 +1,27 @@
+#MASTER Makefile for the OPTIMIZATION
+#include ../Makefile.inc
+include Makefile.inc
+
+LIB = ./lib
+COM = ./COMMON/src/
+KER_PSTD = ./PSTD/kernel/src/
+KER_PNLCG = ./PNLCG/kernel/src/
+KER_LBFGS = ./LBFGS/kernel/src/
+KER_PLBFGS = ./PLBFGS/kernel/src/
+KER_TRN = ./TRN/kernel/src/
+KER_PTRN = ./PTRN/kernel/src/
+
+all : compile
+
+lib : compile
+
+SUBDIRS=PNLCG PSTD PTRN TRN PLBFGS LBFGS
+
+compile : 
+	for d in $(SUBDIRS); do $(MAKE) -C $$d lib; done
+	ar rcvfs $(LIB)/libSEISCOPE_OPTIM.a $(COM)*.o $(KER_PSTD)*.o $(KER_PNLCG)*.o $(KER_LBFGS)*.o $(KER_PLBFGS)*.o $(KER_TRN)*.o $(KER_PTRN)*.o
+
+clean :	
+	for d in $(SUBDIRS); do $(MAKE) -C $$d clean; done
+	$(RM) $(LIB)/*.a
+

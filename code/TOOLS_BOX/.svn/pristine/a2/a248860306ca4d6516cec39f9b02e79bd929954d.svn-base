@@ -1,0 +1,20 @@
+2 2 2                 ! nsub_dom 
+1                     ! ngroup
+401 401 201           ! nglobal
+25. 25. 25.           ! spatial_step
+0. 0. 0.              ! grid_origin
+20 20 20 20 20 20     ! npml_glob
+300                  ! nt
+0.002                 ! dt
+0                     ! ntmpblock
+4000.                 ! vp_val 
+2000.                 ! rho_val
+5.                    ! ricker_freq
+3.2e10                ! ricker_amp
+4000.                 ! pml_vmax
+0.0001                ! pml_Rc
+5.                    ! pml_freq
+1.                    ! pml_kmax
+2                     ! pml_power  
+1                     ! nsrc
+4000. 4000. 500.      ! src_coor(1,:)

@@ -1,0 +1,18 @@
+type carfs_type
+  !-----------------------------------------------------
+sequence
+  logical :: verb
+  logical :: istable !is stable or not
+  logical :: icheckpoint !is checkpoint or not 
+  
+  real :: tolerance 
+
+  integer :: nc !number of checkpoints
+  integer :: nt !number of time steps
+  integer :: ic !fixed checkpoint index
+  integer :: j  !counter of forward modeling starting from a non-checkpoint time step
+  integer :: icc !dynamic checkpoint index for fixed ic
+  integer :: itstart !starting it-index for re-modeling during backward reconstruction
+
+  integer,dimension(:),allocatable:: cpit !store time index-it for [0:nc-1] checkpoints
+end type  carfs_type

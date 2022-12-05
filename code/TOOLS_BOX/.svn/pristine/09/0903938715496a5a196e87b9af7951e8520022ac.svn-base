@@ -1,0 +1,2109 @@
+module sgrid_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use grid_mod
+  use mpi
+  use omp_lib
+
+  implicit none
+
+  !=========================================================
+  type, extends(grid_type), public :: sgrid_type
+  
+  ! G L O B A L    G R I D    P A R A M E T E R S
+  !------------------------------------------------------------------
+
+    ! total nb of points without PML in each direction
+    integer, dimension(3)                :: nmodel_glob     = 0
+
+    ! starting and ending index of global domain model points in each direction ((iz-, iz+), (ix-, ix+), (iy-, iy+)) (without PML)
+    integer, dimension(2,3)              :: imodel_glob     = 0
+
+    ! total nb of PML points in each direction ((z-, z+), (x-, x+), (y-, y+))
+    integer, dimension(2,3)              :: npml_glob       = 0
+
+    ! total nb of points in each direction (including PML)
+    integer, dimension(3)                :: nnodes_glob     = 0
+
+    ! grid origin coordinates (excluding PML) (zor, xor, yor)
+    real,    dimension(3)                :: origin_glob     = 0.
+
+    ! bounding box (including PML) ((zmin, zmax), (xmin, xmax), (ymin, ymax))
+    real,    dimension(2,3)              :: bbox_glob       = 0.
+
+    ! bounding box (without PML) ((zmin, zmax), (xmin, xmax), (ymin, ymax))
+    real,    dimension(2,3)              :: bbox_model      = 0.
+
+    ! spatial discretisation steps
+    real,    dimension(3)                :: h               = 0.
+  
+  ! D O M A I N    D E C O M P O S I T I O N    P A R A M E T E R S
+  !------------------------------------------------------------------
+
+    ! number of subdomains in each direction
+    integer, dimension(3)                :: nd              = 0
+
+    ! number of points of a regular subdomain, of the last subdomain in each direction
+    integer, dimension(3)                :: nnodes_dom      = 0
+    integer, dimension(3)                :: nnodes_dom_last = 0
+
+  ! L O C A L    G R I D    P A R A M E T E R S
+  !------------------------------------------------------------------
+
+    ! coordinates of the proc (subdomain)
+    integer, dimension(3)                :: sub_dom_coor    = 0
+
+    ! number of points in the local grid in each direction without overlap (including PML)
+    integer, dimension(3)                :: nnodes_loc      = 0
+
+    ! number of points in the propagation medium in the local grid in each direction (without PML and overlap)
+    integer, dimension(3)                :: nmodel_loc      = 0
+
+    ! overlapping bandwidth in the local grid
+    integer, dimension(3), private       :: novlp           = 0
+
+    ! temporal blocking size
+    integer,               private       :: ntmpblock       = 0
+
+    ! starting and ending index of subdomain local points in each direction 
+    ! excluding pml and overlap points 
+    ! ((izloc-, izloc+), (ixloc-, ixloc+), (iyloc-, iyloc+))
+    integer, dimension(2,3)              :: imodel_loc      = 0
+
+    ! starting and ending index of subdomain PML points in each direction
+    ! and for the two possible PML layers
+    ! ( ((izpml1-, izpml1+), (ixpml1-, ixpml1+), (iypml1-, iypml1+))
+    !   ((izpml2-, izpml2+), (ixpml2-, ixpml2+), (iypml2-, iypml2+)) )
+    integer, dimension(2,3,2)            :: ipml_loc        = 0 
+
+    ! processor rank of the face neigbour domains
+    integer, dimension(2,3)              :: face_neighbours = 0
+
+    ! processor rank of all neigbour domains (including neighbours by face, edge or corner)
+    integer, dimension(-1:1,-1:1,-1:1)   :: neighbours = 0
+    logical                              :: diag_neighbours = .False.
+
+    ! min. and max. global grid point number ((izmin, izmax), (ixmin, ixmax), (iymin, iymax))
+    integer, dimension(2,3)              :: iglob_bounds    = 0
+
+    ! local grid extremums (including PML) ((zmin, zmax), (xmin, xmax), (ymin, ymax))
+    real,    dimension(2,3)              :: bbox_loc        = 0.
+
+    ! Lower and upper array indices associated to local subdomain (takes into account overlapping)
+    integer, dimension(3)                :: lbndloc = 0, ubndloc = 0
+
+    ! number of PML points present in the local sub-domain
+    integer                              :: npml_loc        = 0
+
+    logical                              :: is_initialized  = .false.
+
+    ! An internal array for operations on local (subdomain size) fields
+    real,  dimension(:,:,:), allocatable :: internal_Floc
+
+  contains
+
+    procedure, pass :: sgrid_constructor
+    procedure, pass :: sgrid_set_parameters
+    procedure, pass :: grid_read_config                => sgrid_read_config
+    procedure, pass :: grid_info                       => sgrid_info
+    procedure, pass :: grid_init                       => sgrid_init
+    procedure, pass :: grid_destructor                 => sgrid_destructor
+    procedure, pass :: grid_get_overlap                => sgrid_get_overlap
+    procedure, pass :: grid_set_overlap                => sgrid_set_overlap
+    procedure, pass :: sgrid_get_overlap_vector
+    procedure, pass :: sgrid_set_overlap_vector
+    procedure, pass :: grid_get_temporal_blocking_size => sgrid_get_temporal_blocking_size
+    procedure, pass :: grid_set_temporal_blocking_size => sgrid_set_temporal_blocking_size
+    procedure, pass :: sgrid_get_valid_loc_range
+    procedure, pass :: sgrid_get_loc_array_bounds
+    procedure, pass :: sgrid_is_point_inside_sub_domain
+    procedure, pass :: sgrid_is_grid_node_inside_sub_domain
+    procedure, pass :: sgrid_compute_subdom_coor
+    procedure, pass :: sgrid_build_neighbours_table
+    procedure, pass :: sgrid_build_face_neighbours_table
+    procedure, pass :: sgrid_iproc_rank_to_subdom_coor
+    procedure, pass :: sgrid_subdom_coor_to_iproc_rank
+    procedure, pass :: sgrid_subdom_coor_to_iglob_bounds
+    procedure, pass :: sgrid_retrieve_grid_node_processor
+    procedure, pass :: sgrid_retrieve_continuum_point_processor
+    procedure, pass :: sgrid_retrieve_continuum_point_processors
+    procedure, pass :: sgrid_set_diag_neighbours
+    procedure, pass :: sgrid_allocate_field
+    procedure, pass :: sgrid_allocate_array_of_fields
+    procedure, pass :: sgrid_allocate_global_field
+    procedure, pass :: sgrid_read_global_field
+    procedure, pass :: sgrid_write_global_field
+    procedure, pass :: sgrid_deallocate_global_field
+    procedure, pass :: sgrid_loc2glob
+    procedure, pass :: sgrid_glob2loc
+    procedure, pass :: sgrid_1d_field_interpol_arith_mean
+    procedure, pass :: sgrid_2d_field_interpol_arith_mean
+    procedure, pass :: sgrid_2d_field_interpol_harm_mean
+
+  end type sgrid_type
+  !=========================================================
+
+  ! Non bounded procedure for down-casting
+  public  :: as_sgrid_type
+
+  contains
+
+
+  subroutine para_range(n1, n2, nprocs, irank, i0, iEnd)
+    ! IN  n1    : the lowest  value of the iteration variable
+    !     n2    : the highest value of the iteration variable
+    !     nprocs: the number of processes
+    !     irank : the rank for which you want to know the range of iterations
+    ! OUT i0    : the lowest  value of the iteration variable that process irank executes
+    !     iEnd  : the highest value of the iteration variable that process irank executes
+
+    integer,          intent(in)  :: n1, n2, nprocs, irank
+    integer,          intent(out) :: i0, iEnd
+    character(len=*), parameter   :: proc_name = 'para_range'
+    integer                       :: iwork1, iwork2
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    iwork1 =    (n2 - n1 + 1) / nprocs
+    iwork2 = mod(n2 - n1 + 1,   nprocs)
+    i0     = irank * iwork1 + n1 + min(irank, iwork2)
+    iEnd   = i0 + iwork1 - 1
+    if (iwork2 > irank) iEnd = iEnd + 1
+
+  end subroutine para_range
+
+
+  subroutine para_range_old(n1, n2, nprocs, irank, i0, iEnd)
+    ! IN  n1    : the lowest  value of the iteration variable
+    !     n2    : the highest value of the iteration variable
+    !     nprocs: the number of processes
+    !     irank : the rank for which you want to know the range of iterations
+    ! OUT i0    : the lowest  value of the iteration variable that process irank executes
+    !     iEnd  : the highest value of the iteration variable that process irank executes
+
+    integer,          intent(in)  :: n1, n2, nprocs, irank
+    integer,          intent(out) :: i0, iEnd
+    character(len=*), parameter   :: proc_name = 'para_range_old'
+    integer                       :: iwork
+    integer                       :: nnodes_dom, nnodes_dom_last, nnodes_loc
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    nnodes_dom = nint(n2 / real(nprocs))
+    nnodes_dom_last = n2 - (nprocs - 1) * nnodes_dom
+    if (irank + 1 == nprocs) then
+      nnodes_loc = nnodes_dom_last
+    else
+      nnodes_loc = nnodes_dom
+    end if
+    
+    i0 = irank * nnodes_dom + 1
+    iEnd = i0 + nnodes_loc - 1
+
+  end subroutine para_range_old
+
+
+  function as_sgrid_type(grid)
+    class(grid_type),       target, intent(in) :: grid
+    type(sgrid_type),       pointer            :: as_sgrid_type
+    character(len=*),       parameter          :: proc_name = 'as_sgrid_type'
+
+    grid_selector: select type(grid)
+    type is (sgrid_type)
+      as_sgrid_type => grid
+    class default
+      write(error_message,*) myid_1, ' :', proc_name, " :: ERROR : Wrong grid type. Attempted: sgrid_type"
+      call stop_mpi()
+    end select grid_selector
+
+  end function as_sgrid_type
+
+ 
+  subroutine sgrid_constructor(this)
+    class(sgrid_type),          intent(in out) :: this
+    character(len=*),                parameter :: proc_name = 'sgrid_constructor'
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! Propagate object creation on parent class
+    call grid_constructor(this)
+
+    !! BODY ++
+    !! BODY --
+
+  end subroutine sgrid_constructor
+
+ 
+  subroutine sgrid_set_parameters(this, nglobal, nsub_dom, npml_glob, spatial_step, grid_origin)
+    class(sgrid_type),    intent(in out) :: this
+    integer, dimension(3),    intent(in) :: nglobal, nsub_dom
+    integer, dimension(2, 3), intent(in) :: npml_glob
+    real,    dimension(3),    intent(in) :: spatial_step, grid_origin
+    character(len=*),          parameter :: proc_name = 'sgrid_set_parameters'
+    character(len=1500)                  :: buffer_config_grid
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    !! BODY ++
+    this%origin_glob = grid_origin
+    this%h = spatial_step
+    this%nnodes_glob = nglobal
+    this%npml_glob = npml_glob
+    this%nd = nsub_dom
+    npart = product(nsub_dom)
+
+    if (product(nglobal) < 1) then
+      write(error_message,*) proc_name, " :: ERROR : wrong global nodes : ", nglobal
+      call stop_mpi()
+    end if
+
+    if (npart < 1) then
+      write(error_message,*) proc_name, " :: ERROR : wrong domain decomposition : ", nsub_dom
+      call stop_mpi()
+    end if
+
+    if (dd_debug_level > 3 .and. myid_0 == 0) then
+      write(buffer_config_grid,*) end_of_line, &
+      &' Grid config         : ', end_of_line, &
+      &' origin_glob         = ', this%origin_glob, end_of_line, &
+      &' h                   = ', this%h, end_of_line, &
+      &' nnodes_glob         = ', this%nnodes_glob, end_of_line, &
+      &' npml_glob           = ', this%npml_glob, end_of_line, &
+      &' nd                  = ', this%nd, end_of_line, &
+      & end_of_line
+      write(*,'(A)') trim(buffer_config_grid)
+    end if
+    !! BODY --
+
+  end subroutine sgrid_set_parameters
+
+  
+  subroutine sgrid_get_overlap(this, novlp)
+    class(sgrid_type),     intent(in out) :: this
+    integer,               intent(out)    :: novlp
+    character(len=*),      parameter      :: proc_name = 'sgrid_get_overlap'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, ' ', this%novlp
+
+    novlp = maxval(this%novlp(:))
+
+  end subroutine sgrid_get_overlap
+
+  
+  subroutine sgrid_get_overlap_vector(this, novlp)
+    class(sgrid_type),     intent(in out) :: this
+    integer, dimension(3), intent(out)    :: novlp
+    character(len=*),      parameter      :: proc_name = 'sgrid_get_overlap_vector'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, ' ', this%novlp
+
+    novlp(:) = this%novlp(:)
+
+  end subroutine sgrid_get_overlap_vector
+
+
+  subroutine sgrid_set_overlap(this, novlp)
+    class(sgrid_type),     intent(in out) :: this
+    integer,               intent(in)     :: novlp
+    character(len=*),      parameter      :: proc_name = 'sgrid_set_overlap'
+    integer, dimension(3)                 :: novlp_vector
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, ' ', novlp
+
+    if (novlp < 0) then
+      write(error_message,*) proc_name, " :: ERROR : wrong overlap :", novlp
+      call stop_mpi()
+    end if
+
+    novlp_vector(:) = novlp
+    if (config2D) novlp_vector(3) = 0
+
+    call this%sgrid_set_overlap_vector(novlp_vector)
+
+  end subroutine sgrid_set_overlap
+
+  
+  subroutine sgrid_set_overlap_vector(this, novlp)
+    class(sgrid_type),     intent(in out) :: this
+    integer, dimension(3), intent(in)     :: novlp
+    character(len=*),      parameter      :: proc_name = 'sgrid_set_overlap_vector'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, ' ', novlp
+
+    if (maxval(novlp) < 0) then
+      write(error_message,*) proc_name, " :: ERROR : wrong overlap  :", novlp
+      call stop_mpi()
+    end if
+
+    ! 2D Check
+    if (config2D .and. novlp(3) /= 0) then
+      write(error_message,*) proc_name, ' :: ERROR : In 2D configuration, attempted overlap in last dimension is 0. Get:', novlp(3)
+      call stop_mpi()
+    end if
+
+    this%novlp(:) = novlp(:)
+
+    ! Fulfill then some internal data (needing size overlap + temporal blocking information) for better performance
+    this%lbndloc(1:2) = 1                    - this%novlp(1:2) - this%ntmpblock
+    this%ubndloc(1:2) = this%nnodes_loc(1:2) + this%novlp(1:2) + this%ntmpblock
+    if (.not. config2D) then !3D
+      this%lbndloc(3) = 1                    - this%novlp(3)   - this%ntmpblock
+      this%ubndloc(3) = this%nnodes_loc(3)   + this%novlp(3)   + this%ntmpblock
+    else !2D
+      this%lbndloc(3) = 1
+      this%ubndloc(3) = 1
+    end if
+
+    !write(*,*) proc_name, ' lbnd=',this%lbndloc,' ubnd=',this%ubndloc
+
+  end subroutine sgrid_set_overlap_vector
+
+  
+  subroutine sgrid_get_temporal_blocking_size(this, ntmpblock)
+    class(sgrid_type),     intent(in out) :: this
+    integer,               intent(out)    :: ntmpblock
+    character(len=*),      parameter      :: proc_name = 'sgrid_get_temporal_blocking_size'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name, ' ', this%ntmpblock
+
+    ntmpblock = this%ntmpblock
+
+  end subroutine sgrid_get_temporal_blocking_size
+
+  
+  subroutine sgrid_set_temporal_blocking_size(this, in_ntmpblock)
+    class(sgrid_type),    intent(in out) :: this
+    integer,                  intent(in) :: in_ntmpblock
+    character(len=*),          parameter :: proc_name = 'sgrid_set_temporal_blocking_size'
+    integer                              :: out_ntmpblock
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (in_ntmpblock < 0) then
+      write(error_message,*) proc_name, " :: ERROR : Wrong temporal blocking size value. Get: ", in_ntmpblock
+      call stop_mpi()
+    end if
+
+    this%ntmpblock = in_ntmpblock
+
+    ! Fulfill then some internal data (needing size overlap + temporal blocking information) for better performance
+    this%lbndloc(1:2) = 1                    - this%novlp(1:2) - this%ntmpblock
+    this%ubndloc(1:2) = this%nnodes_loc(1:2) + this%novlp(1:2) + this%ntmpblock
+    if (.not. config2D) then !3D
+      this%lbndloc(3) = 1                    - this%novlp(3)   - this%ntmpblock
+      this%ubndloc(3) = this%nnodes_loc(3)   + this%novlp(3)   + this%ntmpblock
+    else !2D
+      this%lbndloc(3) = 1
+      this%ubndloc(3) = 1
+    end if
+
+    !write(*,*) proc_name, ' lbnd=',this%lbndloc,' ubnd=',this%ubndloc
+
+  end subroutine sgrid_set_temporal_blocking_size
+
+
+  subroutine sgrid_get_valid_loc_range(this, it, loc_range)
+    class(sgrid_type),       intent(in out) :: this
+    integer,                 intent(in)     :: it
+    integer, dimension(2,3), intent(out)    :: loc_range
+    character(len=*),        parameter      :: proc_name = 'sgrid_get_valid_loc_range'
+    integer                                 :: itblock, idim, ndim
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    loc_range(1,:) = 1
+    loc_range(2,:) = this%nnodes_loc(:)
+
+    if (this%ntmpblock > 0) then
+
+      ndim = 3
+      if (config2D) ndim = 2
+
+      itblock = this%ntmpblock - mod(it, this%ntmpblock) + 1
+
+      do idim = 1, ndim
+
+        ! Take into account subdomains on the global domain boundary
+        ! In this case there is no neighbour and the computation range should remain to the initial range
+!         if (this%face_neighbours(1,idim) /= MPI_PROC_NULL) then
+!           loc_range(1,idim) = loc_range(1,idim) - itblock
+!         end if
+! 
+!         if (this%face_neighbours(2,idim) /= MPI_PROC_NULL) then
+!           loc_range(2,idim) = loc_range(2,idim) + itblock
+!         end if
+
+        if (this%sub_dom_coor(idim) /= 1) then
+          loc_range(1,idim) = loc_range(1,idim) - itblock
+        end if
+        if (this%sub_dom_coor(idim) /= this%nd(idim)) then
+          loc_range(2,idim) = loc_range(2,idim) + itblock
+        end if
+
+      end do
+
+    end if
+
+  end subroutine sgrid_get_valid_loc_range
+
+
+  subroutine sgrid_get_loc_array_bounds(this, lbnd, ubnd)
+    class(sgrid_type),        intent(in)     :: this
+    integer, dimension(3),    intent(out)    :: lbnd, ubnd
+    character(len=*),         parameter      :: proc_name = "sgrid_get_loc_array_bounds"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    lbnd(:) = this%lbndloc(:)
+    ubnd(:) = this%ubndloc(:)
+
+  end subroutine sgrid_get_loc_array_bounds
+
+
+  subroutine sgrid_set_diag_neighbours(this, diag_neighbours)
+    class(sgrid_type),    intent(in out) :: this
+    logical,                  intent(in) :: diag_neighbours
+    character(len=*),          parameter :: proc_name = 'sgrid_set_diag_neighbours'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    this%diag_neighbours = diag_neighbours
+
+  end subroutine sgrid_set_diag_neighbours
+
+
+  subroutine sgrid_destructor(this)
+    class(sgrid_type),   intent(in out) :: this
+    character(len=*),    parameter      :: proc_name = 'sgrid_destructor'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call dealloc_(this%internal_Floc, "internal_Floc")
+
+    ! Propagate object deletion on parent class
+    call grid_destructor(this)
+
+  end subroutine sgrid_destructor
+
+
+  subroutine sgrid_read_config(this, config_file)
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         intent(in)     :: config_file
+
+    character(len=*),         parameter      :: proc_name = "sgrid_read_config"
+    integer                                  :: ierr = 0
+    logical                                  :: found = .false.
+    integer, dimension(3)                    :: nglobal_with_pml = 0
+
+    ! Declare sgrid_in namelist parameters
+    integer, dimension(3)                    :: nglobal           = 0
+    integer, dimension(3)                    :: nsub_dom          = 0
+    integer, dimension(2, 3)                 :: npml_glob         = 0
+    real, dimension(3)                       :: spatial_step      = 0.
+    real, dimension(3)                       :: grid_origin       = 0.
+    integer                                  :: task_placement_in = 0
+    character(len=250)                       :: task_map_file_in  = ''
+
+    namelist /sgrid_in/ nglobal, grid_origin,   &
+    &              npml_glob,                   &
+    &              spatial_step,                &
+    &              nsub_dom,                    &
+    &              task_placement_in, task_map_file_in
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (myid_world == 0) then
+
+      inquire(file = trim(adjustl(config_file)), exist = found)
+      if (.not. found) then
+        write(error_message,*) proc_name, " :: ERROR : config file not found : ", trim(adjustl(config_file))
+        call stop_mpi()
+      end if
+
+      open(unit_dd, file=trim(adjustl(config_file)), status='old', action='read', iostat=ierr)
+      if (ierr /= 0) then
+        write(error_message,*) proc_name, " :: ERROR : could not open config file : ", trim(adjustl(config_file))
+        call stop_mpi()
+      end if
+      rewind(unit_dd)
+
+      read(unit_dd, sgrid_in)
+      close(unit_dd)
+
+    end if
+
+    call mpi_bcast(nglobal,           size(nglobal),                                   MPI_INTEGER,   0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(nsub_dom,          size(nsub_dom),                                  MPI_INTEGER,   0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(npml_glob,         size(npml_glob, dim=1) * size(npml_glob, dim=2), MPI_INTEGER,   0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(spatial_step,      size(spatial_step),                              MPI_REAL,      0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(grid_origin,       size(grid_origin),                               MPI_REAL,      0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(task_placement_in, 1,                                               MPI_INTEGER,   0, MPI_COMM_WORLD, ierr)
+    call mpi_bcast(task_map_file_in,  len(task_map_file_in),                           MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+
+    task_placement = task_placement_in
+    task_map_file  = task_map_file_in
+
+    ! Update 26/01/2018:
+    ! FROM NOW ON, nglobal read in sgrid_in namelist defines the number of nodes of the grid EXCLUDING the PML layers.
+    ! It means that instead of affecting nglobal read in namelist to sgrid%nnodes_glob, it is now affected to sgrid%nmodel_glob.
+    ! Thanks to the fact that no variable meaning is changed and to not lead to regressions in Stephen's code (LITHOS) 
+    ! which uses the domain decomposition library, in particular the sgrid_set_parameters subroutine, 
+    ! we limit the modification to sgrid_read_config subroutine.
+    !call this%sgrid_set_parameters(nglobal, nsub_dom, npml_glob, spatial_step, grid_origin)
+    nglobal_with_pml(:) = nglobal(:) + npml_glob(1,:) + npml_glob(2,:)
+    call this%sgrid_set_parameters(nglobal_with_pml, nsub_dom, npml_glob, spatial_step, grid_origin)
+
+  end subroutine sgrid_read_config
+
+
+  subroutine sgrid_init(this, quiet_mode)
+    class(sgrid_type),        intent(in out) :: this
+    logical, optional,        intent(in)     :: quiet_mode
+    character(len=*),         parameter      :: proc_name = 'sgrid_init'
+    logical                                  :: verbose_mode
+    character(len=MESSAGE_LENGTH_MAX)        :: info_str
+
+    if (.not. this%is_initialized) then
+
+      verbose_mode = .true.
+      if (present(quiet_mode)) then
+        verbose_mode = (.not. quiet_mode)
+      end if
+
+      !----------------------------------------------------------------------------
+      ! Init global grid
+      !----------------------------------------------------------------------------
+      call init_glob_sg_grid(this)
+
+      if (myid_0 == 0 .and. verbose_mode) then
+        call sgrid_info(this, info_str, local_sub_domain=.false., short_version=.false.)
+        write(*,'(A)') trim(info_str)
+        write(*,*)
+      end if
+
+      !----------------------------------------------------------------------------
+      ! Init sub grid
+      !----------------------------------------------------------------------------
+      call init_sub_sg_grid(this)
+
+      if (dd_debug_level > 1 .and. myid_2 == 0 .and. verbose_mode) then
+        call sgrid_info(this, info_str, local_sub_domain=.true., short_version=.false.)
+        write(*,'(A)') trim(info_str)
+        write(*,*)
+      end if
+
+      this%is_initialized = .true.
+
+    end if
+
+  end subroutine sgrid_init
+
+  
+  subroutine init_glob_sg_grid(this)
+
+    !------------------------------------------------------------------------
+    !
+    ! Initialise some variables global mesh variables
+    !
+    !-------------------------------------------------------------------------
+
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         parameter      :: proc_name = "init_glob_sg_grid"
+    integer                                  :: i, ndim
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! Determine 2D or 3D configuration
+    if (this%nnodes_glob(3) <= 1) then
+      config2D = .true.
+      ndim = 2
+    else
+      config2D = .false.
+      ndim = 3
+    end if
+
+    if (config2D .and. this%nd(3) /= 1) then
+      ! stop the code is mandatory because mpi communicators are already created but with a wrong configuration
+      write(error_message,*) proc_name, &
+      & " :: ERROR : in 2D configuration, domain decomposition in third dimension is not allowed. Attempted 1. Get: ", this%nd(3)
+      call stop_mpi()
+    end if
+
+    if (product(this%h(1:ndim)) <= 0) then
+      write(error_message,*) proc_name, " :: ERROR : wrong spatial step. Get: ", this%h
+      call stop_mpi()
+    end if
+
+    if (config2D) then
+      this%nnodes_glob  (3) = 1
+      this%npml_glob  (:,3) = 0
+    end if
+
+    ! check pml length
+    do i = 1, ndim
+      if (this%npml_glob(1,i) + this%npml_glob(2,i) >= this%nnodes_glob(i))  then
+        write(error_message,*) proc_name, " : ERROR : pml too large in dim :", i, this%npml_glob(:,i), this%nnodes_glob(i)
+        call stop_mpi()
+      end if
+    end do
+
+    ! retrieve the nb of grid points in the propagation medium (without PML) in the 3 directions
+    do i = 1, ndim
+      this%nmodel_glob(i)   = this%nnodes_glob(i) - this%npml_glob(1, i) - this%npml_glob(2, i)
+      this%imodel_glob(1,i) = 1 + this%npml_glob(1,i)
+      this%imodel_glob(2,i) = this%nnodes_glob(i) - this%npml_glob(2,i)
+    end do
+
+    if (config2D) then
+      this%nmodel_glob  (3) = 1
+      this%imodel_glob(:,3) = 1
+    end if
+
+    ! compute the bounding box of the computation grid (bbox_glob including PML, bbox_model excluding PML)
+    do i = 1, ndim
+      this%bbox_glob(1,i)  = this%origin_glob(i) - this%npml_glob(1, i) * this%h(i)
+      this%bbox_glob(2,i)  = this%bbox_glob(1,i) + (this%nnodes_glob(i) - 1) * this%h(i)
+      this%bbox_model(1,i) = this%origin_glob(i)
+      this%bbox_model(2,i) = this%bbox_glob(2,i) - this%npml_glob(2, i) * this%h(i)
+    end do
+
+    if (config2D) then
+      this%bbox_glob (:,3) = 0.
+      this%bbox_model(:,3) = 0.
+    end if
+
+    ! Check that the number of subdomains read in the configuration file 
+    ! is compliant with the number of MPI processes associated to mpi_comm_0.
+    ! Notice that this check is not coupled with the number of shots to treat simultaneously :
+    ! nproc_0 shall be equal to product(this%nd) * ngroup
+    if (     (product(this%nd) /= 1 .and. modulo(nproc_0, product(this%nd)) /= 0) &
+    &   .or. (product(this%nd) > nproc_0) ) then
+      if (myid_0 == 0) then
+        write(*,*) 'The number of processors is not compliant with the number of subdomains :'
+        write(*,'(A,I8)') 'nb processors :', nproc_0
+        write(*,'(A,I8,3(A,I3),A)') 'nb subdomains :', product(this%nd), &
+        & ' = (', this%nd(1), ' x ', this%nd(2), ' x ', this%nd(3), ')'
+      end if
+      write(error_message,*) proc_name, ' :: ERROR'
+      call stop_mpi()
+    end if
+
+    ! number of points of a regular subdomain, of the last subdomain in the 3 directions
+    this%nnodes_dom(:)      = nint(this%nnodes_glob(:) / real(this%nd(:)))
+    this%nnodes_dom_last(:) = this%nnodes_glob(:) - (this%nd(:) - 1) * this%nnodes_dom(:)
+
+    if (config2D) then
+      this%nnodes_dom     (3) = 1
+      this%nnodes_dom_last(3) = 1
+    end if
+
+  end subroutine init_glob_sg_grid
+
+
+  !===========================================================================
+
+
+  subroutine init_sub_sg_grid(this)
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         parameter      :: proc_name = "init_sub_sg_grid"
+    integer                                  :: npml_loc, i
+
+    ! local nb of PML points in each direction ((z-, z+), (x-, x+), (y-, y+))
+    integer                                  :: nz, nx, ny, pz1, pz2, px1, px2, py1, py2
+    integer, dimension(2,3)                  :: npml_loc_tab = 0
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! nb grid points in the subdomain in the 3 directions (general case)
+    this%nnodes_loc(:) = this%nnodes_dom(:)
+
+    ! transform subdomain id into (i1, i2, i3)
+    call sgrid_compute_subdom_coor(this)
+
+    ! particular case of the last subdomains at the periphery of the grid
+    do i = 1, 3
+      if (this%sub_dom_coor(i) == this%nd(i)) this%nnodes_loc(i) = this%nnodes_dom_last(i)
+    end do
+
+    ! retrieve id of neighbour subdomains
+    call sgrid_build_face_neighbours_table(this)
+    call sgrid_build_neighbours_table(this)
+
+    ! retrieve min. and max. global grid point number
+    do i = 1, 3
+      this%iglob_bounds(1,i) = (this%sub_dom_coor(i) - 1) * this%nnodes_dom(i) + 1
+      this%iglob_bounds(2,i) = this%iglob_bounds(1,i) + this%nnodes_loc(i) - 1
+    end do
+
+    ! Retrieve:
+    ! - min. and max. local modeling grid point index (imodel_loc) excluding pml and overlap points
+    ! - min. and max. local pml grid point index (ipml_loc) in each direction
+    !   and for the two possible PML layers
+    ! ( ((izpml1-, izpml1+), (ixpml1-, ixpml1+), (iypml1-, iypml1+))
+    !   ((izpml2-, izpml2+), (ixpml2-, ixpml2+), (iypml2-, iypml2+)) )
+    do i = 1, 3
+      ! default case: no pml but overlap to exclude
+      this%imodel_loc(1,i)     = 1
+      this%imodel_loc(2,i)     = this%nnodes_loc(i) ! first, includes PML
+      this%ipml_loc(:,i,:)     = 0
+      npml_loc_tab(:,i)        = 0
+
+      ! Remove possible pml along dimension 'i'
+      if (this%npml_glob(1,i) <= this%nnodes_dom(i)) then
+        ! the PML layer size is lower than the subdomain layer size
+        if (this%sub_dom_coor(i) == 1) then
+          this%imodel_loc(1,i) = 1 + this%npml_glob(1,i)
+          this%ipml_loc(1,i,1) = 1
+          this%ipml_loc(2,i,1) = this%imodel_loc(1,i) - 1
+          npml_loc_tab(1,i)    = this%ipml_loc(2,i,1) - this%ipml_loc(1,i,1) + 1
+        end if
+
+      else
+        ! the PML layer size is greater than the subdomain layer size
+        if             (this%sub_dom_coor(i)    * this%nnodes_dom(i) <  this%npml_glob(1,i)) then
+          ! the current subdomain contains only PML => no model point, set imodel_loc such that imodel_loc(2,i) - imodel_loc(1,i) < 0
+          this%imodel_loc(1,i) = this%nnodes_loc(i)
+          this%imodel_loc(2,i) = 1
+          this%ipml_loc(1,i,1) = 1
+          this%ipml_loc(2,i,1) = this%nnodes_loc(i)
+          npml_loc_tab(1,i)    = this%nnodes_loc(i)
+
+        else if (      (this%sub_dom_coor(i)-1) * this%nnodes_dom(i) <  this%npml_glob(1,i)  &
+        &        .and.  this%sub_dom_coor(i)    * this%nnodes_dom(i) >= this%npml_glob(1,i)) then
+          ! the current subdomain contains the interface between the PML and the modeling layers
+          this%imodel_loc(1,i) = this%npml_glob(1,i) - (this%sub_dom_coor(i)-1) * this%nnodes_dom(i) + 1
+          this%ipml_loc(1,i,1) = 1
+          this%ipml_loc(2,i,1) = this%imodel_loc(1,i) - 1
+          npml_loc_tab(1,i)    = this%ipml_loc(2,i,1) - this%ipml_loc(1,i,1) + 1
+        end if
+      end if
+
+      if (this%npml_glob(2,i) <= this%nnodes_dom_last(i)) then
+        if (this%sub_dom_coor(i) == this%nd(i)) then
+          this%imodel_loc(2,i) = this%nnodes_loc(i) - this%npml_glob(2,i)
+          this%ipml_loc(1,i,2) = this%imodel_loc(2,i) + 1
+          this%ipml_loc(2,i,2) = this%nnodes_loc(i)
+          npml_loc_tab(2,i)    = this%ipml_loc(2,i,2) - this%ipml_loc(1,i,2) + 1
+        end if
+
+      else
+        ! the PML layer size is greater than the subdomain layer size
+        if      (this%nnodes_dom_last(i) + (this%nd(i)-this%sub_dom_coor(i))   * this%nnodes_dom(i) <  this%npml_glob(2,i)) then
+          ! the current subdomain contains only PML => no model point, set imodel_loc such that imodel_loc(2,i) - imodel_loc(1,i) < 0
+          this%imodel_loc(1,i) = this%nnodes_loc(i)
+          this%imodel_loc(2,i) = 1
+          this%ipml_loc(1,i,2) = 1
+          this%ipml_loc(2,i,2) = this%nnodes_loc(i)
+          npml_loc_tab(2,i)    = this%nnodes_loc(i)
+
+        else if (this%nnodes_dom_last(i) + (this%nd(i)-this%sub_dom_coor(i)-1) * this%nnodes_dom(i) <  this%npml_glob(2,i)  &
+        &  .and. this%nnodes_dom_last(i) + (this%nd(i)-this%sub_dom_coor(i)  ) * this%nnodes_dom(i) >= this%npml_glob(2,i)) then
+          ! the current subdomain contains the interface between the PML and the modeling layers
+          this%imodel_loc(2,i) = this%npml_glob(2,i) &
+          &                    - (this%nnodes_dom_last(i) + (this%nd(i)-this%sub_dom_coor(i)-1) * this%nnodes_dom(i)) + 1
+          this%ipml_loc(1,i,2) = this%imodel_loc(2,i) + 1
+          this%ipml_loc(2,i,2) = this%nnodes_loc(i)
+          npml_loc_tab(2,i)    = this%ipml_loc(2,i,2) - this%ipml_loc(1,i,2) + 1
+        end if
+      end if
+
+      this%nmodel_loc(i)       = this%nnodes_loc(i) - npml_loc_tab(1,i) - npml_loc_tab(2,i)
+
+    end do
+
+    if (dd_debug_level > 0) then
+      write(*,'(I8,2A,6I4,A,3I4,A,12I4,A,6I3)') myid_1, ' : ', &
+      & ' imodel =', this%imodel_loc,       &
+      & ' nmodel =', this%nmodel_loc, &
+      & ' ipml =',   this%ipml_loc,   &
+      & ' npml =',   npml_loc_tab
+    end if
+
+    ! Retrieve the nb of points inside PML
+    nz  = this%nmodel_loc(1)
+    nx  = this%nmodel_loc(2)
+    ny  = this%nmodel_loc(3)
+
+    nz = this%nmodel_loc(1)
+    nx = this%nmodel_loc(2)
+    ny = this%nmodel_loc(3)
+    pz1 = npml_loc_tab(1,1)
+    pz2 = npml_loc_tab(2,1)
+    px1 = npml_loc_tab(1,2)
+    px2 = npml_loc_tab(2,2)
+    py1 = npml_loc_tab(1,3)
+    py2 = npml_loc_tab(2,3)
+   
+    npml_loc = nx * ny * (pz1 + pz2) + nz * ny * (px1 + px2) + nx * nz * (py1 + py2) & ! 6 faces
+    &        + ny * (px1 * pz1 + px2 * pz1 + px2 * pz2 + px1 * pz2)                  & ! 4 edges along y
+    &        + nx * (py1 * pz1 + py2 * pz1 + py2 * pz2 + py1 * pz2)                  & ! 4 edges along x
+    &        + nz * (py1 * px1 + py2 * px1 + py2 * px2 + py1 * px2)                  & ! 4 edges along z
+    &        + (py1 + py2) * (px1 * pz1 + px2 * pz1 + px2 * pz2 + px1 * pz2)           ! 8 corners
+
+    this%npml_loc = npml_loc
+
+    ! compute the bounding box of the computation grid (including PML)
+    do i = 1, 3
+      this%bbox_loc(1,i) = this%origin_glob(i) + (this%iglob_bounds(1,i)-1) * this%h(i)
+      this%bbox_loc(2,i) = this%bbox_loc(1,i)  + (this%nnodes_loc(i)    -1) * this%h(i)
+    end do
+
+    ! Fulfill then some internal data (needing size overlap + temporal blocking information) for better performance
+    this%lbndloc(1:2) = 1                    - this%novlp(1:2) - this%ntmpblock
+    this%ubndloc(1:2) = this%nnodes_loc(1:2) + this%novlp(1:2) + this%ntmpblock
+    if (.not. config2D) then !3D
+      this%lbndloc(3) = 1                    - this%novlp(3)   - this%ntmpblock
+      this%ubndloc(3) = this%nnodes_loc(3)   + this%novlp(3)   + this%ntmpblock
+    else !2D
+      this%lbndloc(3) = 1
+      this%ubndloc(3) = 1
+    end if
+    !write(*,*) proc_name, ' lbnd=',this%lbndloc,' ubnd=',this%ubndloc
+
+  end subroutine init_sub_sg_grid
+
+  !===========================================================================
+
+
+  subroutine sgrid_info(this, info_str, local_sub_domain, short_version)
+    class(sgrid_type),                 intent(in out) :: this
+    character(len=MESSAGE_LENGTH_MAX), intent(out)    :: info_str
+    logical,                           intent(in)     :: local_sub_domain, short_version
+    character(len=*),                  parameter      :: proc_name = "sgrid_info"
+    character(len=MESSAGE_LENGTH_MAX)                 :: long_str
+    character(len=2)                                  :: config_str
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (config2D) then
+      config_str = '2D'
+    else
+      config_str = '3D'
+    end if
+
+    if (local_sub_domain .eqv. .true.) then
+
+      write(info_str,*)                                                 end_of_line, &
+      &' SUB-DOMAIN INFO                 : ', myid_1,                   end_of_line, &
+      &' --------------------------------- ',                           end_of_line, &
+      &' coor                            : ', this%sub_dom_coor,        end_of_line, &
+      &' comp grid                       : ', this%nnodes_loc,          end_of_line, &
+      &' bounding box (with PML)         : ', this%bbox_loc(:,1),       end_of_line, &
+      &'                                 : ', this%bbox_loc(:,2),       end_of_line, &
+      &'                                 : ', this%bbox_loc(:,3),       end_of_line, &
+      &' --------------------------------- ',                           end_of_line
+
+      if (short_version .eqv. .false.) then
+
+      write(long_str,*) &
+      &' glob index bounds               : ', this%iglob_bounds(:,1),   end_of_line, &
+      &'                                 : ', this%iglob_bounds(:,2),   end_of_line, &
+      &'                                 : ', this%iglob_bounds(:,3),   end_of_line, &
+      &' local index bounds (noPML)      : ', this%imodel_loc(:,1),     end_of_line, &
+      &'                                 : ', this%imodel_loc(:,2),     end_of_line, &
+      &'                                 : ', this%imodel_loc(:,3),     end_of_line, &
+      &' local PML index bounds          : ', this%ipml_loc(:,1,:),     end_of_line, &
+      &'                                 : ', this%ipml_loc(:,2,:),     end_of_line, &
+      &'                                 : ', this%ipml_loc(:,3,:),     end_of_line, &
+      &' --------------------------------- ',                           end_of_line
+
+      info_str = trim(adjustl(info_str)) // ' ' // trim(adjustl(long_str))
+
+      end if
+
+    else
+    
+      write(info_str,*) &
+      &                                                                 end_of_line, &
+      &' GLOBAL GRID INFO                : ',                           end_of_line, &
+      &' --------------------------------- ',                           end_of_line, &
+      &' configuration                   : ', config_str,               end_of_line, &
+      &' nb points in propagation medium : ', this%nmodel_glob,         end_of_line, &
+      &' bbox      of propagation medium : ', this%bbox_model(:,1),     end_of_line, &
+      &'                                 : ', this%bbox_model(:,2),     end_of_line, &
+      &'                                 : ', this%bbox_model(:,3),     end_of_line, &
+      &' --------------------------------- ',                           end_of_line
+
+      if (short_version .eqv. .false.) then
+
+      write(long_str,*) &
+      &' nb points in computation grid   : ', this%nnodes_glob,         end_of_line, &
+      &' nb points for pml               : ', this%npml_glob(:,1),      end_of_line, &
+      &'                                 : ', this%npml_glob(:,2),      end_of_line, &
+      &'                                 : ', this%npml_glob(:,3),      end_of_line, &
+      &' bbox of computation grid        : ', this%bbox_glob(:,1),      end_of_line, &
+      &'                                 : ', this%bbox_glob(:,2),      end_of_line, &
+      &'                                 : ', this%bbox_glob(:,3),      end_of_line, &
+      &' nb subdomains                   : ', this%nd,                  end_of_line, &
+      &' nb points in subdomains         : ', this%nnodes_dom,          end_of_line, &
+      &' nb points in last subdomain     : ', this%nnodes_dom_last,     end_of_line, &
+      &' --------------------------------- ',                           end_of_line
+
+      info_str = trim(adjustl(info_str)) // ' ' // trim(adjustl(long_str))
+
+      end if
+
+    end if
+
+  end subroutine sgrid_info
+
+
+  ! Mapping between a processor rank and its coordinates 
+  ! in the subdomain distribution following each dimension
+  function sgrid_iproc_rank_to_subdom_coor(this, iproc)
+    class(sgrid_type),   intent(in out) :: this
+    integer,             intent(in)     :: iproc ! processor rank, i.e. value between 0 and nproc - 1
+    integer,             dimension(3)   :: sgrid_iproc_rank_to_subdom_coor
+    integer,             dimension(3)   :: subdom_coor
+    integer                             :: skip3, rest1, rest2, idom
+
+    idom = iproc + 1
+
+    ! retrieve i1, i2, i3
+    skip3 = this%nd(1) * this%nd(2)
+    rest2 = mod(idom, skip3)
+
+    if(rest2 == 0) then
+      subdom_coor(3) = idom / skip3
+      subdom_coor(2) = this%nd(2)
+      subdom_coor(1) = this%nd(1)
+
+    else
+      subdom_coor(3) = idom / skip3 + 1
+      rest1 = mod(rest2, this%nd(1))
+
+      if(rest1 == 0) then
+        subdom_coor(2) = rest2 / this%nd(1)
+        subdom_coor(1) = this%nd(1)
+
+      else
+        subdom_coor(2) = rest2 / this%nd(1) + 1
+        subdom_coor(1) = rest1
+
+      end if
+
+    end if
+
+    sgrid_iproc_rank_to_subdom_coor = subdom_coor
+
+  end function sgrid_iproc_rank_to_subdom_coor
+
+
+  ! Mapping between subdomain coordinates and its rank
+  function sgrid_subdom_coor_to_iproc_rank(this, coor)
+    class(sgrid_type),   intent(in out) :: this
+    integer, dimension(3),   intent(in) :: coor
+    integer                             :: sgrid_subdom_coor_to_iproc_rank
+
+    if (     coor(1) < 1 .or. coor(1) > this%nd(1) &
+    &   .or. coor(2) < 1 .or. coor(2) > this%nd(2) &
+    &   .or. coor(3) < 1 .or. coor(3) > this%nd(3) ) then
+
+      sgrid_subdom_coor_to_iproc_rank = -1
+
+    else
+
+      sgrid_subdom_coor_to_iproc_rank = (coor(1)-1) + (coor(2)-1)*this%nd(1) + (coor(3)-1)*this%nd(1)*this%nd(2)
+
+    end if
+
+  end function sgrid_subdom_coor_to_iproc_rank
+
+
+  ! Mapping between subdomain coordinates and its glob bound indexes
+  function sgrid_subdom_coor_to_iglob_bounds(this, coor)
+    class(sgrid_type),   intent(in out) :: this
+    integer, dimension(3),   intent(in) :: coor
+    integer, dimension(2,3)             :: sgrid_subdom_coor_to_iglob_bounds
+    integer                             :: idim
+    character(len=*),     parameter     :: proc_name = 'sgrid_subdom_coor_to_iglob_bounds'
+
+    if (     coor(1) < 1 .or. coor(1) > this%nd(1) &
+    &   .or. coor(2) < 1 .or. coor(2) > this%nd(2) &
+    &   .or. coor(3) < 1 .or. coor(3) > this%nd(3) ) then
+
+      sgrid_subdom_coor_to_iglob_bounds = -1
+      write(*,*) 'subdom coor=', coor
+      write(error_message,*) proc_name, ' :: ERROR : bad processor coordinates in entry'
+      call stop_mpi()
+
+    else
+
+      sgrid_subdom_coor_to_iglob_bounds(1,:) = (coor(:)-1) * this%nnodes_dom(:) + 1
+      do idim = 1, 3
+        if (coor(idim) == this%nd(idim)) then
+          ! last subdomain
+          sgrid_subdom_coor_to_iglob_bounds(2,idim) = (coor(idim)-1) * this%nnodes_dom(idim) + this%nnodes_dom_last(idim)
+        else
+          sgrid_subdom_coor_to_iglob_bounds(2,idim) = coor(idim) * this%nnodes_dom(idim)
+        end if
+      end do
+
+    end if
+
+  end function sgrid_subdom_coor_to_iglob_bounds
+
+
+  ! Compute the coordinates of the subdomain associated to the current processor
+  subroutine sgrid_compute_subdom_coor(this)
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         parameter      :: proc_name = "sgrid_compute_subdom_coor"
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    this%sub_dom_coor = sgrid_iproc_rank_to_subdom_coor(this, myid_1)
+  end subroutine sgrid_compute_subdom_coor
+
+
+  ! Given a node of the grid identified with its global coordinates indices,
+  ! retrieve the processor rank (communicator 1, numbering starts at 0) the node belongs to 
+  ! and the cartesian coordinates of the associated subdomain (numbering starts at 1)
+  subroutine sgrid_retrieve_grid_node_processor(this, pt_glob_coor, proc_rank, proc_coor)
+    class(sgrid_type),     intent(in out) :: this
+    integer, dimension(3), intent(in)     :: pt_glob_coor
+    integer,               intent(out)    :: proc_rank
+    integer, dimension(3), intent(out)    :: proc_coor
+
+    proc_coor(:) = (/ floor(real(pt_glob_coor(1)) / real(this%nnodes_dom(1))) + 1, &
+    &                 floor(real(pt_glob_coor(2)) / real(this%nnodes_dom(2))) + 1, &
+    &                 floor(real(pt_glob_coor(3)) / real(this%nnodes_dom(3))) + 1 /)
+
+    if (     proc_coor(1) < 1 .or. proc_coor(1) > this%nd(1) &
+    &   .or. proc_coor(2) < 1 .or. proc_coor(2) > this%nd(2) &
+    &   .or. proc_coor(3) < 1 .or. proc_coor(3) > this%nd(3) ) then
+
+      proc_rank = -1
+
+    else
+
+      proc_rank = sgrid_subdom_coor_to_iproc_rank(this, proc_coor)
+
+    end if
+
+  end subroutine sgrid_retrieve_grid_node_processor
+
+
+  ! Given a node of the grid identified with its global coordinates indices,
+  ! retrieve the processor rank (communicator 1, numbering starts at 0) the node belongs to 
+  ! and the cartesian coordinates of the associated subdomain (numbering starts at 1)
+  subroutine sgrid_retrieve_continuum_point_processor(this, pt_glob_coor, proc_rank)
+    class(sgrid_type),      intent(in out) :: this
+    real, dimension(3),     intent(in)     :: pt_glob_coor
+    integer,                intent(out)    :: proc_rank
+    integer, dimension(3)                  :: proc_coor
+
+    if (pt_glob_coor(1) < this%bbox_glob(1,1) .or. pt_glob_coor(1) > this%bbox_glob(2,1)) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      proc_rank = -1
+
+    else if (pt_glob_coor(2) < this%bbox_glob(1,2) .or. pt_glob_coor(2) > this%bbox_glob(2,2)) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      proc_rank = -1
+
+    else if (.not. config2D .and. (pt_glob_coor(3) < this%bbox_glob(1,3) .or. pt_glob_coor(3) > this%bbox_glob(2,3))) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      proc_rank = -1
+
+    else
+
+      ! The point is located in the global domain, search the corresponding subdomain
+
+      if (.not. config2D) then !3D
+        proc_coor(:) = (/ floor((pt_glob_coor(1) - this%bbox_glob(1,1)) / (real(this%nnodes_dom(1)) * this%h(1))) + 1, &
+        &                 floor((pt_glob_coor(2) - this%bbox_glob(1,2)) / (real(this%nnodes_dom(2)) * this%h(2))) + 1, &
+        &                 floor((pt_glob_coor(3) - this%bbox_glob(1,3)) / (real(this%nnodes_dom(3)) * this%h(3))) + 1 /)
+      else ! 2D
+        proc_coor(:) = (/ floor((pt_glob_coor(1) - this%bbox_glob(1,1)) / (real(this%nnodes_dom(1)) * this%h(1))) + 1, &
+        &                 floor((pt_glob_coor(2) - this%bbox_glob(1,2)) / (real(this%nnodes_dom(2)) * this%h(2))) + 1, &
+        &                 1 /)
+      end if
+
+
+      ! As the previous formula does not take into account the fact that the last subdomain in each dimension
+      ! could have a different size from others, it is corrected now if necessary
+!       if (proc_coor(1) > this%nd(1)) proc_coor(1) = this%nd(1)
+!       if (proc_coor(2) > this%nd(2)) proc_coor(2) = this%nd(2)
+!       if (proc_coor(3) > this%nd(3)) proc_coor(3) = this%nd(3)
+      proc_coor(:) = min(proc_coor(:), this%nd(:))
+
+      proc_rank = sgrid_subdom_coor_to_iproc_rank(this, proc_coor)
+
+    end if
+
+  end subroutine sgrid_retrieve_continuum_point_processor
+
+
+  ! Similar to sgrid_retrieve_continuum_point_processor (without s) except that it is possible to define a radius
+  ! around the continuum point as a support to determine if the point belongs to a processor
+  ! It could involve the continum point to belong to several processors (useful in case of Hicks interpolation)
+  ! The outputs are arrays of dimension 8 as the max number of processors the point can belong to
+  subroutine sgrid_retrieve_continuum_point_processors(this, pt_glob_coor, irad, nproc, proc_rank)
+    class(sgrid_type),       intent(in out) :: this
+    real,    dimension(3),   intent(in)     :: pt_glob_coor
+    integer,                 intent(in)     :: irad
+    integer,                 intent(out)    :: nproc
+    integer, dimension(8),   intent(out)    :: proc_rank
+    integer, dimension(3)                   :: holder_proc_coor, neighbour_proc_coor
+    integer, dimension(3)                   :: pt_iglob, tmp_pt_iglob
+    integer, dimension(2,3)                 :: proc_iglob_bounds
+    integer                                 :: i, j, k, idim, ndim
+    character(len=*),     parameter         :: proc_name = 'sgrid_retrieve_continuum_point_processors'
+
+    nproc = 0
+    proc_rank = 0
+
+    if (pt_glob_coor(1) < this%bbox_glob(1,1) .or. pt_glob_coor(1) > this%bbox_glob(2,1)) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      nproc              =  1
+      proc_rank(nproc)   = -1
+
+    else if (pt_glob_coor(2) < this%bbox_glob(1,2) .or. pt_glob_coor(2) > this%bbox_glob(2,2)) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      nproc              =  1
+      proc_rank(nproc)   = -1
+
+    else if (.not. config2D .and. (pt_glob_coor(3) < this%bbox_glob(1,3) .or. pt_glob_coor(3) > this%bbox_glob(2,3))) then
+
+      ! The point is not located in the global domain, set -1 as a wrong processor rank
+      nproc              =  1
+      proc_rank(nproc)   = -1
+
+    else
+
+      ! The point is located in the global domain, search the corresponding subdomain
+      if (.not. config2D) then !3D
+        holder_proc_coor(:) = (/ floor((pt_glob_coor(1) - this%bbox_glob(1,1)) / (real(this%nnodes_dom(1)) * this%h(1))) + 1, &
+        &                        floor((pt_glob_coor(2) - this%bbox_glob(1,2)) / (real(this%nnodes_dom(2)) * this%h(2))) + 1, &
+        &                        floor((pt_glob_coor(3) - this%bbox_glob(1,3)) / (real(this%nnodes_dom(3)) * this%h(3))) + 1 /)
+      else ! 2D
+        holder_proc_coor(:) = (/ floor((pt_glob_coor(1) - this%bbox_glob(1,1)) / (real(this%nnodes_dom(1)) * this%h(1))) + 1, &
+        &                        floor((pt_glob_coor(2) - this%bbox_glob(1,2)) / (real(this%nnodes_dom(2)) * this%h(2))) + 1, &
+        &                        1 /)
+      end if
+
+      ! As the previous formula does not take into account the fact that the last subdomain in each dimension
+      ! could have a different size from others, it is corrected now if necessary
+!       if (holder_proc_coor(1) > this%nd(1)) holder_proc_coor(1) = this%nd(1)
+!       if (holder_proc_coor(2) > this%nd(2)) holder_proc_coor(2) = this%nd(2)
+!       if (holder_proc_coor(3) > this%nd(3)) holder_proc_coor(3) = this%nd(3)
+      holder_proc_coor(:) = min(holder_proc_coor(:), this%nd(:))
+
+      ! The point is located in a subdomain, set its rank at the first place
+      nproc              = 1
+      proc_rank(nproc)   = sgrid_subdom_coor_to_iproc_rank(this, holder_proc_coor)
+
+      ! Search for possible proc neighbours considering the radius
+      if (irad > 0) then
+
+        ! retrieve index position of the point in the global computational grid
+        ndim = 3
+        if (config2D) then
+          ndim = 2
+          pt_iglob(3) = 1
+        end if
+        do idim = 1, ndim
+          pt_iglob(idim) = int((pt_glob_coor(idim) - this%bbox_glob(1,idim)) / this%h(idim)) + 1
+        end do
+
+        ! retrieve iglob bounds of the holder processor
+        proc_iglob_bounds = sgrid_subdom_coor_to_iglob_bounds(this, holder_proc_coor)
+
+        ! loop on neighbour processors of holder processor
+        do k = -1, 1
+          do j = -1, 1
+            do i = -1, 1
+
+              ! skip holder processor
+              if (i == 0 .and. j == 0 .and. k == 0) cycle
+
+              neighbour_proc_coor(:) = holder_proc_coor(:) + (/ i, j, k /)
+
+              ! skip non existing neighbour processors
+              if (neighbour_proc_coor(1) < 1 .or. neighbour_proc_coor(1) > this%nd(1)) cycle
+              if (neighbour_proc_coor(2) < 1 .or. neighbour_proc_coor(2) > this%nd(2)) cycle
+              if (neighbour_proc_coor(3) < 1 .or. neighbour_proc_coor(3) > this%nd(3)) cycle
+
+              ! test if the point of the support the most close to the neighbour processor belongs to it
+              tmp_pt_iglob(:) = pt_iglob + (/ i, j, k /) * irad
+
+              if (      (i==0 .or. (i/=0 .and. (     tmp_pt_iglob(1) < proc_iglob_bounds(1,1) &
+              &                                 .or. tmp_pt_iglob(1) > proc_iglob_bounds(2,1)))) &
+              &   .and. (j==0 .or. (j/=0 .and. (     tmp_pt_iglob(2) < proc_iglob_bounds(1,2) &
+              &                                 .or. tmp_pt_iglob(2) > proc_iglob_bounds(2,2)))) &
+              &   .and. (k==0 .or. (k/=0 .and. (     tmp_pt_iglob(3) < proc_iglob_bounds(1,3) &
+              &                                 .or. tmp_pt_iglob(3) > proc_iglob_bounds(2,3))))) then
+
+                nproc              = nproc + 1
+                if (nproc > 8) then
+                  write(error_message,*) proc_name, &
+                  & ' :: ERROR : A continuum point and its support cannot belongs to more than 8 subdomains'
+                  call stop_mpi()
+                end if
+                proc_rank(nproc)   = sgrid_subdom_coor_to_iproc_rank(this, neighbour_proc_coor)
+
+              end if
+              
+            end do
+          end do
+        end do
+
+      end if ! irad > 0
+    end if
+    
+  end subroutine sgrid_retrieve_continuum_point_processors
+
+
+  ! Build the neighbours processor table of the current processor
+  ! (including neighbours by face, edge and corners)
+  subroutine sgrid_build_neighbours_table(this)
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         parameter      :: proc_name = "sgrid_build_neighbours_table"
+    integer                                  :: neighbour_irank, i1, i2, i3
+    integer, dimension(3)                    :: neighbour_coor
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! initialize with no neighbours
+    this%neighbours(:,:,:) = MPI_PROC_NULL
+
+    ! Loop on all neighbour processors of the current processor following a 27-point stencil pattern, i.e.:
+    ! if we suppose that the subdomain coordinates associated to the current processor are (i,j,k)
+    ! then perfom loops on i-1,i,i+1, j-1,j,j+1, k-1,k,k+1
+    ! It gives all neighbours by face, edge and corner
+    do i3 = -1, 1
+      do i2 = -1, 1
+        do i1 = -1, 1
+
+          neighbour_coor = (/ this%sub_dom_coor(1) + i1, this%sub_dom_coor(2) + i2, this%sub_dom_coor(3) + i3 /)
+
+          if (neighbour_coor(1) >= 1 .and. neighbour_coor(1) <= this%nd(1) .and. &
+          &   neighbour_coor(2) >= 1 .and. neighbour_coor(2) <= this%nd(2) .and. &
+          &   neighbour_coor(3) >= 1 .and. neighbour_coor(3) <= this%nd(3) ) then
+
+            neighbour_irank = sgrid_subdom_coor_to_iproc_rank(this, neighbour_coor)
+
+            if (neighbour_irank < 0 .or. neighbour_irank >= product(this%nd)) then
+
+              neighbour_irank = MPI_PROC_NULL
+
+            else
+
+              ! Reject the diagonal neighbours if the scheme does not need the current processor to communicate with them
+              if (.not. this%diag_neighbours) then
+
+                if (.not.((i1 == 0 .and. i2 == 0) .or. (i1 == 0 .and. i3 == 0) .or. (i2 == 0 .and. i3 == 0))) then
+                  neighbour_irank = MPI_PROC_NULL
+                end if
+
+              end if
+
+            end if
+
+            this%neighbours(i1,i2,i3) = neighbour_irank
+
+          end if
+
+        end do
+      end do
+    end do
+
+    if (dd_debug_level > 3 .and. myid_2 == 0) then
+      do i3 = -1, 1
+        do i1 = -1, 1
+          write(*,'(I8,A,3I4)') myid_1, " : neighbours = ", (this%neighbours(i1,i2,i3), i2 = -1, 1)
+        end do
+        write(*,*)
+      end do
+      write(*,*)
+    end if
+
+  end subroutine sgrid_build_neighbours_table
+
+
+  subroutine sgrid_build_face_neighbours_table(this)
+
+    !-------------------------------------------------------------------------------
+    !
+    ! retrieve rank of neighbour subdomains
+    !
+    ! in : nd, coor
+    ! out : face_neighbours
+    !
+    !-------------------------------------------------------------------------------
+
+    class(sgrid_type),        intent(in out) :: this
+    character(len=*),         parameter      :: proc_name = "sgrid_build_face_neighbours_table"
+    integer                                  :: skip3
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! initialize with no face_neighbours
+    this%face_neighbours(:,:) = MPI_PROC_NULL
+
+    ! in the direction 1
+    if (this%sub_dom_coor(1) > 1)          this%face_neighbours(1,1) = myid_1 - 1
+    if (this%sub_dom_coor(1) < this%nd(1)) this%face_neighbours(2,1) = myid_1 + 1
+
+    ! in the direction 2
+    if (this%sub_dom_coor(2) > 1)          this%face_neighbours(1,2) = myid_1 - this%nd(1)
+    if (this%sub_dom_coor(2) < this%nd(2)) this%face_neighbours(2,2) = myid_1 + this%nd(1)
+
+    ! in the direction 3
+    skip3 = this%nd(1) * this%nd(2)
+    if (this%sub_dom_coor(3) > 1)          this%face_neighbours(1,3) = myid_1 - skip3
+    if (this%sub_dom_coor(3) < this%nd(3)) this%face_neighbours(2,3) = myid_1 + skip3
+
+    if (dd_debug_level > 3 .and. myid_2 == 0) then
+      write(*,*) myid_1, ' : face_neighbours', this%face_neighbours(:,:)
+    end if
+
+  end subroutine sgrid_build_face_neighbours_table
+
+
+  subroutine sgrid_glob2loc(this, coord_glob, coord_loc, iproc)
+
+    !------------------------------------------------------------------------
+    !
+    ! Retrieve local coordinates and proc id. from global coordinates
+    !
+    !-------------------------------------------------------------------------
+
+    class(sgrid_type),        intent(in)     :: this            ! grid param.
+    integer, dimension(3),    intent(in out) :: coord_glob      ! global coordinates of point (iz, ix, iy)
+    integer, dimension(3),    intent(out)    :: coord_loc       ! local coordinates of point (iz, ix, iy)
+    integer,                  intent(out)    :: iproc           ! proc id 
+    character(len=*),         parameter      :: proc_name = "sgrid_glob2loc"
+
+    integer, dimension(3)                    :: coord_subdom
+    integer                                  :: idim
+
+    ! set min and max
+    do idim = 1, 3
+      if (coord_glob(idim) <= 0) then
+        write(error_message,*) proc_name, ' :: ERROR : coord_glob(idim) <= 0 :', idim, coord_glob(idim)
+        call stop_mpi()
+      end if
+      if (coord_glob(idim) > this%nnodes_glob(idim)) then
+        write(error_message,*) proc_name, ' :: ERROR : coord_glob(idim) > this%nnodes_glob(idim) :', &
+        &                         idim, coord_glob(idim), this%nnodes_glob(idim)
+        call stop_mpi()
+      end if
+    end do
+
+    ! retrieve subdomain coordinates
+    do idim = 1, 3
+       coord_subdom(idim) = min(ceiling(real(coord_glob(idim))/real(this%nnodes_dom(idim))), this%nd(idim))
+    end do
+
+    ! retrieve local coordinates
+    coord_loc = coord_glob - this%nnodes_dom * (coord_subdom - 1)
+
+    ! retrieve proc id
+    iproc =   coord_subdom(1) - 1                             &
+    &       + this%nd(1) * (coord_subdom(2) - 1)              &
+    &       + this%nd(1) * this%nd(2) * (coord_subdom(3) - 1)
+
+  end subroutine sgrid_glob2loc
+
+
+  subroutine sgrid_loc2glob(this, coord_loc, coord_glob)
+
+    !------------------------------------------------------------------------
+    !
+    ! Retrieve global coordinates from local coordinates
+    !
+    ! IN : coord_subdom, nnodes_dom, n, coord_loc
+    ! OUT : coord_glob
+    !
+    !-------------------------------------------------------------------------
+
+    class(sgrid_type),     intent(in)     :: this
+    integer, dimension(3), intent(in)     :: coord_loc
+    integer, dimension(3), intent(out)    :: coord_glob
+    character(len=*),      parameter      :: proc_name = "sgrid_loc2glob"
+    integer                               :: idim
+
+    coord_glob = coord_loc + this%nnodes_dom * (this%sub_dom_coor - 1)
+    do idim = 1, 3
+      if (coord_glob(idim) < 1 .or. coord_glob(idim) > this%nnodes_glob(idim)) then
+        write(error_message,*) myid_1, ' :: ERROR : ', proc_name, ' coord_loc =', coord_loc, &
+        &                               ' coord_glob =', coord_glob, ' nnodes_glob =', this%nnodes_glob
+        call stop_mpi()
+      end if
+    end do
+  end subroutine sgrid_loc2glob
+
+
+  logical function sgrid_is_point_inside_sub_domain(this, pt_coor, irad, iglob, iloc)
+    class(sgrid_type),            intent(in) :: this
+    real,    dimension(3),        intent(in) :: pt_coor
+    integer,                      intent(in) :: irad
+    integer, dimension(3),        intent(out):: iglob
+    integer, dimension(3),        intent(out):: iloc
+    integer                                  :: irad3, idim, ndim
+
+    !------------------------------------------------------------------------
+    !
+    ! Check if the point defined by its coordinates (x, y, z)
+    ! and a possible circular support (radius)
+    ! belongs to the local subdomain or intersects with it
+    !
+    ! IN : x, y, z[, radius]
+    ! OUT : true if the point belongs or intersects the local domain 
+    !       [+ global and local index coordinates of the point if true]
+    !
+    !-------------------------------------------------------------------------
+
+    character(len=*),             parameter      :: proc_name = 'sgrid_is_point_inside_sub_domain'
+
+    if (dd_call_trace > 10) write(*,*) myid_1, ' : ', proc_name
+
+    ! retrieve index position of the point in the global computational grid
+    if (config2D) then
+      ndim     = 2
+      irad3    = 0
+      iglob(3) = 1
+    else
+      ndim     = 3
+      irad3    = irad
+    end if
+    do idim = 1, ndim
+      iglob(idim) = int((pt_coor(idim) - this%bbox_glob(1,idim)) / this%h(idim)) + 1
+    end do
+
+    sgrid_is_point_inside_sub_domain = &
+      & ((iglob(1) + irad  >= this%iglob_bounds(1,1)) .and. (iglob(1) - irad  <= this%iglob_bounds(2,1)) .and. &! + 1
+      &  (iglob(2) + irad  >= this%iglob_bounds(1,2)) .and. (iglob(2) - irad  <= this%iglob_bounds(2,2)) .and. &! + 1
+      &  (iglob(3) + irad3 >= this%iglob_bounds(1,3)) .and. (iglob(3) - irad3 <= this%iglob_bounds(2,3)))! + 1
+
+    if (sgrid_is_point_inside_sub_domain .eqv. .TRUE.) then
+
+      ! retrieve index position of the point in the local computational grid
+      iloc(:) = iglob(:) - this%iglob_bounds(1,:) + 1
+      ! REWORK NEEDED: It would be better to not return iloc but rather the interval of grid points
+      ! associated to the intersection of the overlap of the radius with the subdomain
+!       iloc(:) = min(iglob(:) - this%iglob_bounds(1,:) + 1, this%iglob_bounds(2,:))
+    end if
+
+  end function sgrid_is_point_inside_sub_domain
+
+
+  logical function sgrid_is_grid_node_inside_sub_domain(this, iglob, iloc)
+    class(sgrid_type),            intent(in out) :: this
+    integer, dimension(3),        intent(in)     :: iglob
+    integer, dimension(3),        intent(out)    :: iloc
+
+    !------------------------------------------------------------------------
+    !
+    ! Check if the point defined by its coordinates (x, y, z)
+    ! belongs to the local subdomain or intersects with it
+    !
+    ! IN : x, y, z
+    ! OUT : true if the point belongs or intersects the local domain 
+    !       [+ lobal and local index coordinates of the point if true]
+    !
+    !-------------------------------------------------------------------------
+
+    character(len=*),             parameter      :: proc_name = 'sgrid_is_grid_node_inside_sub_domain'
+
+    if (dd_call_trace > 10) write(*,*) myid_1, ' : ', proc_name
+
+    sgrid_is_grid_node_inside_sub_domain = &
+      & ((iglob(1) >= this%iglob_bounds(1,1)) .and. (iglob(1) <= this%iglob_bounds(2,1)) .and. &
+      &  (iglob(2) >= this%iglob_bounds(1,2)) .and. (iglob(2) <= this%iglob_bounds(2,2)) .and. &
+      &  (iglob(3) >= this%iglob_bounds(1,3)) .and. (iglob(3) <= this%iglob_bounds(2,3)))
+
+    if (sgrid_is_grid_node_inside_sub_domain .eqv. .TRUE.) then
+
+      ! retrieve index position of the point in the local computational grid
+      iloc(:) = iglob(:) - this%iglob_bounds(1,:) + 1
+
+    end if
+
+  end function sgrid_is_grid_node_inside_sub_domain
+
+ 
+  subroutine sgrid_allocate_field(this, F, name)
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: F
+    character(len=*),                    intent(in)     :: name
+    character(len=*),                    parameter      :: proc_name = 'sgrid_allocate_field'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    !write(*,*) proc_name, ' lbnd=',this%lbndloc,' ubnd=',this%ubndloc
+
+    call alloc_(F, this%lbndloc(1), this%ubndloc(1), this%lbndloc(2), this%ubndloc(2), &
+    &              this%lbndloc(3), this%ubndloc(3), trim(adjustl(name)))
+
+  end subroutine sgrid_allocate_field
+
+ 
+  subroutine sgrid_allocate_array_of_fields(this, F, nF, name)
+    class(sgrid_type),                     intent(in out) :: this
+    real, dimension(:,:,:,:), allocatable, intent(in out) :: F
+    integer,                               intent(in)     :: nF
+    character(len=*),                      intent(in)     :: name
+    character(len=*),                      parameter      :: proc_name = 'sgrid_allocate_array_of_fields'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call alloc_(F, this%lbndloc(1), this%ubndloc(1), this%lbndloc(2), this%ubndloc(2), &
+    &              this%lbndloc(3), this%ubndloc(3), 1, nF, trim(adjustl(name)))
+
+  end subroutine sgrid_allocate_array_of_fields
+
+ 
+  subroutine sgrid_allocate_global_field(this, Fglob, name)
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: Fglob
+    character(len=*),                    intent(in)     :: name
+    character(len=*),                    parameter      :: proc_name = 'sgrid_allocate_global_field'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (myid_1 == 0) then
+
+      call alloc_(Fglob, 1, this%nnodes_glob(1), 1, this%nnodes_glob(2), 1, this%nnodes_glob(3), trim(adjustl(name)))
+
+    end if
+
+  end subroutine sgrid_allocate_global_field
+
+ 
+  subroutine sgrid_read_global_field(this, Fglob, filename)
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: Fglob
+    character(len=*),                    intent(in)     :: filename
+    integer                                             :: ierr, i1, i2, i3, i1min, i1max, i2min, i2max, i3min, i3max
+    logical                                             :: exist
+    character(len=*),                    parameter      :: proc_name = 'sgrid_read_global_field'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (myid_1 == 0) then
+
+      ! allocate table for read on global grid
+      if (.not.allocated(Fglob)) then
+        call this%sgrid_allocate_global_field(Fglob, trim(adjustl(filename)) // "_glob")
+      end if
+
+      inquire(file = filename, exist = exist)
+      if (.not. exist) then
+        write(error_message,*) proc_name, " :: ERROR : file not found : ", trim(adjustl(filename))
+        call stop_mpi()
+      end if
+
+      open(unit_dd, file=trim(adjustl(filename)), access='stream', form='unformatted', status='unknown', iostat=ierr)
+
+      if (ierr /= 0) then
+        write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), ierr
+        call stop_mpi()
+      end if
+
+      ! Starting and ending indices of grid points inside the propagation medium (excluding PML)
+      i1min = this%imodel_glob(1,1)
+      i1max = this%imodel_glob(2,1)
+      i2min = this%imodel_glob(1,2)
+      i2max = this%imodel_glob(2,2)
+      i3min = this%imodel_glob(1,3)
+      i3max = this%imodel_glob(2,3)
+
+      read(unit_dd) (((Fglob(i1,i2,i3), i1 = i1min, i1max), i2 = i2min, i2max), i3 = i3min, i3max)
+
+      close(unit_dd)
+
+      if ((dd_debug_level > 1) .and. (myid_0 == 0)) write(*,*) 'Read file ok : ', trim(adjustl(filename))
+
+    end if
+
+  end subroutine sgrid_read_global_field
+
+
+  subroutine sgrid_write_global_field(this, Fglob, filename)
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in)     :: Fglob
+    character(len=*),                    intent(in)     :: filename
+    integer                                             :: ierr, i1, i2, i3, i1min, i1max, i2min, i2max, i3min, i3max
+    character(len=*),                    parameter      :: proc_name = 'sgrid_write_global_field'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! check the table is allocated
+    if (.not.allocated(Fglob)) then
+
+      write(error_message,*) myid_1, myid_0, proc_name, ' :: ERROR : global array is not allocated ', trim(adjustl(filename))
+      call stop_mpi()
+
+    else
+
+      open(unit_dd, file=trim(adjustl(filename)), access='stream', form='unformatted', status='unknown', iostat=ierr)
+
+      if (ierr /= 0) then
+        write(error_message,*) proc_name, " :: ERROR : could not open file : ", trim(adjustl(filename)), ierr
+        call stop_mpi()
+      end if
+
+      ! Starting and ending indices of grid points inside the propagation medium (excluding PML)
+      i1min = this%imodel_glob(1,1)
+      i1max = this%imodel_glob(2,1)
+      i2min = this%imodel_glob(1,2)
+      i2max = this%imodel_glob(2,2)
+      i3min = this%imodel_glob(1,3)
+      i3max = this%imodel_glob(2,3)
+
+      write(unit_dd) (((Fglob(i1,i2,i3), i1 = i1min, i1max), i2 = i2min, i2max), i3 = i3min, i3max)
+
+      close(unit_dd)
+
+      if ((dd_debug_level > 1) .and. (myid_0 == 0)) write(*,*) 'Write file ok : ', trim(adjustl(filename))
+
+    end if
+
+  end subroutine sgrid_write_global_field
+
+
+  subroutine sgrid_deallocate_global_field(this, Fglob, name)
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: Fglob
+    character(len=*),                    intent(in)     :: name
+    character(len=*),                    parameter      :: proc_name = 'sgrid_deallocate_global_field'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (myid_1 == 0) then
+
+      if (.not.allocated(Fglob)) then
+        write(error_message,*) proc_name, " :: ERROR : global field is not allocated on master processor in mpi_comm_1"
+        call stop_mpi()
+      end if
+
+      call dealloc_(Fglob, name)
+
+    end if
+
+  end subroutine sgrid_deallocate_global_field
+
+
+  subroutine sgrid_1d_field_interpol_arith_mean(this, F, F1, F2, F3)
+
+    !----------------------------------------------------------------------
+    !
+    !     1D (along the 3 directions) Interpolation of field F at staggered nodes
+    !
+    !     IN OUT : F
+    !     OUT    : F1, F2, F3 (interpolated fields in the 3 directions)
+    !
+    !----------------------------------------------------------------------
+
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: F, F1, F2, F3
+    character(len=*),                    parameter      :: proc_name = 'sgrid_1d_field_interpol_arith_mean'
+
+    integer                                             :: n1loc, n2loc, n3loc, i1, i2, i3
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (.not.allocated(F)) then
+      write(error_message,*) proc_name, " :: ERROR : F array is not allocated"
+      call stop_mpi()
+    end if
+
+    n1loc = this%nnodes_loc(1)
+    n2loc = this%nnodes_loc(2)
+    n3loc = this%nnodes_loc(3)
+
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(i1,i2,i3)
+
+    if (allocated(F1)) then !3D
+      ! duplicate value if no neighbour
+      if (this%face_neighbours(2,1) == MPI_PROC_NULL) then
+        F(n1loc+1,:,:) = F(n1loc,:,:)
+      end if
+
+      ! interpolation
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F1(i1,i2,i3) = 0.5 * (F(i1,i2,i3) + F(i1+1,i2,  i3))
+            end do
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    if (allocated(F2)) then !3D
+      ! duplicate value if no neighbour
+      if (this%face_neighbours(2,2) == MPI_PROC_NULL) then
+        F(:,n2loc+1,:) = F(:,n2loc,:)
+      end if
+
+      ! interpolation
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F2(i1,i2,i3) = 0.5 * (F(i1,i2,i3) + F(i1,  i2+1,i3))
+            end do
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    if (.not. config2D .and. allocated(F3)) then !3D
+      ! duplicate value if no neighbour
+      if (this%face_neighbours(2,3) == MPI_PROC_NULL) then
+        F(:,:,n3loc+1) = F(:,:,n3loc)
+      end if
+
+      ! interpolation
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F3(i1,i2,i3) = 0.5 * (F(i1,i2,i3) + F(i1,  i2,  i3+1))
+            end do
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    !$OMP END PARALLEL
+
+  end subroutine sgrid_1d_field_interpol_arith_mean
+
+
+  subroutine sgrid_2d_field_interpol_arith_mean(this, F, F12, d1, d2)
+
+    !----------------------------------------------------------------------
+    !
+    !     2D (in the plan defined by dir1 x dir2) Interpolation of field F 
+    !     at staggered nodes
+    !
+    !     IN     :  d1, d2
+    !     IN OUT :  F
+    !     OUT    : F12
+    !
+    !----------------------------------------------------------------------
+
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: F, F12
+    integer,                             intent(in)     :: d1, d2
+    character(len=*),                    parameter      :: proc_name = 'sgrid_2d_field_interpol_arith_mean'
+
+    integer                                             :: n1loc, n2loc, n3loc, i1, i2, i3
+    logical                                             :: dim1, dim2, dim3
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (.not.allocated(F)) then
+      write(error_message,*) proc_name, " :: ERROR : F array is not allocated"
+      call stop_mpi()
+    end if
+
+    if (.not.allocated(F12)) then
+      write(error_message,*) proc_name, " :: ERROR : F12 array is not allocated"
+      call stop_mpi()
+    end if
+
+    dim1 = (d1==1 .or. d2==1)
+    dim2 = (d1==2 .or. d2==2)
+    dim3 = (d1==3 .or. d2==3)
+
+    ! check that the the two dimensions are distinct and valid
+    if ((.not. dim1 .and. (.not. dim2 .or. .not. dim3)) .or. (.not. dim2 .and. .not. dim3)) then
+      write(error_message,*) myid_1, " : ", proc_name, &
+      &  " :: ERROR : Wrong dimensions. Attempted distinct and equal to 1,2 or 3. Get : ", d1, d2
+      call stop_mpi()
+    end if
+
+    if (config2D .and. dim3) then
+      write(error_message,*) proc_name, " :: ERROR : interpolation not allowed in 2D configuration for dimension 3"
+      call stop_mpi()
+    end if
+
+    n1loc = this%nnodes_loc(1)
+    n2loc = this%nnodes_loc(2)
+    n3loc = this%nnodes_loc(3)
+
+    ! extrapolate with same values if no face_neighbours 
+    if (dim3 .and. this%face_neighbours(2,3) == MPI_PROC_NULL) then
+      do i2 = 1, n2loc+1
+        do i1 = 1, n1loc+1
+          F(i1,i2,n3loc+1) = F(i1,i2,n3loc)
+        end do
+      end do
+    end if
+
+    !$OMP PARALLEL DEFAULT (SHARED) PRIVATE(i1,i2,i3)
+
+    if (dim2 .and. this%face_neighbours(2,2) == MPI_PROC_NULL) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc+1
+        do i1 = 1, n1loc+1
+          F(i1,n2loc+1,i3) = F(i1,n2loc,i3)
+        end do
+      end do
+      !$OMP END DO 
+    end if
+    
+    if (dim1 .and. this%face_neighbours(2,3) == MPI_PROC_NULL) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc+1
+        do i2 = 1, n2loc+1
+          F(n1loc+1,i2,i3) = F(n1loc,i2,i3)
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    ! Average
+    if (dim2 .and. dim3) then
+
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F12(i1,i2,i3) = 0.25 *   &
+                     (F(i1,i2,  i3)    &  !(i,j,  k)
+                    + F(i1,i2+1,i3)    &  !(i,j+1,k)
+                    + F(i1,i2,  i3+1)  &  !(i,j,  k+1)
+                    + F(i1,i2+1,i3+1))    !(i,j+1,k+1)
+            end do
+        end do
+      end do
+      !$OMP END DO 
+
+    else if (dim1 .and. dim3) then
+
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F12(i1,i2,i3) = 0.25 *   &
+                     (F(i1,  i2,i3)    &  !(i,  j,k)
+                    + F(i1+1,i2,i3)    &  !(i+1,j,k)
+                    + F(i1,  i2,i3+1)  &  !(i,  j,k+1)
+                    + F(i1+1,i2,i3+1))    !(i+1,j,k+1)
+            end do
+        end do
+      end do
+      !$OMP END DO 
+
+    else if (dim1 .and. dim2) then
+
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+            do i1 = 1, n1loc
+              F12(i1,i2,i3) = 0.25 *   &
+                     (F(i1,  i2,  i3)  &  !(i,  j,  k)
+                    + F(i1+1,i2,  i3)  &  !(i+1,j,  k)
+                    + F(i1,  i2+1,i3)  &  !(i,  j+1,k)
+                    + F(i1+1,i2+1,i3))    !(i+1,j+1,k)
+            end do
+        end do
+      end do
+      !$OMP END DO 
+
+    end if
+    !$OMP END PARALLEL
+
+  end subroutine sgrid_2d_field_interpol_arith_mean
+
+
+  subroutine sgrid_2d_field_interpol_harm_mean(this, F, F12, F23, F13)
+
+    !----------------------------------------------------------------------
+    !
+    !     2D (in the plan defined by dir1xdir2) Interpolation of field F 
+    !     at staggered nodes
+    !
+    !     IN OUT: F
+    !     OUT   : F12, F23, F13 if allocated
+    !
+    !----------------------------------------------------------------------
+
+    class(sgrid_type),                   intent(in out) :: this
+    real, dimension(:,:,:), allocatable, intent(in out) :: F, F12, F23, F13
+    character(len=*),                    parameter      :: proc_name = 'sgrid_2d_field_interpol_harm_mean'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (.not.allocated(F)) then
+      write(error_message,*) proc_name, " :: ERROR : F array is not allocated"
+      call stop_mpi()
+    end if
+
+    if (.not.allocated(this%internal_Floc)) call this%sgrid_allocate_field(this%internal_Floc, 'internal_Floc')
+
+    call sgrid_2d_field_interpol_harm_mean_internal(F, this%internal_Floc, F12, F23, F13, &
+    &                                               this%nnodes_loc, this%face_neighbours)
+
+  end subroutine sgrid_2d_field_interpol_harm_mean
+
+
+  subroutine sgrid_2d_field_interpol_harm_mean_internal(F, Ftmp, F12, F23, F13, nnodes_loc, face_neighbours)
+
+    !----------------------------------------------------------------------
+    !
+    !     2D (in the plan defined by dir1xdir2) Interpolation of field F 
+    !     at staggered nodes
+    !
+    !     IN OUT: F
+    !     OUT   : F12, F23, F13 if allocated
+    !
+    !----------------------------------------------------------------------
+
+    real, dimension(:,:,:), allocatable, intent(in out) :: F, Ftmp, F12, F23, F13
+    integer, dimension(3),               intent(in)     :: nnodes_loc
+    integer, dimension(2,3),             intent(in)     :: face_neighbours
+    character(len=*),                    parameter      :: proc_name = 'sgrid_2d_field_interpol_harm_mean_internal'
+    integer                                             :: n1loc, n2loc, n3loc, n3locp1
+    integer                                             :: i1, i2, i3
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    n1loc = nnodes_loc(1)
+    n2loc = nnodes_loc(2)
+    n3loc = nnodes_loc(3)
+
+    if (.not. config2D) then !3D
+      n3locp1 = n3loc + 1
+    else !2D: last dimension of F reduced to 1, no interpolation along this dimension
+      n3locp1 = n3loc
+    end if
+
+    !$OMP PARALLEL DEFAULT (SHARED) PRIVATE(i1,i2,i3)
+
+    ! copy input array in an internal array to perform operations
+    !$OMP DO SCHEDULE(DYNAMIC)
+    do i3 = 1, n3locp1
+      do i2 = 1, n2loc+1
+        do i1 = 1, n1loc+1
+          Ftmp(i1,i2,i3) = F(i1,i2,i3)
+        end do
+      end do
+    end do
+    !$OMP END DO 
+
+    ! extrapolate with same values if no face_neighbours 
+    if (.not. config2D .and. face_neighbours(2,3) == MPI_PROC_NULL) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i2 = 1, n2loc+1
+        do i1 = 1, n1loc+1
+          Ftmp(i1,i2,n3loc+1) = Ftmp(i1,i2,n3loc)
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    if (face_neighbours(2,2) == MPI_PROC_NULL) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3locp1
+        do i1 = 1, n1loc+1
+          Ftmp(i1,n2loc+1,i3) = Ftmp(i1,n2loc,i3)
+        end do
+      end do
+      !$OMP END DO 
+    end if
+    
+    if (face_neighbours(2,1) == MPI_PROC_NULL) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3locp1
+        do i2 = 1, n2loc+1
+          Ftmp(n1loc+1,i2,i3) = Ftmp(n1loc,i2,i3)
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    ! Take the inverse (taking care to division by 0)
+
+    !$OMP DO SCHEDULE(DYNAMIC)
+    do i3 = 1, n3locp1
+      do i2 = 1, n2loc+1
+        do i1 = 1, n1loc+1
+          if (Ftmp(i1,i2,i3) == 0.) then
+            Ftmp(i1,i2,i3) = 1e-30
+          end if
+        end do
+      end do
+    end do
+    !$OMP END DO 
+
+    !$OMP DO SCHEDULE(DYNAMIC)
+    do i3 = 1, n3locp1
+      do i2 = 1, n2loc+1
+        do i1 = 1, n1loc+1
+          Ftmp(i1,i2,i3) = 1. / Ftmp(i1,i2,i3)
+        end do
+      end do
+    end do
+    !$OMP END DO 
+
+    ! Harmonic means
+
+    if (allocated(F23)) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+          do i1 = 1, n1loc
+            F23(i1,i2,i3) = 4./      &
+                   (Ftmp(i1,i2,  i3)    &
+                  + Ftmp(i1,i2+1,i3)    &
+                  + Ftmp(i1,i2,  i3+1)  &
+                  + Ftmp(i1,i2+1,i3+1))
+          end do
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    if (allocated(F13)) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+          do i1 = 1, n1loc
+            F13(i1,i2,i3) = 4./      &
+                   (Ftmp(i1,  i2,i3)    &
+                  + Ftmp(i1+1,i2,i3)    &
+                  + Ftmp(i1,  i2,i3+1)  &
+                  + Ftmp(i1+1,i2,i3+1))
+          end do
+        end do
+      end do
+      !$OMP END DO 
+    end if
+
+    if (allocated(F12)) then
+      !$OMP DO SCHEDULE(DYNAMIC)
+      do i3 = 1, n3loc
+        do i2 = 1, n2loc
+          do i1 = 1, n1loc
+            F12(i1,i2,i3) = 4./       &
+                   (Ftmp(i1,  i2,  i3)   &
+                  + Ftmp(i1+1,i2,  i3)   &
+                  + Ftmp(i1,  i2+1,i3)   &
+                  + Ftmp(i1+1,i2+1,i3))
+          end do
+        end do
+      end do
+      !$OMP END DO
+    end if
+
+    !$OMP END PARALLEL
+
+  end subroutine sgrid_2d_field_interpol_harm_mean_internal
+
+
+end module sgrid_mod
+
+
+

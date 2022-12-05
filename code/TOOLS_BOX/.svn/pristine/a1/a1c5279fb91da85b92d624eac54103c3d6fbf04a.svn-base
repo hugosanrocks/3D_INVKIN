@@ -1,0 +1,49 @@
+Compile:
+--------
+Cf. DOMAIN_DECOMP/00README
+
+Edit configuration file to modify options:
+------------------------------------------
+test_dd_sg_ac_iso_o4.config
+
+Run:
+----
+sh run_dd_sg_ac_iso_o4.sh
+launches test_dd_sg_ac_iso on 8 processors by default
+
+Display seismogram:
+-------------------
+It is stored in 'P' file in binary format of 81 receivers on 1000 time steps.
+
+ximage < P n1=1000
+
+or launch octave/matlab and run the plot_seismogram.m script
+
+Display 3D results:
+-------------------
+They are stored in binary vtk format and can be displayed with paraview.
+
+paraview &
+
+file/open output_bin_src1_it..vtk (open all the stored time steps)
+
+In the properties panel:
+- click on 'apply'
+- select 'surface' instead of 'outline' as 'representation'
+- select 'Pglob' instead of 'solid color' as 'coloring'
+
+Edit 'color map', 'rescale to custom range': set min=-1 and max=1
+
+Create slice filter
+Change plan origin to the source origin, i.e. 4000 4000 500
+click on 'apply'
+
+choose +X as visualisation plan
+launch 'play' to see the propagation simulation
+ 
+Notice:
+-------
+Make sure that the configuration file is compliant with the running script:
+the number of processors requested in the running script shall be equal to the product of the division of the global domain in all dimensions in the configuration file.
+
+

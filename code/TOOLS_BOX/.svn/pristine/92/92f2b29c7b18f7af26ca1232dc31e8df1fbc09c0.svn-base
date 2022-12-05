@@ -1,0 +1,24 @@
+\BOOKMARK [1][]{section.1}{Introduction}{}
+\BOOKMARK [1][]{section.2}{An overview of the routines in the toolbox}{}
+\BOOKMARK [2][]{subsection.2.1}{Preconditioned steepest descent: PSTD}{section.2}
+\BOOKMARK [2][]{subsection.2.2}{Preconditioned nonlinear conjugate gradient: PNLCG}{section.2}
+\BOOKMARK [2][]{subsection.2.3}{Quasi-Newton l-BFGS method: LBFGS}{section.2}
+\BOOKMARK [2][]{subsection.2.4}{Quasi-Newton preconditioned l-BFGS method: PLBFGS}{section.2}
+\BOOKMARK [2][]{subsection.2.5}{Truncated Newton method: TRN}{section.2}
+\BOOKMARK [2][]{subsection.2.6}{Preconditioned truncated Newton method: PTRN}{section.2}
+\BOOKMARK [1][]{section.3}{Installation}{}
+\BOOKMARK [2][]{subsection.3.1}{Compiling the global library libSEISCOPE\137OPTIM.a}{section.3}
+\BOOKMARK [2][]{subsection.3.2}{Compiling individual libraries method.a}{section.3}
+\BOOKMARK [2][]{subsection.3.3}{Compiling and running the test programs}{section.3}
+\BOOKMARK [1][]{section.4}{How to use the optimization routines?}{}
+\BOOKMARK [2][]{subsection.4.1}{Preconditioned Steepest Descent: PSTD}{section.4}
+\BOOKMARK [2][]{subsection.4.2}{Preconditioned nonlinear conjugate gradient: PNLCG}{section.4}
+\BOOKMARK [2][]{subsection.4.3}{Quasi-Newton l-BFGS method: LBFGS}{section.4}
+\BOOKMARK [2][]{subsection.4.4}{Quasi-Newton preconditioned l-BFGS method: PLBFGS}{section.4}
+\BOOKMARK [2][]{subsection.4.5}{Truncated Newton method: TRN}{section.4}
+\BOOKMARK [2][]{subsection.4.6}{Preconditioned truncated Newton method: PTRN}{section.4}
+\BOOKMARK [1][]{section.5}{Technical details}{}
+\BOOKMARK [2][]{subsection.5.1}{Writing intermediate values of x}{section.5}
+\BOOKMARK [2][]{subsection.5.2}{Linesearch algorithm}{section.5}
+\BOOKMARK [2][]{subsection.5.3}{Nonlinear conjugate gradient}{section.5}
+\BOOKMARK [2][]{subsection.5.4}{Practical issues for the truncated Newton method}{section.5}

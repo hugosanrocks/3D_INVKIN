@@ -1,0 +1,196 @@
+!----------------------------------------------------------------------------
+! Test Checkpointing C++ library 
+! developed by Andreas Griewank, Andrea Walther and Philipp Stumm
+! in a Fortran main program
+!
+! Main inspired on revolve_binomial.cpp
+!
+!----------------------------------------------------------------------------
+
+program fmain
+
+  use iso_c_binding
+  use fintfc_mod
+
+  implicit none
+
+  enum, bind(c)
+    enumerator :: ADVANCE=0, TAKESHOT, RESTORE, FIRSTURN, YOUTURN, TERMINATE, ERROR
+  end enum
+
+  ! ACTION parameters (hand-made wrapper of ACTION::action enumerate defined in revolve.h)
+!   integer(kind=1), parameter :: ADVANCE = 0
+!   integer(kind=1), parameter :: TAKESHOT = 1
+!   integer(kind=1), parameter :: RESTORE = 2
+!   integer(kind=1), parameter :: FIRSTURN = 3
+!   integer(kind=1), parameter :: YOUTURN = 4
+!   integer(kind=1), parameter :: TERMINATE = 5
+!   integer(kind=1), parameter :: ERROR = 6
+  integer(kind(ADVANCE)) :: whatodo
+
+  integer(c_int) :: info = 3, snaps = 5, steps = 15 ! the user may modify these parameters
+  integer(c_int) :: it = 0, cur_it = 0, old_it = 0, check = 0, adj_it = 0
+
+  ! Store the address of the pointer on the instance of the revolve C++ class
+  ! (avoid creation of a global variable in cppwrapper.cpp)
+  type(c_ptr) :: cptr
+
+  logical     :: first_turn_done = .false.
+
+  write(*,'(A)') "STEPS    -> number of time steps to perform"
+  write(*,'(A)') "SNAPS    -> number of checkpoints"
+  write(*,'(A)') "INFO = 1 -> calculate only approximate solution"
+  write(*,'(A)') "INFO = 2 -> calculate approximate solution + takeshots"
+  write(*,'(A)') "INFO = 3 -> calculate approximate solution + all information";
+  write(*,*)
+  !write(*,'(A)') "ENTER:   STEPS, SNAPS, INFO \n";
+  !read(5,*) steps, snaps, info
+  write(*,*)
+  write(*,'(A)') "STEPS =", steps
+  write(*,'(A)') "SNAPS =", snaps
+  write(*,'(A)') "INFO  =", info
+  write(*,'(A)')
+  write(*,'(A)') "Incident field    : Y"
+  write(*,'(A)') "Modeling operator : F(Y,S)"
+  write(*,'(A)') "Initial condition : Y[0]   = 0"
+  write(*,'(A)') "Source term       : S[i]   = Dobs[i]"
+  write(*,'(A)') "Fwd Scheme        : Y[i+1] = F(Y[i], S[i])"
+  write(*,*)
+  write(*,'(A)') "Adjoint  field    : L"
+  write(*,'(A)') "Adjoint operator  : F~(L,S~)"
+  write(*,'(A)') "Initial condition : L [N]  = 0"
+  write(*,'(A)') "Source term       : S~[i]  = Dobs[i] - Dcal[i]"
+  write(*,'(A)') "Bwd Scheme        : L [i]  = F(L[i+1], S~[i])"
+  write(*,*)
+  write(*,'(A)') "Gradient          : G      =       d(Y(t))/dt     . dA/dm . L(T-t)"
+  write(*,'(A)') "                  :        = (Y[i] - Y[i-1]) / dt . dA/dm . L[N-i]"
+  write(*,*)
+  write(*,'(A)') "Memory Vectors    : Y0              = Y[i]"
+  write(*,'(A)') "                  : Y1              = Y[i-1]"
+  write(*,'(A)') "                  : L               = L[j]"
+  write(*,'(A)') "                  : G"
+  write(*,'(A)') "                  : Y0buf [1:Snaps] = Y[icheckpt-1]"
+  write(*,'(A)') "                  : Y1buf [1:Snaps] = Y[icheckpt]"
+  write(*,'(A)') "                  : S~    [1:N]"
+  write(*,*)
+
+  ! Build instance of revolve class, return the associated C pointer and call set_info method on it
+  call revolve_ctor_wrp(cptr, steps, snaps, info)
+
+  ! Call Revolve method of revolve class
+  whatodo = revolve_revolve_wrp(cptr)
+  
+  write(*,'(A)')      "Init             : Y0 =         0"
+  write(*,'(A)')      "                 : Y1 = Y[ 0] = 0"
+  write(*,'(A,I2,A)') "                 : L[", steps, "]      = 0"
+  write(*,*)
+
+  do while ((whatodo /= TERMINATE) .and. (whatodo /= ERROR))
+
+    cur_it = revolve_getcapo_wrp(cptr)
+
+    if (whatodo == TAKESHOT) then
+
+      check  = revolve_getcheck_wrp(cptr) + 1
+
+      write(*,'(2(A,I2))')   "STORE  takeshot at it=", cur_it, " in buffer=", check
+      write(*,*)
+      if (cur_it == 0) then
+      write(*,'(A,I2,A)')    "      STORE        Y0buf[", check, "] = Y0 = 0"
+      else
+      write(*,'(2(A,I2),A)') "      STORE        Y0buf[", check, "] = Y0 = Y[", cur_it-1, "]"
+      end if
+      write(*,'(2(A,I2),A)') "      STORE        Y1buf[", check, "] = Y1 = Y[", cur_it, "]"
+
+    else if (whatodo == ADVANCE)  then
+
+      old_it = revolve_getoldcapo_wrp(cptr)
+
+      write(*,'(2(A,I2))')   "ADVANCE       from it =", old_it, " to it =", cur_it
+      write(*,*)
+      do it = old_it, cur_it-1
+      write(*,'(A,I2,A)')    "      COPY         Y0 <- Y1  = Y[", it, "]"
+      write(*,'(2(A,I2),A)') "      FWD MDL      Y1        = Y[", it+1, "] = F (Y1 = Y[", it,"])"
+      if (.not. first_turn_done) then ! Extract sol at receiver positions
+      write(*,'(A,I2,A)')    "      RESIDUS      S~[", it+1, "]"
+      end if
+      write(*,*)
+      end do
+
+    else if (whatodo == FIRSTURN) then
+
+      write(*,'(A,I2)')      "FIRSTURN (ADV+ADJ) it =", cur_it
+      write(*,*)
+      write(*,'(3(A,I2),A)') "      ADJ MDL      L         = L[",   cur_it, "] = F~(L = L[", cur_it+1,"], S~[",  cur_it,"])"
+      write(*,'(3(A,I2),A)') "      GRAD         G         = G + G(L = L[", cur_it,"], Y0, Y1)"
+
+      first_turn_done = .true.
+
+    else if (whatodo == YOUTURN)  then
+
+      write(*,'(A,I2)')      "YOUTURN (ADJ)      it =", cur_it
+      write(*,*)
+      write(*,'(3(A,I2),A)') "      ADJ MDL      L         = L[",   cur_it, "] = F~(L = L[", cur_it+1,"], S~[", cur_it,"])"
+      write(*,'(3(A,I2),A)') "      GRAD         G         = G + G(L = L[", cur_it,"], Y0, Y1)"
+
+    else if (whatodo == RESTORE)  then
+
+      check  = revolve_getcheck_wrp(cptr) + 1
+
+      write(*,'(2(A,I2))')   "RESTORE            it =", cur_it, " in buffer =", check
+      write(*,*)
+      if (cur_it == 0) then
+      write(*,'(2(A,I2),A)') "      RESTORE      Y0         = Y0buf[", check, "] = 0"
+      else
+      write(*,'(2(A,I2),A)') "      RESTORE      Y0         = Y0buf[", check, "] = Y[",   cur_it-1, "] "
+      end if
+      write(*,'(2(A,I2),A)') "      RESTORE      Y1         = Y1buf[", check, "] = Y[",   cur_it,   "] "
+
+    else if (whatodo == ERROR) then
+
+      write(*,*) "irregular termination of revolve"
+
+      info = revolve_getinfo_wrp(cptr)
+      
+      select case(info)
+
+        case(10)
+          write(*,*) " number of checkpoints stored exceeds checkup,"
+          write(*,*) " increase constant checkup and recompile"
+
+        case(11)
+          check = revolve_getcheck_wrp(cptr)
+          write(*,*) " number of checkpoints stored = ", check+1, " exceeds snaps = ", snaps
+          write(*,*) " ensure snaps > 0 and increase initial fine"
+
+        case(12)
+          write(*,*) " error occurs in numforw"
+
+        case(13)
+          write(*,*) " enhancement of fine, snaps checkpoints stored,"
+          write(*,*) " increase snaps"
+
+        case(14)
+          write(*,*) " number of snaps exceeds snapsup,"
+          write(*,*) " increase constant snapsup and recompile"
+
+        case(15)
+          write(*,*) " number of reps exceeds repsup,"
+          write(*,*) " increase constant repsup and recompile"
+
+      end select
+      stop
+
+    end if
+    write(*,*)
+
+    whatodo = revolve_revolve_wrp(cptr)
+
+  end do
+
+  ! Delete instance of revolve class
+  call revolve_dtor_wrp(cptr)
+
+  write(*,*) 'Exiting the Fortran program'
+
+end program fmain

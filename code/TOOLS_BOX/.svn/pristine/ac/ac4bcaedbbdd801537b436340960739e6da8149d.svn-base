@@ -1,0 +1,44 @@
+******************************************************
+*            SEISCOPE OPTIMIZATION TOOLBOX :         *
+*      PRECONDITIONED STEEPEST DESCENT ALGORITHM     *
+******************************************************
+* 14/03/03
+* L.Metivier
+******************************************************
+This directory contains the routines associated with 
+the steepest descent algorithm. 
+
+- To build the library libPSTD.a, type 
+make lib within the current directory. 
+
+- To clean the library, type 
+make clean within the current directory. 
+
+The steepest descent algorithm which is proposed 
+is implemented following a reverse communication 
+strategy. To see how it can be used, please go to 
+the test directory. 
+
+To compile the test directory, go to ./test/src then 
+type make. 
+
+To run the test, go to ./test/run and type
+../bin/test.bin
+
+The source code for the test should be consulted to 
+see how the reverse communication strategy works. 
+The user is only asked to provide :
+- the maximum number of iteration in optim%niter_max
+- the convergence criterion in optim%conv
+- the dimension of the problem n
+- the cost and gradient associated with the initial guess x 
+In addition, the variable FLAG have to be initialized to 'INIT'.
+
+The test implements the minimization of the Rosenbrock function. 
+The steepest descent converges slowly to the minimum of this function
+which (1.,1.). More details on the Rosenbrock function can be found here:
+http://en.wikipedia.org/wiki/Rosenbrock_function
+
+
+
+

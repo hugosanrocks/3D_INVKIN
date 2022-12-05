@@ -1,0 +1,15 @@
+include ../../Makefile.inc
+
+SOURCES = $(wildcard *.f90)
+OBJECTS = $(SOURCES:.f90=.o) 
+INCLUDE = -I../include
+
+lib : $(OBJECTS) 
+	$(AR) $(ARFUNCT) ../lib/libSEISCOPE_CARFS.a $(OBJECTS)
+
+%.o : %.f90
+	$(FC) $(FLAGS) $(INCLUDE) -c -o $@ $<
+
+clean :	
+	$(RM) -r *.o  *~ *backup *.mod *genmod* 
+

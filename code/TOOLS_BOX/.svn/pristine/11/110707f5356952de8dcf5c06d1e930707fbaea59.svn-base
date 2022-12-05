@@ -1,0 +1,69 @@
+*****************************************************************
+                 SEISCOPE OPTIMIZATION TOOLBOX             
+                           01/07/14                        
+                          L.Metivier                       
+                 ludovic.metivier@ujf-grenoble.fr         
+-------------------------------------------------------
+Acknowledgements:
+The SEISCOPE OPTIMIZATION TOOLBOX codes have been developed in the
+framework of the SEISCOPE and SEISCOPE II consortia and we thank
+the sponsors of these projects. We also thank the French National 
+Center for Scientific Research (CNRS) for his support. Access to 
+the high  performance computing facilities of the meso-center CIMENT 
+(Univ. Grenoble Alpes, Fr, https://ciment.ujf-grenoble.fr/) provided 
+the required computer resources to develop this package. 
+
+-------------------------------------------------------
+Conditions of use:
+The SEISCOPE OPTIMIZATION TOOLBOX code is provided open-source (see Legal Statement). 
+Please refer to the two following articles in any study or publications for which this 
+code has been used
+
+  1. Full Waveform Inversion and the truncated Newton 
+     method: Quantitative imaging of complex subsurface 
+     structures, 2014, Geophysical Prospecting, 
+     L. Métivier, R. Brossier, S. Operto, J. Virieux, 
+     DOI: 10.1111/1365-2478.1213, 
+     http://onlinelibrary.wiley.com/doi/10.1111/1365-2478.12136/abstract
+
+  2. Full Waveform Inversion and the truncated Newton 
+     method, L.Métivier, R.Brossier, J.Virieux, S.Operto,  
+     2013, SIAM J. Sci. Comput, 35(2), B401-B437, 
+     http://epubs.siam.org/doi/abs/10.1137/120877854
+
+-------------------------------------------------------
+Comments/Compilation:
+1. The directory ./doc contains the SEISCOPE_OPTIMIZATION
+   MANUAL. You will find in the MANUAL all the required
+   information to compile and use the SEISCOPE_OPTIMIZATION
+   TOOLBOX.
+
+2. The architecture of the SEISCOPE OPTIMIZATION TOOLBOX
+   is as follows: 
+   - lib : contains the global library resulting from 
+   the compilation of all the optimization routines
+   - COMMON : contains the source code and the data 
+   structures which are shared by all the optimization 
+   routines.
+   - The directory contains 6 subdirectories associated
+     with the following optimization routines: 
+     PSTD (Preconditioned Steepest Descent)
+     PNLCG (Preconditioned Nonlinear Conjugate Gradient)
+     LBFGS (l-BFGS algorithm)
+     PLBFGS (preconditioned version of the l-BFGS algorithm)
+     TRN (truncated Newton method)
+     PTRN (preconditioned truncated Newton method)
+
+3. To compile the code, modify the file Makefile.inc
+   to set the name of the FORTRAN compiler you may want 
+   to use. 
+   The command make lib will create the static library
+   libSEISCOPE_OPTIM.a in the directory lib.
+   This lib shall be linked using the compilation option
+   -L $(PATH) -lSEISCOPE_OPTIM 
+   where $(PATH) should give the path to the directory lib which 
+   contains libSEISCOPE_OPTIM.a
+
+
+
+

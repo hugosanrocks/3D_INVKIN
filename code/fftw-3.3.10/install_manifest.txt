@@ -1,0 +1,16 @@
+/usr/local/lib/libfftw3.so.3
+/usr/local/lib/libfftw3.so.3.6.9
+/usr/local/lib/libfftw3.so
+/usr/local/lib/libfftw3.so.3
+/usr/local/lib/libfftw3.so.3.6.9
+/usr/local/lib/libfftw3.so
+/usr/local/include/fftw3.h
+/usr/local/include/fftw3.f
+/usr/local/include/fftw3l.f03
+/usr/local/include/fftw3q.f03
+/usr/local/include/fftw3.f03
+/usr/local/lib/pkgconfig/fftw3.pc
+/usr/local/lib/cmake/fftw3/FFTW3Config.cmake
+/usr/local/lib/cmake/fftw3/FFTW3ConfigVersion.cmake
+/usr/local/lib/cmake/fftw3/FFTW3LibraryDepends.cmake
+/usr/local/lib/cmake/fftw3/FFTW3LibraryDepends-release.cmake

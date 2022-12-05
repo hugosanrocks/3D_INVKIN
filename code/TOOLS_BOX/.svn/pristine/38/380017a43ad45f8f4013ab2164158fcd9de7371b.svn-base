@@ -1,0 +1,85 @@
+***********************
+* SEISCOPE TOOLS_BOX  *
+***********************
+-------------------------
+Responsible: L. Metivier
+-------------------------
+This directory intends to gather the methodological tools that can 
+be shared between the different SEISCOPE CODES. 
+
+
+-------------------------------
+Brief description
+-------------------------------
+For now, the TOOL_BOX contains 5 libraries: 
+
+# the CARFS library
+
+# the INTERPOLATION library
+
+# the OPTIMIZATION tool_box, which shall 
+contain the following methods :
+- Preconditioned Steepest Descent (PSTD)
+- Preconditioned Nonlinear Conjugate Gradient (PNLCG)
+- l-BFGS (LBFGS)
+- Preconditioned l-BFGS (PLBFGS)
+- Truncated Newton (TRN)
+- Preconditioned Truncated Newton (PTRN)
+These methods are implemented following a reverse communication 
+strategy so as to simplify their use. More details can be found
+in the OPTIMIZATION directory. 
+
+# the SU_IO library to read/write Seismic Unix (SEGY) data format
+
+# the DOMAIN_DECOMP library which manages 
+domain decomposition and MPI communications 
+on structured or unstructured grids
+
+# the CHECK_POINTING library which manages 
+a checkpointing algorithm for program reversal 
+of time-stepping procedures
+The library has been written in C++ by Philipp Stumm, 
+Andrea Walther and Andreas Griewank.
+We propose here a Fortran90 interface of the C++ library.
+
+
+-------------------------------
+Installation and test
+-------------------------------
+/!\ By default, Intel compiler are used /!\
+/!\         [] means optional           /!\
+
+1. Installation phase:
+- Adapt the Makefile.inc to your environment just type 
+  	make [-j 4] [-s]       (Intel env. by default)
+   OR 	make [-j 4] [-s] GNU=1 (to use GNU env.)
+	make [-j 4] [-s] XL=1  (IBM env.)
+To active debug options, add "DBG=1" and delete "-s" (silent option).
+For example:  make [-j 4] GNU=1 DBG=1
+
+2. Test phase (benchamrk results produced on Occigen withi
+Intel Compiler version 16.0.4)
+OPTIMIZATION contains  6 tests
+INTERPOLATION   **     9 tests
+CARFS           **     2 tests
+- After the installation phase, you can run the test by typing
+	make test       (Intel env. by default)
+   OR   make test GNU=1 (GNU env.)
+   OR   make test XL=1  (IBM env.)
+If you want to generate a log file, use the above command line:
+	make test [GNU=1] | tee test.log (with all the compilation details)
+	make test [GNU=1] -s | tee test.log (only results output)
+
+3. Clean step
+To remove all generated files by installation ans test steps, type
+	make clean
+
+ 
+-------------------------------
+Documentation
+-------------------------------
+Each library contains its own documentation:
+- The OPTIMIZATION tool_box located OPTIMIZATION/doc
+- The INTERPOLATION tool_box located in OPTIMIZATION/doc
+- The CARFS tool_box located in CARFS/doc
+

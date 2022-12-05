@@ -1,0 +1,14 @@
+include ../Makefile.inc
+
+SOURCES = $(wildcard *.f90)
+OBJECTS = $(SOURCES:.f90=.o) 
+
+lib : $(OBJECTS) 
+	$(AR) $(ARFUNCT) ../lib/libSEISCOPE_INTERP.a $(OBJECTS)
+
+%.o : %.f90
+	$(FC) $(FFLAGS) $(INCLUDE) -c -o $@ $<
+
+clean :	
+	rm -rf *.o  *~ *backup *.mod *genmod* 
+

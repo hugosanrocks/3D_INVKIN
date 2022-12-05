@@ -1,0 +1,42 @@
+subroutine read_su(fname,data)
+  implicit none
+  !definition of the su_header structure
+  include 'su.h'
+
+  !SU DATA
+  TYPE(su_data) :: data
+  !FILE
+  CHARACTER*(*) :: fname
+
+  INTEGER :: it
+
+  !define the length of trace and number of trace in the code
+  !first step, we read the header of the first trace to get ns
+
+  CALL get_ns(12,fname,data%ns)
+
+  CALL get_nr(12,fname,data%ns,data%nr)
+
+  WRITE(*,*)'data%ns,data%nr',data%ns,data%nr
+
+  !allocate the 2 tables
+  allocate(data%trace(data%ns,data%nr))
+  allocate(data%suhdr(data%nr))
+
+  !open the file in direct access format with a record length of the entire file to do a SINGLE read call
+  ! the length is defined as 4 (bytes) x (60 (number of bytes in the header, known value) + ns (number of time sample) ) * nr (number of receivers)
+  OPEN(12,file=fname,access='direct',recl=4*(60+data%ns)*data%nr)
+
+  !SINGLE READ CALL (single READ OPERATION TO THE OS !! important when files contain several thousands of traces 
+  !and when several thousand of process access the files at the same time) that fill the full header and trace tables
+
+  READ(12,rec=1)(data%suhdr(it),data%trace(:,it),it=1,data%nr)
+
+!!$  !write to check
+!!$  DO it=1,nr
+!!$     write(*,*)suhdr(it),trace(:,it)
+!!$  END DO
+
+  CLOSE(12)
+
+end subroutine read_su

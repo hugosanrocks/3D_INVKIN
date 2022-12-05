@@ -1,0 +1,40 @@
+cmake_minimum_required (VERSION 2.6)
+
+project(Domain_Decomposition Fortran)
+
+enable_language(Fortran C)
+
+set(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR})
+message( STATUS "*** CMAKE_INSTALL_PREFIX ***" ${PROJECT_SOURCE_DIR})
+
+if(GNU)
+  message( STATUS "*** GFORTRAN ***")
+  set(suffix                  "_gnu")
+endif()
+
+if(NOT EXISTS "${CMAKE_INSTALL_PREFIX}/lib${suffix}/")
+  file(MAKE_DIRECTORY ${CMAKE_INSTALL_PREFIX}/lib${suffix})
+endif()
+
+set(DD_LIB_BASENAME domdecomp)
+
+if(FDM)
+  set(DD_LIB_NAME ${DD_LIB_BASENAME}_FDM)
+elseif(DGM)
+  set(DD_LIB_NAME ${DD_LIB_BASENAME}_DGM)
+elseif(SEM)
+  set(DD_LIB_NAME ${DD_LIB_BASENAME}_SEM)
+else()
+  set(DD_LIB_NAME ${DD_LIB_BASENAME}_static)
+endif()
+
+add_subdirectory(src)
+add_subdirectory(test)
+
+if( DGM OR ( (NOT FDM) AND (NOT DGM) AND (NOT SEM) ) )
+  add_subdirectory(dg_proto)
+endif()
+
+# enable_testing()
+# include(CTest)
+

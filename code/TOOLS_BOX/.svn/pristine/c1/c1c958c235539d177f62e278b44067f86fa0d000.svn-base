@@ -1,0 +1,38 @@
+*****************************************************************
+                 SEISCOPE CARFS TOOLBOX             
+                           06/02/2016                        
+                          Pengliang Yang                         
+                 pengliang.yang@univ-grenoble-alpes.fr       
+-------------------------------------------------------
+Acknowledgements:
+The SEISCOPE CARFS TOOLBOX codes have been developed in the
+framework of the SEISCOPE and SEISCOPE II consortia and we thank
+the sponsors of these projects. 
+
+-------------------------------------------------------
+Conditions of use:
+The SEISCOPE OPTIMIZATION TOOLBOX code is provided open-source (see Legal Statement). 
+Please refer to the two following articles in any study or publications for which
+this code has been used
+
+[1] Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+   from significantly decimated boundaries. Geophysics, submitted.
+
+[2] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+   reconstruction in attenuating media: A Checkpointing-assisted reverse-forward
+   simulation method, Geophysics, submitted
+
+-------------------------------------------------------
+Content
+1. checkpointing-assisted reverse-forward simulation (CARFS)
+2. standard optimal checkpointing 
+
+------------------------------------------------------
+Compilation and usage:
+
+1. make;
+2. link with the library
+
+
+
+

@@ -1,0 +1,29 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+subroutine compute_lagrange_weight(w,xx,x,q)
+  implicit none
+  integer::q
+  real::w(q+1),x(q+1),xx,tmp
+
+  integer::i,j
+
+  do i=1,q+1
+     tmp=1.
+     do j=1,q+1
+        if(j.ne.i) then
+           tmp=tmp*(xx-x(j))/(x(i)-x(j))
+        endif
+     enddo
+     w(i)=tmp
+  enddo
+end subroutine compute_lagrange_weight

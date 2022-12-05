@@ -1,0 +1,39 @@
+
+subroutine get_nr(u,fname,ns,nr)
+
+  implicit none
+
+  integer :: u,ns,nr
+  CHARACTER*(*) :: fname
+  INTEGER(KIND=8) :: SIZE,FSIZE
+  integer(KIND=8) :: size_one_trace
+
+  !step 1 : get the size in bytes of the file
+  SIZE = FSIZE(U,FNAME,nr)
+!write(*,*)'SIZE',SIZE
+  !step2 : compute the size of one trace
+  size_one_trace =  (60+ns)*4
+
+  !step3 : compute the number of traces ... assuming SU format
+  nr = SIZE/size_one_trace
+
+end subroutine get_nr
+
+
+! assuming non-standard call like GNU FSTAT is not available
+
+INTEGER*8 FUNCTION FSIZE(U,FNAME,nr)
+  IMPLICIT NONE
+  CHARACTER*(*) :: FNAME
+  INTEGER :: U
+  integer(kind=4) :: buff(13)
+  integer(kind=4) :: status,nr
+  status=stat(fname,buff)
+  if(status == 0) then
+    fsize=buff(8)  
+  else
+    fsize=-1
+  endif
+  return
+END FUNCTION FSIZE
+

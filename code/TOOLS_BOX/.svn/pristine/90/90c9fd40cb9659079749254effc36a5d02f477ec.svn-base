@@ -1,0 +1,58 @@
+! void revolve_ctr_wrp(void* ptr, int steps, int snaps, int info)
+
+
+module fintfc_mod
+
+  use iso_c_binding
+
+  implicit none
+
+  interface
+    subroutine revolve_ctor_wrp(ptr, steps, snaps, info) bind(c, name='revolve_ctor_wrp')
+        use iso_c_binding
+        implicit none
+        type    (c_ptr), intent(out) :: ptr
+        integer (c_int), intent(in)  :: steps
+        integer (c_int), intent(in)  :: snaps
+        integer (c_int), intent(in)  :: info
+    end subroutine revolve_ctor_wrp
+
+    subroutine revolve_dtor_wrp(ptr) bind(c, name='revolve_dtor_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr),     intent(in)  :: ptr
+    end subroutine revolve_dtor_wrp
+
+    integer (c_int) function revolve_revolve_wrp(ptr) bind(c, name='revolve_revolve_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr), intent(in out)  :: ptr
+    end function revolve_revolve_wrp
+
+    integer (c_int) function revolve_getcheck_wrp(ptr) bind(c, name='revolve_getcheck_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr),     intent(in)  :: ptr
+    end function revolve_getcheck_wrp
+
+    integer (c_int) function revolve_getcapo_wrp(ptr) bind(c, name='revolve_getcapo_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr),     intent(in)  :: ptr
+    end function revolve_getcapo_wrp
+
+    integer (c_int) function revolve_getoldcapo_wrp(ptr) bind(c, name='revolve_getoldcapo_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr),     intent(in)  :: ptr
+    end function revolve_getoldcapo_wrp
+
+    integer (c_int) function revolve_getinfo_wrp(ptr) bind(c, name='revolve_getinfo_wrp')
+        use iso_c_binding
+        implicit none
+        type(c_ptr),     intent(in)  :: ptr
+    end function revolve_getinfo_wrp
+
+  end interface
+
+end module fintfc_mod

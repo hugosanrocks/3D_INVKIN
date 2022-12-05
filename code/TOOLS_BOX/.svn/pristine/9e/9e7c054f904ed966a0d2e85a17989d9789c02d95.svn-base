@@ -1,0 +1,238 @@
+
+!=================================== GENERAL INPUT FILE =========================
+subroutine  read_input_dg()
+
+  use global_parameters_mod
+  implicit none
+
+  ! read parameters: input filename
+  call getarg(0, exec)
+  nb_args = iargc()
+  if (nb_args /= 1) then
+     write(6,*) "ERROR : bad number of arguments :", nb_args
+     write(6,*) "command line : ug_test_seq[_gnu] filename"
+     stop
+  end if
+  call getarg(1, iFileName)
+
+  ! 
+  !simu_type = 'acoustic'
+  
+  open(IIN_PAR, file='input_par.dg')
+  read(IIN_PAR,*) simu_type 
+  ! order to compute 
+  pkmin=1
+  read(IIN_PAR,*) pkmax
+  !pkmax=8
+
+  ! simulation time 
+  !time_simu = 1.5_fp
+
+  read(IIN_PAR,*) time_simu  
+  ! source parameter
+  read(IIN_PAR,*) xsr, ysr, zsr
+  read(IIN_PAR,*) Fm_stf,Am_stf
+
+  ! model 
+  read(IIN_PAR,*) rho_cste, vp_cste, vs_cste
+
+  ! snapshot
+  read(IIN_PAR,*) step_snap
+  read(IIN_PAR,*) x_snap_tmp
+  read(IIN_PAR,*) y_snap_tmp
+  close(IIN_PAR)
+end subroutine read_input_dg
+
+
+!===============================  MATERIALS ===================================
+
+subroutine define_acoustic_material()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  call alloc_(vp,  1, nE, ' P-wave velocity ')
+  call alloc_(rho, 1, nE, ' density ') 
+
+  ! water hardcoded  
+
+  ! normalized for debbuging
+  vp(:)=vp_cste !1.
+  rho(:)=rho_cste !1.
+  
+ 
+end subroutine define_acoustic_material
+
+!----------------------------------------------------------------
+
+subroutine define_elastic_material()
+  use global_parameters_mod
+  use dd_common_mod
+  use mem_alloc_mod
+  implicit none
+
+  call alloc_(vp,  1, nE, ' P-wave velocity ')
+  call alloc_(vs,  1, nE, ' S-wave velocity ')
+  call alloc_(rho, 1, nE, ' density ') 
+
+  ! water hardcoded  
+
+  ! normalized for debbuging
+  vp(:)=vp_cste !1.
+  vs(:)=vs_cste  
+  rho(:)=rho_cste !1.
+    
+end subroutine define_elastic_material
+
+!============================================ ACQUISITION ================================================
+
+
+subroutine build_acquisition(InvV)
+
+  use global_parameters_mod
+  implicit none
+  real(kind=fp), dimension(ndof_local,ndof_local), intent(in)  :: InvV 
+  integer                                                      :: ista, isrc
+
+  !! hardcoded for now
+  acqui%nsrc=1
+
+
+  open(IIN_STA,file='station_list.txt')
+  read(IIN_STA,*) acqui%nsta
+
+  allocate(acqui%sta_coor(3,acqui%nsta))
+  allocate(acqui%src_coor(3,acqui%nsrc))
+
+  allocate(acqui%sta_weig(ndof,acqui%nsta))
+  allocate(acqui%src_weig(ndof,acqui%nsrc))
+
+  allocate(acqui%iel_sta(acqui%nsta))
+  allocate(acqui%iel_src(acqui%nsrc))
+
+  allocate(acqui%pressure_gather(acqui%nsta))
+  allocate(acqui%veloc_x_gather(acqui%nsta))
+  allocate(acqui%veloc_y_gather(acqui%nsta))
+  allocate(acqui%veloc_z_gather(acqui%nsta))
+ 
+  !! hardcoded for now
+  isrc=1
+  acqui%src_coor(1,isrc)=xsr
+  acqui%src_coor(2,isrc)=ysr
+  acqui%src_coor(3,isrc)=zsr
+
+
+  write(*,*)  '****************** STATIONS *****************************'
+  write(*,*) 
+  do ista = 1, acqui%nsta
+     read(IIN_STA,*)  acqui%sta_coor(1,ista), &
+     &                acqui%sta_coor(2,ista), &
+     &                acqui%sta_coor(3,ista)
+     call locate_and_compute_interpolation_weigth(acqui%sta_coor(1,ista), &
+     &    acqui%sta_coor(2,ista), acqui%sta_coor(3,ista), acqui%iel_sta(ista),&
+          acqui%sta_weig(:,ista), ndof_local, norder_simu, EtoV, coorV, nV, nE, InvV, .false.)
+
+  end do
+  write(*,*) ' Located ',acqui%nsta,' stations inside mesh'
+  write(*,*)
+  write(*,*)  '*****************************************************************'
+  write(*,*)  
+  write(*,*)  
+  close(IIN_STA)
+
+  do isrc = 1, acqui%nsrc
+ 
+     write(*,*)  '*********************** POINT SOURCE *****************************'
+     write(*,*) 
+     write(*,*) '         Initial source position  :'
+     write(*,*) acqui%src_coor(1,isrc), acqui%src_coor(2,isrc), acqui%src_coor(3,isrc)
+     write(*,*)
+     write(*,*) '         For numerical stability, the point source is put '
+     write(*,*) '         at the barycenter of element. '
+     write(*,*) '         Next release should fix this.'
+     write(*,*)
+     call locate_and_compute_interpolation_weigth(acqui%src_coor(1,isrc), &
+     &    acqui%src_coor(2,isrc), acqui%src_coor(3,isrc), acqui%iel_src(isrc),&
+          acqui%src_weig(:,isrc), ndof_local, norder_simu, EtoV, coorV, nV, nE, InvV, .true.)
+     write(*,*) 
+     write(*,*) 'locate source ', isrc
+     write(*,*) ' Position used '
+     write(*,*) acqui%src_coor(1,isrc), acqui%src_coor(2,isrc), acqui%src_coor(3,isrc)
+     write(*,*) 'in element :', acqui%iel_src(isrc) 
+     write(*,*) 
+     write(*,*)  '*****************************************************************'
+     write(*,*)  
+  end do
+
+
+end subroutine build_acquisition
+
+
+subroutine initialise_station_arrays()
+
+  use global_parameters_mod
+  implicit none
+
+  allocate(sta_weig(ndof_local,acqui%nsta))
+  allocate(iel_sta(acqui%nsta))
+
+  sta_weig(:,:) = acqui%sta_weig(:,:)
+  iel_sta(:) =  acqui%iel_sta(:)
+
+
+end subroutine initialise_station_arrays
+
+
+
+
+!!! -------------- for debugging ---------
+
+
+subroutine build_init_condition()
+  use global_parameters_mod
+  implicit none
+  integer ie, l, pk 
+  real(kind=fp) sigma
+
+  sigma=500._fp
+  
+  do ie=1,nE
+     pk=PkE(ie)
+  !!! hardcoded initial condition for debugging
+     do l=1,ref_matrix(pk)%np
+        idof=Etodof_adj(ie) + l - 1
+        !stress(1,l,ie) = 1.e7*exp(-0.5_fp * (coordof(1,idof)**2 + coordof(2,idof)**2 + coordof(3,idof)**2) / (sigma**2))
+        stress(1,l,ie) = exp(-100._fp*((coordof(1,idof)-0.5_fp)**2 + (coordof(2,idof)-0.5_fp)**2 + (coordof(3,idof)-0.5_fp)**2));
+     end do
+  end do
+  !!! 
+end subroutine build_init_condition
+
+subroutine build_init_condition_el()
+  use global_parameters_mod
+  implicit none
+  integer ie, l, pk 
+  real(kind=fp) sigma
+
+  sigma=500._fp
+  
+  do ie=1,nE
+     pk=PkE(ie)
+  !!! hardcoded initial condition for debugging
+     do l=1,ref_matrix(pk)%np
+        idof=Etodof_adj(ie) + l - 1
+        !stress(1,l,ie) = 1.e7*exp(-0.5_fp * (coordof(1,idof)**2 + coordof(2,idof)**2 + coordof(3,idof)**2) / (sigma**2))
+        stress(1,l,ie) = 1.e4*exp(-0.0001_fp*( (coordof(1,idof)-500._fp)**2 + (coordof(2,idof)-1000._fp)**2 &
+        &                                     + (coordof(3,idof)-1000._fp)**2) )
+        stress(2,l,ie) = 1.e4*exp(-0.0001_fp*( (coordof(1,idof)-500._fp)**2 + (coordof(2,idof)-1000._fp)**2 &
+        &                                     + (coordof(3,idof)-1000._fp)**2) )
+        stress(3,l,ie) = 1.e4*exp(-0.0001_fp*( (coordof(1,idof)-500._fp)**2 + (coordof(2,idof)-1000._fp)**2 &
+        &                                     + (coordof(3,idof)-1000._fp)**2) )
+        !if( stress(1,l,ie) > 0._fp ) write(*,*) coordof(1,idof),stress(1,l,ie)
+        !write(*,*)  (coordof(1,idof)-300._fp)**2 + (coordof(2,idof)-1000._fp)**2 + (coordof(3,idof)-1000._fp)**2,exp(-0.01_fp*( (coordof(1,idof)-300._fp)**2 + (coordof(2,idof)-1000._fp)**2 + (coordof(3,idof)-1000._fp)**2) )
+     end do
+  end do
+  !!! 
+end subroutine build_init_condition_el
+!!! --------------------------------------

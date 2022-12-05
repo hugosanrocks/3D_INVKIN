@@ -1,0 +1,48 @@
+set(TEST_UGRID_HEXA ug_test_hexa)
+set(METIS_LIBRARY             ${METIS_LIB_DIR}/lib${METIS_LIB_NAME}.a)
+
+add_executable(
+        ${TEST_UGRID_HEXA}_seq${suffix}
+        ug_test_hexa_seq.f90
+)
+
+target_link_libraries(
+        ${TEST_UGRID_HEXA}_seq${suffix}
+        ${DD_LIB_NAME}_static
+)
+
+add_executable(
+        ${TEST_UGRID_HEXA}_mesh_partition${suffix}
+        ug_test_hexa_mesh_partition.f90
+)
+
+target_link_libraries(
+        ${TEST_UGRID_HEXA}_mesh_partition${suffix}
+        ${DD_LIB_NAME}_static
+        ${METIS_LIBRARY}
+)
+
+add_executable(
+        ${TEST_UGRID_HEXA}_par${suffix}
+        ug_test_hexa_par.f90
+)
+
+target_link_libraries(
+        ${TEST_UGRID_HEXA}_par${suffix}
+        ${DD_LIB_NAME}_static
+)
+
+include_directories(
+        ${CMAKE_BINARY_DIR}/src
+)
+
+# Install
+
+install(
+        TARGETS ${TEST_UGRID_HEXA}_seq${suffix} ${TEST_UGRID_HEXA}_mesh_partition${suffix} ${TEST_UGRID_HEXA}_par${suffix}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+        COMPONENT TEST_UGRID_HEXA${suffix}
+)
+

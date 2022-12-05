@@ -1,0 +1,26 @@
+cmake_minimum_required (VERSION 2.8)
+
+project(CheckPointing Fortran CXX C)
+
+include(FortranCInterface)
+FortranCInterface_HEADER(${CMAKE_CURRENT_SOURCE_DIR}/src/FortranInterface/FC.h MACRO_NAMESPACE "FC_")
+
+set(CMAKE_INSTALL_PREFIX ${PROJECT_SOURCE_DIR})
+message( STATUS "*** CMAKE_INSTALL_PREFIX ***" ${PROJECT_SOURCE_DIR})
+
+if(GNU)
+  message( STATUS "*** GFORTRAN ***")
+  set(suffix                  "_gnu")
+endif()
+
+if(NOT EXISTS "${CMAKE_INSTALL_PREFIX}/lib${suffix}/")
+  file(MAKE_DIRECTORY ${CMAKE_INSTALL_PREFIX}/lib${suffix})
+endif()
+
+set(CP_LIB_NAME checkpointing)
+
+add_subdirectory(src)
+add_subdirectory(test)
+
+# enable_testing()
+# include(CTest)

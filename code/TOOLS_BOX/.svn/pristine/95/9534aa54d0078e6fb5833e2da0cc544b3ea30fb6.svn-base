@@ -1,0 +1,6 @@
+rm output_bin_*.vtk
+
+mpirun -np 8 ../../bin/test_dd_sg_ac_iso_o4_optim
+
+rm vp rho
+

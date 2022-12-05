@@ -1,0 +1,69 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortium
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$==========================================================================
+!!$ References: 
+!!$[1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$[2]  Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$==========================================================================
+subroutine checkpoint_positioning(p,l,c) 
+  implicit none 
+  integer::l,c,p(0:c-1)
+
+  integer::r,i,j,beta0,beta1,beta2,beta3,beta4,beta5,ds
+
+  if(l<0 .or. c<0) stop "Error in input parameters: l or c"
+
+  p(0)=0
+  if(c>=2) then !more than 1 checkpoints including cp(ic)
+     !given l and c, determine r: beta(c,r-1)< l <= beta(c,r)
+     r=0; beta0=1
+     do while (beta0<l)
+        r=r+1; beta0=beta0*(r+c)/r 
+     enddo
+     do i=0,c-2
+        !beta0=beta(c-i,r)
+        beta0=1; ds=c-i
+        do j=1,r
+           beta0=beta0*(ds+j)/j
+        enddo
+        !beta1=beta(c-i,r-1)
+        beta1=beta0*r/(ds+r)
+        !beta5=beta(c-i-1,r-1)
+        beta5=1
+        if(ds>1) beta5=beta1*ds/(ds+r-1)
+        !beta2=beta(c-i-2,r-1)
+        if(ds==1) then
+           beta2=0
+        elseif (ds>2) then
+           beta2=beta5*(ds-1)/(ds+r-2)
+        else
+           beta2=1
+        endif
+        !beta3=beta(c-i,r-2)
+        beta3=beta5*(r-1)/ds
+        !beta4=beta(c-i-3,r)
+        if(ds<3) then
+           beta4=0
+        elseif(ds>3) then
+           beta4=beta2*(ds-2)/r
+        else
+           beta4=1
+        endif
+        if(l<=beta1+beta2+p(i)) then
+           p(i+1)=p(i)+beta3
+        elseif (l>=beta0-beta4+p(i)) then
+           p(i+1)=p(i)+beta1
+        else
+           p(i+1)=l-beta5-beta2
+        endif
+     enddo
+  endif
+end subroutine checkpoint_positioning
+

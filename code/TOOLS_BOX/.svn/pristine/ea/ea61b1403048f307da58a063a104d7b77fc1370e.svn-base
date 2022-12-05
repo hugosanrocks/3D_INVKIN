@@ -1,0 +1,60 @@
+How to build domdecomp library :
+
+************** With cmake compilation tool chain *****************
+
+Set the compiler options you want by editing one of the existing cmake scripts
+(as cmake_intel.sh or cmake_gnu.sh) or create your own script
+
+Create a folder for compilation
+
+  DOMAIN_DECOMP> mkdir build; cd build
+
+Launch cmake to create a Makefile within parameters set in the script file
+
+  build> sh ../cmake_intel.sh
+  
+If cmake configuration/generation fails :
+  
+  proceed to manual configuration and generation of cmake 
+  build> ccmake .
+  set options CMAKE_Fortran_COMPILER, CMAKE_Fortran_FFLAGS
+  configure, generate and quit
+
+If cmake configuration and generation succeeds, proceed to the compilation :
+  
+  build> make clean && make && make install
+
+Then domdecomp static library and the associated .mod files are generated in lib[_suffix]
+
+Notice: 
+It is also possible to build specific independant libraries 
+for Finite Difference Methods (structured staggered or full grids), 
+Discontinuous Galerkin Methods (tetrahedra unstructured meshes) 
+or Spectral Elements Methods (hexahedra unstructured meshed.
+It allows for example to have no dependency with metis library
+in case of usage of finite difference methods only.
+
+build> make domdecomp_FDM
+or
+build> make domdecomp_DGM
+or
+build> make domdecomp_SEM
+
+*********************** Without cmake *****************************
+
+If you encounter problem to build the library, a make file is 
+committed and updated by hand in build_mk directory
+
+  DOMAIN_DECOMP> cd build_mk; make cleanall && make all
+
+or for gnu compilers
+
+  DOMAIN_DECOMP> cd build_mk; make GNU=1 cleanall && make GNU=1 all
+
+******************* Executing test_dd_sgrid ***********************
+
+test_dd_sgrid is a main Fortran program
+calling domdecomp library to decompose a structured grid 
+and executing an acoustic wave modelling in an isotropic media
+
+  DOMAIN_DECOMP> cd test; sh run_dd_sgrid.sh

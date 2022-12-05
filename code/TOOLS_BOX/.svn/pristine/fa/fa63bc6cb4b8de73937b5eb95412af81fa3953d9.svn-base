@@ -1,0 +1,29 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortium
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$==========================================================================
+!!$ References: 
+!!$[1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$
+!!$[2]  Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$==========================================================================
+integer function checkpoint_steps(nt,nc)
+  implicit none
+  integer::nt,nc
+
+  integer::r,beta
+
+  r=0;beta=1
+  do while (beta<nt)
+     r=r+1
+     beta=beta*(r+nc)/r
+  enddo
+  checkpoint_steps=r*nt-beta*r/(nc+1)
+end function checkpoint_steps
+

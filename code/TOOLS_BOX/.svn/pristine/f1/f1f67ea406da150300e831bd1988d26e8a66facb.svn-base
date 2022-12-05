@@ -1,0 +1,56 @@
+\select@language {english}
+\contentsline {section}{\numberline {1}Introduction}{5}{section.1}
+\contentsline {section}{\numberline {2}An overview of the routines in the toolbox}{6}{section.2}
+\contentsline {subsection}{\numberline {2.1}Preconditioned steepest descent: PSTD}{6}{subsection.2.1}
+\contentsline {subsection}{\numberline {2.2}Preconditioned nonlinear conjugate gradient: PNLCG}{7}{subsection.2.2}
+\contentsline {subsection}{\numberline {2.3}Quasi-Newton $l$-BFGS method: LBFGS}{7}{subsection.2.3}
+\contentsline {subsection}{\numberline {2.4}Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}{8}{subsection.2.4}
+\contentsline {subsection}{\numberline {2.5}Truncated Newton method: TRN}{8}{subsection.2.5}
+\contentsline {subsection}{\numberline {2.6}Preconditioned truncated Newton method: PTRN}{9}{subsection.2.6}
+\contentsline {section}{\numberline {3}Installation}{10}{section.3}
+\contentsline {subsection}{\numberline {3.1}Compiling the global library \texttt {libSEISCOPE\_OPTIM.a}}{10}{subsection.3.1}
+\contentsline {subsection}{\numberline {3.2}Compiling individual libraries \texttt {\textit {method}.a}}{11}{subsection.3.2}
+\contentsline {subsection}{\numberline {3.3}Compiling and running the test programs}{12}{subsection.3.3}
+\contentsline {section}{\numberline {4}How to use the optimization routines?}{14}{section.4}
+\contentsline {subsection}{\numberline {4.1}Preconditioned Steepest Descent: PSTD}{14}{subsection.4.1}
+\contentsline {subsubsection}{\numberline {4.1.1}Variables declaration}{14}{subsubsection.4.1.1}
+\contentsline {subsubsection}{\numberline {4.1.2}Initialization}{15}{subsubsection.4.1.2}
+\contentsline {subsubsection}{\numberline {4.1.3}Minimization within the reverse communication loop}{16}{subsubsection.4.1.3}
+\contentsline {subsubsection}{\numberline {4.1.4}End of the loop and output file}{17}{subsubsection.4.1.4}
+\contentsline {subsection}{\numberline {4.2}Preconditioned nonlinear conjugate gradient: PNLCG}{18}{subsection.4.2}
+\contentsline {subsubsection}{\numberline {4.2.1}Variables declaration}{18}{subsubsection.4.2.1}
+\contentsline {subsubsection}{\numberline {4.2.2}Initialization}{19}{subsubsection.4.2.2}
+\contentsline {subsubsection}{\numberline {4.2.3}Minimization within the reverse communication loop}{20}{subsubsection.4.2.3}
+\contentsline {subsubsection}{\numberline {4.2.4}End of the loop and output file}{21}{subsubsection.4.2.4}
+\contentsline {subsection}{\numberline {4.3}Quasi-Newton $l$-BFGS method: LBFGS}{22}{subsection.4.3}
+\contentsline {subsubsection}{\numberline {4.3.1}Variables declaration}{22}{subsubsection.4.3.1}
+\contentsline {subsubsection}{\numberline {4.3.2}Initialization}{23}{subsubsection.4.3.2}
+\contentsline {subsubsection}{\numberline {4.3.3}Minimization within the reverse communication loop}{24}{subsubsection.4.3.3}
+\contentsline {subsubsection}{\numberline {4.3.4}End of the loop and output file}{25}{subsubsection.4.3.4}
+\contentsline {subsection}{\numberline {4.4}Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}{26}{subsection.4.4}
+\contentsline {subsubsection}{\numberline {4.4.1}Variables declaration}{26}{subsubsection.4.4.1}
+\contentsline {subsubsection}{\numberline {4.4.2}Initialization}{26}{subsubsection.4.4.2}
+\contentsline {subsubsection}{\numberline {4.4.3}Minimization within the reverse communication loop}{28}{subsubsection.4.4.3}
+\contentsline {subsubsection}{\numberline {4.4.4}End of the loop and output file}{29}{subsubsection.4.4.4}
+\contentsline {subsection}{\numberline {4.5}Truncated Newton method: TRN}{30}{subsection.4.5}
+\contentsline {subsubsection}{\numberline {4.5.1}Variables declaration}{30}{subsubsection.4.5.1}
+\contentsline {subsubsection}{\numberline {4.5.2}Initialization}{31}{subsubsection.4.5.2}
+\contentsline {subsubsection}{\numberline {4.5.3}Minimization within the reverse communication loop}{32}{subsubsection.4.5.3}
+\contentsline {subsubsection}{\numberline {4.5.4}End of the loop and output file}{33}{subsubsection.4.5.4}
+\contentsline {subsection}{\numberline {4.6}Preconditioned truncated Newton method: PTRN}{35}{subsection.4.6}
+\contentsline {subsubsection}{\numberline {4.6.1}Variables declaration}{35}{subsubsection.4.6.1}
+\contentsline {subsubsection}{\numberline {4.6.2}Initialization}{36}{subsubsection.4.6.2}
+\contentsline {subsubsection}{\numberline {4.6.3}Minimization within the reverse communication loop}{38}{subsubsection.4.6.3}
+\contentsline {subsubsection}{\numberline {4.6.4}End of the loop and output file}{39}{subsubsection.4.6.4}
+\contentsline {section}{\numberline {5}Technical details}{41}{section.5}
+\contentsline {subsection}{\numberline {5.1}Writing intermediate values of $x$}{41}{subsection.5.1}
+\contentsline {subsection}{\numberline {5.2}Linesearch algorithm}{41}{subsection.5.2}
+\contentsline {subsubsection}{\numberline {5.2.1}The Wolfe criterion}{41}{subsubsection.5.2.1}
+\contentsline {subsubsection}{\numberline {5.2.2}Linesearch algorithm}{42}{subsubsection.5.2.2}
+\contentsline {subsubsection}{\numberline {5.2.3}Initialization of the linesearch parameter $\alpha $}{42}{subsubsection.5.2.3}
+\contentsline {subsubsection}{\numberline {5.2.4}Bound constraints: projection into the feasible set}{43}{subsubsection.5.2.4}
+\contentsline {subsubsection}{\numberline {5.2.5}Output files and debug option}{43}{subsubsection.5.2.5}
+\contentsline {subsection}{\numberline {5.3}Nonlinear conjugate gradient}{44}{subsection.5.3}
+\contentsline {subsection}{\numberline {5.4}Practical issues for the truncated Newton method}{44}{subsection.5.4}
+\contentsline {subsubsection}{\numberline {5.4.1}Choice of $\eta _0$ for the truncated Newton method}{44}{subsubsection.5.4.1}
+\contentsline {subsubsection}{\numberline {5.4.2}Output files and debug option}{45}{subsubsection.5.4.2}

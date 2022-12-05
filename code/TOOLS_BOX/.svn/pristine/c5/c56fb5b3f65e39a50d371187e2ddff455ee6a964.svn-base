@@ -1,0 +1,1479 @@
+!! ========================================================= 3D case ====================================================
+
+subroutine vandermonde3D( norder, ndof,  coor, V3D, iV3D )
+   
+  use dd_common_mod
+  implicit none
+  integer norder, ndof
+  real(kind=fp) coor(3,ndof)  ! dof coordinate in reference tetrahedron
+  real(kind=fp) V3D(ndof,ndof),iV3D(ndof,ndof) 
+  real(kind=fp) a,b,c
+
+  ! computing Jacobi polynomials 
+  double precision polya,polyb,polyc,alp,bet,x
+  integer n
+  integer i,j,k,sk,m
+
+  double precision, dimension(:,:), allocatable :: iV3D_dp
+  double precision :: det_dp
+ 
+  allocate(iV3D_dp(ndof,ndof))
+
+  sk=0
+  do i=0,norder
+     do j=0,norder-i
+        do k=0,norder-i-j
+           sk=sk+1
+          
+           do m=1,ndof
+              call rsttoabc(coor(1,m),coor(2,m),coor(3,m),a,b,c,ndof)
+           
+              x = a 
+              alp=0.d0
+              bet=0.d0
+              n=i
+              call jacobiP(x,alp,bet,N,polya)
+             
+              x = b 
+              alp=2*i+1
+              bet=0.d0
+              n=j
+              call jacobiP(x,alp,bet,N,polyb)
+
+              x = c
+              alp=2*(i+j) +2
+              bet=0.d0
+              n=k
+              call jacobiP(x,alp,bet,N,polyc)
+             
+              ! must be done in double
+              iV3D_dp(m,sk)= 2.d0 * sqrt(2.d0) *  polya * polyb * (1.d0 - b)** i * polyc * (1.d0-c)**(i+j)
+              !V3D(m,sk) = 2._fp * sqrt(2._fp) *  polya * polyb * (1._fp - b)** i * polyc * (1._fp-c)**(i+j)
+             
+           end do
+           
+        end do
+     end do
+  end do
+ 
+  
+  ! must be done in double
+  V3D(:,:)=real(iV3D_dp(:,:), kind=FP)
+  call invert_dp(iV3D_dp,det_dp,ndof)
+  iV3D(:,:)=real(iV3D_dp(:,:), kind=FP)
+
+  deallocate(iV3D_dp)
+
+end subroutine vandermonde3D
+
+
+
+subroutine GradVandermonde(norder, ndof, coor, V3Dr, V3Ds, V3Dt)
+  
+  use dd_common_mod
+  implicit none
+  integer ndof
+  real(kind=fp) coor(3,ndof)
+  real(kind=fp) V3Dr(ndof,ndof),V3Ds(ndof,ndof),V3Dt(ndof,ndof)
+  real(kind=fp), allocatable :: r(:),s(:),t(:),a(:),b(:),c(:)
+
+  real(kind=fp) Vr,Vs,Vt
+  integer idof,i,j,k,sk,norder
+
+  allocate(r(ndof),s(ndof),t(ndof),a(ndof),b(ndof),c(ndof))
+
+  r(:)=coor(1,:)
+  s(:)=coor(2,:)
+  t(:)=coor(3,:)
+  do i=1,ndof
+     call rsttoabc(r(i),s(i),t(i),a(i),b(i),c(i),ndof)
+  end do
+  
+  sk=0
+  do i=0,norder
+     do j=0,norder-i
+        do k=0,norder-i-j
+           sk=sk+1
+          
+           do idof = 1, ndof
+              call GradSImplex(a(idof),b(idof),c(idof),i,j,k,Vr,Vs,Vt)
+              V3Dr(idof,sk)=Vr
+              V3Ds(idof,sk)=Vs
+              V3Dt(idof,sk)=Vt
+            
+             
+           end do
+
+        end do
+     end do
+  end do
+  
+  deallocate(r,s,t,a,b,c)
+
+end subroutine GradVandermonde
+
+!-------------------------------------------
+
+subroutine GradSImplex(a,b,c,id,jd,kd,Vr,Vs,Vt)
+
+  use dd_common_mod
+  implicit none
+  real(kind=fp) a,b,c,Vr,Vs,Vt,tmp
+  integer id,jd,kd,n
+
+  double precision fa,dfa,gb,dgb,hc,dhc
+  double precision alp,bet,x!,polym1,polym2,pderm1,pderm2
+
+   x = a 
+   alp=0.d0
+   bet=0.d0
+   n=id
+   call jacobiP(x,alp,bet,N,fa)
+   call  DerjacobiP(x,alp,bet,N,dfa)
+   !call jacobf(fa,dfa,polym1,pderm1,polym2,pderm2,n,alp,bet,x)
+
+   x = b
+   alp=2*id +1 
+   bet=0.d0
+   n=jd
+   call jacobiP(x,alp,bet,N,gb)
+   call  DerjacobiP(x,alp,bet,N,dgb)
+  
+
+   x = c
+   alp=2*(id+jd) +2 
+   bet=0.d0
+   n=kd
+   call jacobiP(x,alp,bet,N,hc)
+    
+   call  DerjacobiP(x,alp,bet,N,dhc)
+   
+
+   ! r-derivative
+   Vr=real(dfa*(gb*hc),kind=FP)
+   if (id > 0)    Vr = Vr*( (0.5*(1-b))**(id-1)    )
+   if (id+jd > 0) Vr = Vr*( (0.5*(1-c))**(id+jd-1) ) 
+
+      
+   ! s derivative
+   Vs=0.5*(1+a)*Vr
+   tmp = real(dgb*((0.5*(1-b))**id), kind=FP)
+   if (id>0) tmp = tmp + (-0.5*id)*(gb*(0.5*(1-b))**(id-1))
+   if (id+jd>0) tmp = tmp * ((0.5*(1-c))**(id+jd-1))
+   tmp = fa*(tmp*hc)
+   Vs = tmp + Vs
+
+
+   ! t derivative
+   Vt = 0.5*(1+a)*Vr+0.5*(1+b)*tmp
+   tmp = dhc*((0.5*(1-c))**(id+jd))
+   if (id+jd>0) tmp = tmp -0.5*(id+jd)*(hc*((0.5*(1-c))**(id+jd-1)))
+   tmp=fa*(gb*tmp)
+   tmp=tmp*((0.5*(1-b))**id)
+   Vt=Vt+tmp
+
+   ! normalize
+   Vr=Vr*(2**(2*id+jd+1.5))
+   Vs=Vs*(2**(2*id+jd+1.5))
+   Vt=Vt*(2**(2*id+jd+1.5))
+
+   
+
+
+end subroutine GradSImplex
+
+!-------------------------------------------
+
+ subroutine Dmatrices(V, V3Dr, V3Ds, V3Dt, Dr, Ds, Dt, n) 
+   use dd_common_mod
+   implicit none
+   integer n
+   real(kind=fp) V(n,n),V3Dr(n,n),V3Ds(n,n),V3Dt(n,n)
+   real(kind=fp) Dr(n,n),Ds(n,n),Dt(n,n)
+
+   real(kind=fp), allocatable :: A(:,:),L(:,:),U(:,:),E(:,:),Inv(:,:) 
+
+   integer i,j,k
+   
+   double precision, dimension(:,:), allocatable :: A_dp
+   double precision :: det_dp
+
+   allocate(A(n,n),L(n,n),U(n,n),E(n,n),Inv(n,n))
+   allocate(A_dp(n,n))
+
+   ! initialisation -----------------
+   A(:,:)=0._fp
+   L(:,:)=0._fp
+   U(:,:)=0._fp
+   E(:,:)=0._fp
+   Inv(:,:)=0._fp
+   Dr(:,:)=0._fp
+   Ds(:,:)=0._fp
+   Dt(:,:)=0._fp
+
+   A(:,:)=V(:,:)
+   A_dp(:,:)=A(:,:)
+   call invert_dp(A_dp,det_dp,n)
+   A(:,:)=A_dp(:,:)
+   Inv(:,:)=A_dp(:,:)
+
+
+   do i=1,n
+      do j=1,n
+         do k=1,n
+            Dr(i,j) = Dr(i,j) + V3Dr(i,k)*Inv(k,j)
+         end do
+      end do
+   end do
+
+
+ 
+   do i=1,n
+      do j=1,n
+         do k=1,n
+            Ds(i,j) = Ds(i,j) + V3Ds(i,k)*Inv(k,j)
+         end do
+      end do
+   end do
+
+
+   do i=1,n
+      do j=1,n
+         do k=1,n
+            Dt(i,j) = Dt(i,j) + V3Dt(i,k)*Inv(k,j)
+         end do
+      end do
+   end do
+
+   deallocate(A,L,U,E,Inv)
+   deallocate(A_dp)
+
+ end subroutine Dmatrices
+
+!-------------------------------------------
+ 
+ subroutine mass_matrix_volume(iMV,MV,V3D,ndof)
+    use dd_common_mod
+    implicit none
+    integer ndof
+    !real(kind=fp) det
+    real(kind=fp) iMV(ndof,ndof),MV(ndof,ndof),V3D(ndof,ndof)
+    integer i,j,k
+    
+    double precision, dimension(:,:), allocatable :: iMV_dp
+    double precision :: det_dp
+    iMV(:,:)=0._fp
+
+    allocate(imv_dp(ndof,ndof))
+
+    ! inv(MassMatrix) = V3D*V3D_transpose
+    do j=1,ndof
+       do i=1,ndof
+          do k=1,ndof
+             iMV(i,j) = iMV(i,j) + V3D(i,k)*V3D(j,k)
+          end do
+       end do
+    end do
+
+    !MV(:,:)=iMV(:,:)
+    !call invert(MV,det,ndof)
+    iMV_dp(:,:)=iMV(:,:)
+    ! this computation must be in double
+    call invert_dp(iMV_dp,det_dp,ndof)
+    MV(:,:)=iMV_dp(:,:)
+
+    deallocate(iMV_dp)
+
+ end subroutine mass_matrix_volume
+
+!------------------------------------------
+
+ subroutine invmass_time_stiffness(iMV,MV,miSr,miSs,miSt,Dr,Ds,Dt,n) 
+   use dd_common_mod
+   implicit none
+   integer n
+   real(kind=fp) iMV(n,n),MV(n,n)
+   real(kind=fp) miSr(n,n),miSs(n,n),miSt(n,n)
+   real(kind=fp) Dr(n,n),Ds(n,n),Dt(n,n)
+   real(kind=fp), allocatable :: A1(:,:),A2(:,:),A3(:,:)
+
+   integer i,j,k
+
+   
+   allocate(A1(n,n),A2(n,n),A3(n,n))
+
+   miSr(:,:)=0._fp
+   miSs(:,:)=0._fp
+   miSt(:,:)=0._fp
+
+   A1(:,:)=0._fp
+   A2(:,:)=0._fp
+   A3(:,:)=0._fp
+
+   do i=1,n
+      do j=1,n
+         do k=1,n
+            A1(i,j) = A1(i,j) + MV(i,k)*Dr(k,j)
+            A2(i,j) = A2(i,j) + MV(i,k)*Ds(k,j)
+            A3(i,j) = A3(i,j) + MV(i,k)*Dt(k,j)
+         end do
+      end do
+   end do
+   
+   do i=1,n
+      do j=1,n
+         do k=1,n
+            miSr(i,j) = miSr(i,j) + iMV(i,k)*A1(j,k)
+            miSs(i,j) = miSs(i,j) + iMV(i,k)*A2(j,k)
+            miSt(i,j) = miSt(i,j) + iMV(i,k)*A3(j,k)
+         end do
+         
+      end do
+   end do
+
+   deallocate(A1,A2,A3)
+
+ end subroutine invmass_time_stiffness
+
+!!==================================== INTERPOLATION UTLITY ==============================================
+subroutine Jacobi3D_eval(norder, ndof, r, s, t, Jpe)
+  use dd_common_mod
+  implicit none
+  integer  :: norder, ndof
+  integer  :: i,j,k,sk
+  real(kind=fp) :: Jpe(ndof)
+  real(kind=fp) :: r,s,t,a,b,c
+
+  ! computing Jacobi polynomials 
+  integer :: n
+  double precision :: polya,polyb,polyc,alp,bet,x
+
+
+  call rsttoabc(r,s,t,a,b,c,ndof)
+
+  sk=0
+  do i=0,norder
+     do j=0,norder-i
+        do k=0,norder-i-j
+
+           sk=sk+1
+
+           x = a 
+           alp=0.d0
+           bet=0.d0
+           n=i
+           call jacobiP(x,alp,bet,N,polya)
+
+           x = b 
+           alp=2*i+1
+           bet=0.d0
+           n=j
+           call jacobiP(x,alp,bet,N,polyb)
+
+           x = c
+           alp=2*(i+j) +2
+           bet=0.d0
+           n=k
+           call jacobiP(x,alp,bet,N,polyc)
+
+           Jpe(sk)=2._fp * sqrt(2._fp) *  polya * polyb * (1._fp - b)** i * polyc * (1._fp-c)**(i+j)
+
+        end do
+     end do
+  end do
+
+end subroutine Jacobi3D_eval
+
+
+!! ================================== LOCATION SUBROUNITNE and MESH UTLITY ===============================
+
+
+subroutine locate_and_compute_interpolation_weigth(x, y, z, ielement, weight, ndof, norder, EtoV, coorV, nV, nE, InvV, source)
+
+  !! locate point (x,y,z) in mesh and compute norder interpolation weight.    
+  !! Note : this subroutine is not optimized, it may take a very long time to run  
+  !! but for now just need to make it works. 
+
+  use dd_common_mod
+  implicit none
+  integer                                          :: ielement
+  integer,                        intent(in)       :: ndof, norder
+  integer,                        intent(in)       :: nV, nE
+  integer,       dimension(4,nE), intent(in)       :: EtoV
+  real,          dimension(3,nV), intent(in)       :: coorV
+  real(kind=fp), dimension(ndof,ndof), intent(in)  :: InvV   ! inverse vandermonde matrix 
+  real(kind=fp),                  intent(inout)    :: x,y,z
+  real(kind=fp), dimension(ndof), intent(inout)    :: weight
+  logical,                        intent(in)       :: source
+  real(kind=fp)                                    :: P1(3), P2(3), P3(3), P4(3)
+  real(kind=fp)                                    :: r,s,t
+  real(kind=fp), dimension(:),   allocatable       :: Jpe
+  integer                                          :: i, j 
+
+  allocate(Jpe(ndof))
+
+  call locate_point_in_mesh(ielement, x, y, z,  EtoV, coorV, nV, nE)
+
+  P1(:)=coorV(:,EtoV(1,ielement))
+  P2(:)=coorV(:,EtoV(2,ielement))
+  P3(:)=coorV(:,EtoV(3,ielement))
+  P4(:)=coorV(:,EtoV(4,ielement))
+
+
+  call  Linear_map_xyz_rst(r,s,t,x,y,z,P1,P2,P3,P4)
+
+  !!
+  !! WARNNING hardcoded : put the source in barycenter of tetra
+  !!
+  if (source) then
+    
+     r = -0.5 
+     s = -0.5 
+     t = -0.5 
+ 
+     call  Linear_map_rst_xyz(x,y,z,r,s,t,P1,P2,P3,P4)
+    
+  end if
+
+  call Jacobi3D_eval(norder, ndof, r, s, t, Jpe)
+
+  ! compute interpolation weigth in element ielement for
+  ! point (x,y,z)
+  weight(:)=0._fp
+
+  
+   
+  do i=1,ndof
+     do j=1,ndof
+        weight(i) =  weight(i) + Jpe(j)*InvV(j,i)
+     end do
+  end do
+  
+  deallocate(Jpe)
+
+end subroutine locate_and_compute_interpolation_weigth
+
+!-----------------------------------------------------------------------
+
+subroutine compute_interpolation_weigth(x, y, z, coorV, EtoV, iele, weight, InvV, ndof, norder, nV, nE)
+  use dd_common_mod
+  implicit none
+  integer,                        intent(in)       :: norder, ndof, iele, nV, nE
+  integer,       dimension(4,nE), intent(in)       :: EtoV
+  real,          dimension(3,nV), intent(in)       :: coorV  
+  real(kind=fp),                  intent(in)       :: x,y,z
+  real(kind=fp), dimension(ndof), intent(inout)    :: weight
+  real(kind=fp), dimension(ndof,ndof), intent(in)  :: InvV
+ 
+  real(kind=fp), dimension(:),   allocatable       :: Jpe
+  real(kind=fp)                                    :: P1(3), P2(3), P3(3), P4(3)
+  real(kind=fp)                                    :: r,s,t
+  integer                                          :: i, j 
+
+  allocate(Jpe(ndof))
+  
+  
+  P1(:)=coorV(:,EtoV(1,iele))
+  P2(:)=coorV(:,EtoV(2,iele))
+  P3(:)=coorV(:,EtoV(3,iele))
+  P4(:)=coorV(:,EtoV(4,iele))
+
+  call  Linear_map_xyz_rst(r,s,t,x,y,z,P1,P2,P3,P4)
+  call Jacobi3D_eval(norder, ndof, r, s, t, Jpe)
+
+  weight(:)=0._fp
+   
+  do i=1,ndof
+     do j=1,ndof
+        weight(i) =  weight(i) + Jpe(j)*InvV(j,i)
+     end do
+  end do
+  
+  deallocate(Jpe)
+
+end subroutine compute_interpolation_weigth
+
+!-----------------------------------------------------------------------
+
+subroutine locate_point_in_mesh(it, x, y, z,  EtoV, coorV, nV, nE)
+
+  ! very naive implementation to find the element where (x,y,z) is located 
+
+  use dd_common_mod
+  implicit none
+  integer                                        :: it
+  integer,                        intent(in)     :: nV, nE
+  integer,       dimension(4,nE), intent(in)     :: EtoV
+  real,          dimension(3,nV), intent(in)     :: coorV
+  real(kind=fp),                  intent(in)     :: x,y,z
+  real(kind=fp), dimension(3)                    :: P1,P2,P3,P4
+  logical                                        :: inside
+  integer                                        :: ie
+
+  it = 0 
+  do ie = 1, nE
+
+     P1(:)=coorV(:,EtoV(1,ie))
+     P2(:)=coorV(:,EtoV(2,ie))
+     P3(:)=coorV(:,EtoV(3,ie))
+     P4(:)=coorV(:,EtoV(4,ie))
+
+     call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+
+     if (inside) then
+        it = ie
+        return
+     end if
+
+  end do
+  
+  write(*,*) 'STOP : point ', x,y,z, ' not located in mesh ' 
+  write(*,*) 
+  stop 
+
+end subroutine locate_point_in_mesh
+
+
+subroutine locate_point_in_mesh_v1(it, x, y, z,  EtoV, EtoF, FtoE, coorV, nV, nE, nF)
+
+  ! very naive implementation to find the element where (x,y,z) is located 
+
+  use dd_common_mod
+  implicit none
+  integer                                        :: it
+  integer,                        intent(in)     :: nV, nE, nF
+  integer,       dimension(4,nE), intent(in)     :: EtoV
+  integer,       dimension(4,nF), intent(in)     :: FtoE
+  integer,       dimension(4,nE), intent(in)     :: EtoF
+  real,          dimension(3,nV), intent(in)     :: coorV
+  real(kind=fp),                  intent(in)     :: x,y,z
+  real(kind=fp), dimension(3)                    :: P1,P2,P3,P4
+  logical                                        :: inside
+  integer                                        :: ie, ie_nghb, ie_nghb1
+  integer                                        :: ifac, ifac1
+  integer                                        :: ifacref, ifacref1
+
+  
+  if (it==0) then !! no initial guess 
+
+     do ie = 1, nE !! look over all elements 
+ 
+        P1(:)=coorV(:,EtoV(1,ie))
+        P2(:)=coorV(:,EtoV(2,ie))
+        P3(:)=coorV(:,EtoV(3,ie))
+        P4(:)=coorV(:,EtoV(4,ie))
+
+        call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+        
+
+        if (inside) then
+           it = ie
+           return
+        end if
+        
+     end do
+     it = 0  !! point not in mesh
+
+
+  else !! begin with initial guess 
+
+     ie = it
+     !! check the current element
+     P1(:)=coorV(:,EtoV(1,ie))
+     P2(:)=coorV(:,EtoV(2,ie))
+     P3(:)=coorV(:,EtoV(3,ie))
+     P4(:)=coorV(:,EtoV(4,ie))
+
+     call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+     
+     if (inside) then
+        it = ie
+        return
+     end if
+     
+
+     !! continue by checking neighbours elements      
+      do ifacref = 1, 4
+
+         ! global face numerotation
+         ifac = EtoF(ifacref, ie)
+
+         ! Retrieve the neighbour element index 
+         ie_nghb = sum(FtoE(1:2,ifac)) - ie
+
+          if (ie_nghb > 0) then 
+             !! check the current element
+             P1(:)=coorV(:,EtoV(1,ie_nghb))
+             P2(:)=coorV(:,EtoV(2,ie_nghb))
+             P3(:)=coorV(:,EtoV(3,ie_nghb))
+             P4(:)=coorV(:,EtoV(4,ie_nghb))
+         
+             call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+             
+             if (inside) then
+                it = ie_nghb
+                return
+             end if
+          end if
+      end do
+
+      !!  checking neighbours of neighbours elements      
+      do ifacref = 1, 4
+
+         ! global face numerotation
+         ifac = EtoF(ifacref, ie)
+         ! Retrieve the neighbour element index 
+         ie_nghb = sum(FtoE(1:2,ifac)) - ie
+         
+         if (ie_nghb>0) then
+            do ifacref1 = 1, 4
+               ! global face numerotation
+               ifac1 = EtoF(ifacref1, ie_nghb)
+
+               ! Retrieve the neighbour element index 
+               ie_nghb1= sum(FtoE(1:2,ifac1)) - ie_nghb
+
+               if (ie_nghb1 > 0) then
+                 
+                  !! check the current element
+                  P1(:)=coorV(:,EtoV(1,ie_nghb1))
+                  P2(:)=coorV(:,EtoV(2,ie_nghb1))
+                  P3(:)=coorV(:,EtoV(3,ie_nghb1))
+                  P4(:)=coorV(:,EtoV(4,ie_nghb1))
+         
+                  call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+            
+                  if (inside) then
+                     it = ie_nghb1
+                     return
+                  end if
+               end if
+            end do
+         end if
+      end do
+
+
+      !! the point is not in the vicinity of initial guess : check all
+      
+      do ie =1, nE
+            
+         P1(:)=coorV(:,EtoV(1,ie))
+         P2(:)=coorV(:,EtoV(2,ie))
+         P3(:)=coorV(:,EtoV(3,ie))
+         P4(:)=coorV(:,EtoV(4,ie))
+         
+         call test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+         
+         
+         if (inside) then
+            it = ie
+            return
+         end if
+         
+      end do
+      
+      it = 0 !! point not in mesh
+      
+
+  end if
+
+
+end subroutine locate_point_in_mesh_v1
+
+
+!-----------------------------------------------------
+
+subroutine test_inside_tetra(inside,x,y,z,P1,P2,P3,P4)
+  use dd_common_mod
+  implicit none
+  real(kind=fp), dimension(3), intent(in)     :: P1,P2,P3,P4
+  real(kind=fp),               intent(in)     :: x,y,z
+  logical,                     intent(inout)  :: inside
+
+  real(kind=fp)                               :: r,s,t
+  inside=.false.
+  
+
+  ! inverse linear mapping 
+  call Linear_map_xyz_rst(r,s,t,x,y,z,P1,P2,P3,P4)
+
+  if( r >= -1._fp .and. s >= -1._fp .and. t >= -1._fp .and. r+s+t <= -1._fp) inside=.true.
+
+end subroutine test_inside_tetra
+!!==================================== MAPPING FUNCTIONS ================================================== 
+
+!-------------------------------------------
+
+subroutine rsttoabc(r,s,t,a,b,c,ndof)
+  use dd_common_mod
+  implicit none
+  integer ndof
+  real(kind=fp) r,s,t,a,b,c
+   
+  
+  if (s+t /= 0._fp) then
+     a = 2._fp * (1._fp + r) /  (-s -t ) - 1._fp
+  else
+     a = -1._fp
+  end if
+
+  if (t /= 1._fp) then
+     b = 2._fp * ( 1._fp + s ) / ( 1._fp - t)  - 1._fp
+  else 
+     b = -1._fp
+  end if
+  
+  c = t
+  
+
+end subroutine rsttoabc
+
+! ------------------------------------
+! linear mapping from: I (ref tetrahedron) to T (physical tetraheron)
+!                      (rst) -> (xyz)
+!
+!  ref tetrahdron is defined by 4 vertices : 
+!
+!     V1=(-1,-1,-1)
+!     V2=( 1,-1,-1)
+!     V3=(-1, 1,-1)
+!     V4=(-1, 1, 1)
+!
+!   physical tetrahdron is defined by 4 corresponding verticices  
+!
+!    P1,P2,P3,P4
+!
+!
+subroutine Linear_map_rst_xyz(x,y,z,r,s,t,P1,P2,P3,P4)
+  use dd_common_mod
+  implicit none
+
+  real(kind=FP), dimension(3), intent(in)    :: P1,P2,P3,P4
+  real(kind=FP),               intent(in)    :: r,s,t
+  real(kind=FP),               intent(inout) :: x,y,z
+  
+  real(kind=FP), dimension(3,3)              :: A
+  real(kind=FP), dimension(3)                :: b,c
+
+  A(:,1)=P2(:)-P1(:)
+  A(:,2)=P3(:)-P1(:)
+  A(:,3)=P4(:)-P1(:)
+
+  b(1)=r;b(2)=s;b(3)=t
+  c=0.5_fp * ( matmul(A,b) +  (P2(:)+P3(:)+P4(:)-P1(:)) )
+
+  x=c(1);y=c(2);z=c(3)
+
+end subroutine Linear_map_rst_xyz
+
+!-----------------------------------
+! linear mapping from: T (physical tetrahedron) to I (ref tetraheron)
+!                      (xyz) -> (rst)
+!
+!  ref tetrahdron is defined by 4 vertices : 
+!
+!     V1=(-1,-1,-1)
+!     V2=( 1,-1,-1)
+!     V3=(-1, 1,-1)
+!     V4=(-1, 1, 1)
+!
+!   physical tetrahedron is defined by 4 corresponding verticices  
+!
+!    P1,P2,P3,P4
+!
+!
+subroutine Linear_map_xyz_rst(r,s,t,x,y,z,P1,P2,P3,P4)
+  use dd_common_mod
+  implicit none
+
+  real(kind=FP), dimension(3), intent(in)    :: P1,P2,P3,P4
+  real(kind=FP),               intent(inout) :: r,s,t
+  real(kind=FP),               intent(in)    :: x,y,z
+  
+  real(kind=FP), dimension(3,3)              :: A,iA
+  real(kind=FP), dimension(3)                :: b,c
+  real(kind=FP)                              :: det
+
+  A(:,1)=P2(:)-P1(:)
+  A(:,2)=P3(:)-P1(:)
+  A(:,3)=P4(:)-P1(:)
+
+
+  iA(:,:) = A(:,:)
+
+  call invert(iA,det,3)
+
+  b(1)=x;b(2)=y;b(3)=z
+
+  b(:) = b(:) - 0.5_FP * ( (P2(:)+P3(:)+P4(:)-P1(:)) )
+
+  c = 2._FP * matmul(iA,b)
+
+  r=c(1);s=c(2);t=c(3)
+
+end subroutine Linear_map_xyz_rst
+
+!------------------------------------
+
+!------------------------------------
+!
+! Linear Mapping from face in physical tetra to ref triangle 
+!
+!   ((X,Y,Z) 3D -> (r,s) 2D)
+!
+!
+!  the physical  face consists in 3 points (P1,P2,P3) in R^3
+!  the reference face consists in 3 points (V1,V2,V3) in R^2
+!
+!    V1(-1,-1)  
+!    V2( 1,-1)
+!    V3(-1, 1)
+!
+!    
+subroutine Linear_map_xyz_rs(r,s,X,Y,Z,P1,P2,P3)
+  use dd_common_mod
+  implicit none
+  real(kind=FP), dimension(3), intent(in)    :: P1,P2,P3
+  real(kind=FP),               intent(inout) :: r,s
+  real(kind=FP),               intent(in)    :: x,y,z
+
+  real(kind=FP), dimension(2,2)              :: A,A1,A2,A3
+  real(kind=FP), dimension(2)                :: b,c
+  real(kind=FP)                              :: det,det1,det2,det3
+
+  !! find the non negative det
+  !! test plane (xy)
+  A1(:,1)=P2(1:2)-P1(1:2)
+  A1(:,2)=P3(1:2)-P1(1:2)
+  det1 = A1(1,1)*A1(2,2)-A1(1,2)*A1(2,1)
+
+  !! test plane (xz)
+  
+  A2(1,1)=P2(1)-P1(1)
+  A2(2,1)=P2(3)-P1(3)
+  A2(1,2)=P3(1)-P1(1)
+  A2(2,2)=P3(3)-P1(3)
+  det2 = A2(1,1)*A2(2,2)-A2(1,2)*A2(2,1)
+   
+
+  !! test plan yz
+  A3(1,1)=P2(2)-P1(2)
+  A3(2,1)=P2(3)-P1(3)
+  A3(1,2)=P3(2)-P1(2)
+  A3(2,2)=P3(3)-P1(3)
+  det3 = A3(1,1)*A3(2,2)-A3(1,2)*A3(2,1)
+  
+  if (det1 /= 0._fp) then
+     A=A1
+  else if (det2 /= 0._fp) then
+     A=A2
+  else if (det3 /= 0._fp) then
+     A=A3
+  else
+     write(*,*) 'singular face '
+     stop
+  end if
+
+
+  b(1)=x-0.5_fp*(P2(1)+P3(1)); c(1)=y-0.5_fp*(P2(2)+P3(2));
+  call invert(A,det,2)
+  c = 2._FP * matmul(A,b)
+  r=c(1);s=c(2)
+
+end subroutine Linear_map_xyz_rs
+
+!------------------------------------
+!
+! Linear Mapping from face in physical tetra to ref triangle 
+!
+!   ((r,s) 2D -> (X,Y,Z) 3D)
+!
+!
+!  the physical  face consists in 3 points (P1,P2,P3) in R^3
+!  the reference face consists in 3 points (V1,V2,V3) in R^2
+!
+!    V1(-1,-1)  
+!    V2( 1,-1)
+!    V3(-1, 1)
+!
+!    
+subroutine Linear_map_rs_xyz(X,Y,Z,r,s,P1,P2,P3)
+
+  use dd_common_mod
+  implicit none
+  real(kind=FP), dimension(3), intent(in)    :: P1,P2,P3
+  real(kind=FP),               intent(in)    :: r,s
+  real(kind=FP),               intent(inout) :: x,y,z
+  
+  X =  0.5_FP *(P2(1)-P1(1))*r +  0.5_FP *(P3(1)-P1(1))*s + 0.5_FP * ( (P2(1)+P3(1)) )
+  Y =  0.5_FP *(P2(2)-P1(2))*r +  0.5_FP *(P3(2)-P1(2))*s + 0.5_FP * ( (P2(2)+P3(2)) )
+  Z =  0.5_FP *(P2(3)-P1(3))*r +  0.5_FP *(P3(3)-P1(3))*s + 0.5_FP * ( (P2(3)+P3(3)) )
+
+
+end subroutine Linear_map_rs_xyz
+!
+!
+!------------------------------------
+!!=============================================== basis polynomials evaluation =====================
+subroutine Jacobi_2D_Pk(n,np,Psi,r,s)
+  use dd_common_mod
+  implicit none
+  integer n,np
+  real(kind=fp) Psi(np)
+  real(kind=fp) r,s,a,b
+  double precision x,alp,bet,polya,polyb
+  integer i,j,m
+  
+  ! computation of modal basis funtion evaluated at point (r,s) in reference triangle
+  !
+  call rstoab(r,s,a,b)
+  m=0
+  do j=0,n
+     do i=0,n-j
+
+        m=j+(n+1)*i+1-i*(i-1)/2
+
+        x=a
+        alp=0.d0
+        bet=0.d0
+        call jacobiP(x,alp,bet,i,polya)
+
+        x=b
+        alp=2*i+1
+        bet=0.d0
+        call jacobiP(x,alp,bet,j,polyb)
+        
+        Psi(m)=sqrt(2._fp)*polya*polyb*(1._fp-b)**i
+        
+     end do
+  end do
+
+end subroutine Jacobi_2D_Pk
+
+subroutine Lagrange_2D_pk(n, Psi, Phi, IV)
+
+  use dd_common_mod
+  implicit none
+  integer n
+  real(kind=fp) Psi(n), Phi(n),IV(n,n)
+ 
+  
+  Phi=matmul(IV,Psi)
+
+end subroutine Lagrange_2D_pk
+
+
+!! ================================================== 2D case ==================================================
+!! 2D matrices
+
+subroutine Vandermonde2D( norder, ndof2D, ndof,  coor, V2D, ivV2D, massface, masstri, doftoF, Ftodof)
+  
+  use dd_common_mod
+  implicit none
+  integer norder, ndof, ndof2D
+  integer doftoF(3,ndof),Ftodof(ndof2D,4)
+  real(kind=fp) coor(3,ndof)  ! dof coordinate in reference tetra face
+  real(kind=fp) V2D(ndof2D,ndof2D,4),massface(ndof,4*ndof2D), ivV2D(ndof2D,ndof2D), masstri(ndof2D,ndof2D)
+  real(kind=fp), allocatable ::  invV2D(:,:,:),Amatrix(:,:)
+  real(kind=fp) a,b,det
+
+  integer i, j, k, idof, idof2
+  integer ifac, iface, iface_1
+  integer m, mk, sk
+  integer mk1(4), sk1(4)
+  integer renumerotation_faces(4)
+  logical debug_vm
+  integer, allocatable :: idebug(:,:,:),jdebug(:,:,:)
+  real(kind=fp), allocatable :: xdebug(:,:,:),ydebug(:,:,:)
+
+  !! our convention -> Hesthaven's convention
+  renumerotation_faces(1)=3
+  renumerotation_faces(2)=4
+  renumerotation_faces(3)=2
+  renumerotation_faces(4)=1
+
+  debug_vm=.true.
+  
+  allocate(invV2D(ndof2D,ndof2D,4))
+  allocate(Amatrix(ndof2D,ndof2D))
+  allocate(xdebug(ndof2D,ndof2D,4),ydebug(ndof2D,ndof2D,4))
+  allocate(idebug(ndof2D,ndof2D,4),jdebug(ndof2D,ndof2D,4))
+  massface(:,:) = 0._FP
+  mk=0
+  sk=0
+  idof=0
+  
+  mk=0
+  iface=1
+  do i=0, norder
+     do j=0, norder -i
+        mk=mk+1
+        sk=0
+        do idof=1,ndof2D
+           sk=sk+1
+           m = Ftodof(idof,iface)
+           call rstoab(coor(1,m),coor(2,m),a,b)
+           call Simplex2D(a,b,V2D(sk,mk,iface),i,j)
+           
+           
+        end do
+     end do
+  end do
+  
+  mk=0
+  iface=2
+  do i=0, norder
+     do j=0, norder -i
+        mk=mk+1
+        sk=0
+        do idof=1,ndof2D
+           sk=sk+1
+           m = Ftodof(idof,iface)
+           call rstoab(coor(2,m),coor(3,m),a,b)
+           call Simplex2D(a,b,V2D(sk,mk,iface),i,j)
+          
+        end do
+     end do
+  end do
+
+  mk=0
+  iface=3
+  do i=0, norder
+     do j=0, norder -i
+        mk=mk+1
+        sk=0
+        do idof=1,ndof2D
+           sk=sk+1
+           m = Ftodof(idof,iface)
+           call rstoab(coor(1,m),coor(3,m),a,b)
+           call Simplex2D(a,b,V2D(sk,mk,iface),i,j)
+           
+        end do
+     end do
+  end do
+  
+  mk=0
+  iface=4
+  do i=0, norder
+     do j=0, norder -i
+        mk=mk+1
+        sk=0
+        do idof=1,ndof2D
+           sk=sk+1
+           m = Ftodof(idof,iface)
+           call rstoab(coor(1,m),coor(2,m),a,b)
+           call Simplex2D(a,b,V2D(sk,mk,iface),i,j)
+            
+        end do
+     end do
+  end do
+
+  ! calcul de inv(V2D*V2D^t)
+  do iface=1,4
+     Amatrix(:,:) = 0._fp
+     do i=1,ndof2D
+        do j=1,ndof2D
+           do k=1,ndof2D
+              Amatrix(i,j) = Amatrix(i,j) +  V2D(i,k,iface)*V2D(j,k,iface)
+           end do
+        end do
+     end do
+
+
+     call invert(Amatrix, det, ndof2D)
+    
+     invV2D(:,:,iface) = Amatrix(:,:)
+     
+  end do
+  
+  !! mass in ref triangle : 
+  masstri(:,:)= invV2D(:,:,4)
+
+ 
+  !! inverse vandermonde 2D in ref trinagle 
+  ivV2D= V2D(:,:,4)
+  ivV2D=transpose(ivV2D) !! transposition
+  call invert(ivV2D, det, ndof2D)
+  ! massface for fluxes 
+  mk1(:)=0
+  idof=0
+  do k = 1, norder + 1
+     do j = 1, norder + 2 -k
+        do i = 1, norder + 3 -j -k
+           idof = idof + 1
+           
+
+           sk1(:)=0
+           do ifac = 1, 3  
+
+              if (doftoF(ifac,idof) > 0) then  !! idof is situated on face iface
+
+                 iface = doftoF(ifac,idof)   
+                 mk1(iface) = mk1(iface) + 1
+
+                 do idof2 = 1, ndof2D !! loop on dof in the face iface
+
+                    sk1(iface) = sk1(iface) + 1
+                    m = Ftodof(idof2,iface) !!
+                    iface_1 = renumerotation_faces(iface)
+
+                 
+
+                    massface(idof,idof2 +   ndof2D*(IFACE_1 -1)) = invV2D(mk1(iface),sk1(iface),iface)
+                   
+                 end do
+
+
+              end if
+           end do
+        end do
+     end do
+  end do
+
+  deallocate(invV2D)
+  deallocate(Amatrix)
+
+end subroutine Vandermonde2D
+
+subroutine Simplex2D(a,b,v,i,j)
+
+  use dd_common_mod
+  implicit none
+  real(kind=fp) a,b,v
+  integer n,i,j
+  ! 
+  ! computing Jacobi polynomials 
+  double precision polya,polyb,alp,bet,x
+  x = a 
+  alp=0.d0
+  bet=0.d0
+  n=i
+  call jacobiP(x,alp,bet,N,polya)
+  
+
+   x = b 
+   alp=2*i+1
+   bet=0.d0
+   n=j
+   call jacobiP(x,alp,bet,N,polyb)
+ 
+
+   v = sqrt(2._fp) *  polya * polyb * (1._fp - b)** i
+
+end subroutine Simplex2D
+
+
+subroutine rstoab(r,s,a,b) 
+
+  use dd_common_mod
+  implicit none
+  real(kind=fp) r,s,a,b
+
+  if (s /= 1._fp) then
+     a = 2._fp * (1._fp + r) / (1._fp - s) - 1._fp
+  else 
+     a = -1._fp; 
+  end if
+
+  b = s
+
+end subroutine rstoab
+
+!-----------------------------------------------------------------------
+
+subroutine jacobiP(x,alpha,beta,N,P)
+!! Hesrtaven's subroutine to compute ***NORMALIZED*** Jacobi polynomials
+ 
+  implicit none
+  double precision x,alpha,beta,P
+  double precision, allocatable :: PL(:) 
+  integer N,i
+  double precision,external :: gammaln
+  double precision aold,anew,bnew,gamma0,gamma1,h1
+
+  allocate(PL(N+1))
+
+  ! initial values P_0(x) P_1(x)
+  gamma0 = 2.d0**(alpha+beta+1.d0) / (alpha+beta+1)*exp(gammaln(alpha+1))*&
+       exp(gammaln(beta+1))/exp(gammaln(alpha+beta+1))
+
+  PL(1) = 1.d0 / sqrt(gamma0) 
+
+  if (N==0) then
+     P=PL(1)
+     return
+  end if
+  
+  gamma1 = (alpha+1)*(beta+1)/(alpha+beta+3)*gamma0
+  PL(2) = ((alpha+beta+2)*x/2.d0 + (alpha-beta)/2.d0)/sqrt(gamma1)
+  if (N==1) then
+     P=PL(2)
+     return
+  end if
+
+  aold = 2.d0 / (2.d0 + alpha + beta)*sqrt((alpha+1.d0)*(beta+1.d0)/(alpha+beta+3.d0))
+
+  do i=1,N-1
+     h1 = 2.d0*i+alpha+beta
+     anew = 2.d0/(h1+2.d0) *sqrt( (i+1)*(i+1+alpha+beta)*(i+1+alpha)*(i+1+beta) / (h1+1.d0) / (h1+3.d0) )
+     bnew = - (alpha**2 - beta**2)/h1/(h1+2.d0)
+     PL(i+2) = 1.d0/anew* ( -aold*PL(i) + (x-bnew)*PL(i+1) )
+     aold=anew
+  end do
+  
+  P = PL(N+1)
+
+  deallocate(PL)
+end subroutine jacobiP
+
+!--------------------------------------------------------------------------
+
+subroutine DerjacobiP(x,alpha,beta,N,P)
+  implicit none
+  double precision P,x,alpha,beta
+  integer N
+  P=0.
+  if (N > 0 ) then
+     call JacobiP(x,alpha+1,beta+1, N-1,P)
+     P=sqrt(N*(N+alpha+beta+1))*P
+  end if
+
+
+end subroutine DerjacobiP
+
+!!
+!! numerical recipes gammaln function 
+!! ie compute ln(gamma(x))
+!!
+function gammaln(xx)
+
+  double precision gammaln,xx
+  integer j
+  double precision ser,stp,tmp,x,y,cof(6)
+  SAVE cof,stp
+  DATA cof,stp/76.18009172947146d0,-86.50532032941677d0,24.01409824083091d0,-1.231739572450155d0,&
+       0.1208650973866179d-2,-0.5395239384953d-5,2.5066282746310005d0/
+  x=xx
+  y=x
+  tmp=x+5.5d0
+  tmp=(x+0.5d0)*log(tmp)-tmp
+  ser=1.000000000190015d0
+  do j=1,6
+     y=y+1.d0
+     ser=ser+cof(j)/y
+  end do
+  gammaln=tmp+log(stp*ser/x)
+  return
+
+
+end function gammaln
+
+
+subroutine invert(matrix, det, n)
+  use dd_common_mod
+  integer n
+  real(kind=fp), intent(inout) :: matrix(n,n)
+  real(kind=fp), intent(out) :: det
+
+  !real(kind=fp), dimension(2*size(matrix,1)) :: dd, h
+  !real(kind=fp), dimension(2*size(matrix,1),size(matrix,1)) :: ac, temp
+  real(kind=fp), allocatable :: dd(:),h(:),ac(:,:),temp(:,:) 
+  real(kind=fp) :: min_det=1.e-30
+  !character(len=24) :: chtmp
+  integer :: i, j, L, m, k, max_mag
+
+! *******************************************************************
+!
+! **** matrix_invert (MATRIX INVERSION AND DETERMINANT)
+!
+! **** QUESTIONS:  TRIVENI N. UPADHYAY, AUSTIN,TEXAS  X2207,MS 2186
+!
+! **** PURPOSE:
+!        THIS SUBROUTINE INVERTS n by n NONSINGULAR MATRIX AND
+!        FINDS IT'S DETERMINANT.
+!
+! **** ARGUMENTS:
+!        matrix : INPUT MATRIX OF DIMENSION n by n TO BE INVERTED
+!        n      : DIMENSION OF MATRIX
+!        det    : DETERMINANT OF MATRIX
+!
+! **** PROCEDURE AND LIMITATIONS :
+!          THIS SUBROUTINE USES THE METHOD OF ELEMENTARY
+!        TRANFORMATIONS TO FIND THE INVERSE OF A MATRIX.
+!        THE INPUT MATRIX IS DESTROYED IN COMPUTATION AND THE INVERSE
+!        MATRIX TAKES ITS PLACE. FOR NUMERICAL ACCURACY, ELEMENTARY
+!        TRANSFORMATIONS ARE PERFORMED IN CONJUNCTION WITH THE
+!        'PIVOTAL' ELEMENT METHOD.
+!          IF THE INPUT MATRIX IS SINGULAR (DETERMINANT LESS
+!        THAN min_det), AN ERROR MESSAGE IS PRINTED OUT AND THE
+!        PROGRAM IS TERMINATED.
+
+!!$if(.not.entry_to_logfile_done) then
+!!$  call write_version_number(version, tagname)
+!!$  entry_to_logfile_done = .true.
+!!$endif
+
+  !n = size(matrix,1)
+  
+  !   INITIALIZE
+  allocate(dd(2*n),h(2*n))
+  allocate(ac(2*n,n),temp(2*n,n))
+
+  det = 1.0
+  ac(1:n,:) = matrix(:,:)
+  do j=1,n
+     ac(n+1:2*n,j) = 0.0
+     ac(n+j,    j) = 1.0
+  end do
+  
+  do k=1,n
+     
+     ! FIND  LARGEST ELEMENT IN THE ROW
+     
+     h(k:n) = ac(k,k:n)
+     m = n-k+1
+     L = max_mag(h(k:n),M)+k
+     
+  ! INTERCHANGE COLUMNS IF THE LARGEST ELEMENT IS NOT THE DIAGONAL ELEMENT.
+     
+     if (k-L < 0) then
+        do i=k,2*n
+           dd(i)   = ac(i,k)
+           ac(i,k) = ac(i,L)
+           ac(i,L) = dd(i)
+        end do
+        det = -det
+     end if
+     
+     ! DIVIDE THE COLUMN BY THE LARGEST ELEMENT
+     
+     det = det*ac(k,k)
+     if (abs(det) < min_det) then
+        write(*,'(1pe24.16)') det
+        !call error_mesg('invert','DETERMINANT OF MATRIX ='//chtmp// &
+        !     & ' THE MAGNITUDE OF THE DETERMINANT IS LESS THAN THE MINIMUM ALLOWED. &
+        !     &  THE INPUT MATRIX APPEARS TO BE SINGULAR.',FATAL)
+        write(*,*) 'matrix singular'
+        stop
+     endif
+     h(k:2*n) = ac(k:2*n,k)/ac(k,k)
+     do j=1,n
+        temp(k:2*n,j) = h(k:2*n)*ac(k,j)
+     end do
+     ac(k:2*n,:) = ac(k:2*n,:) - temp(k:2*n,:)
+     ac(k:2*n,k) = h(k:2*n)
+  end do
+  
+  matrix(1:n,:) = ac(n+1:2*n,:)
+  deallocate(ac,dd,h,temp)
+  return
+end subroutine invert
+
+subroutine invert_dp(matrix, det, n)
+  use dd_common_mod
+  integer n
+  double precision, intent(inout) :: matrix(n,n)
+  double precision, intent(out) :: det
+
+  !real(kind=fp), dimension(2*size(matrix,1)) :: dd, h
+  !real(kind=fp), dimension(2*size(matrix,1),size(matrix,1)) :: ac, temp
+  double precision, allocatable :: dd(:),h(:),ac(:,:),temp(:,:) 
+  double precision :: min_det=1.e-30
+  !character(len=24) :: chtmp
+  integer :: i, j, L, m, k, max_mag_dp
+ 
+  !   INITIALIZE
+  allocate(dd(2*n),h(2*n))
+  allocate(ac(2*n,n),temp(2*n,n))
+
+  det = 1.0
+  ac(1:n,:) = matrix(:,:)
+  do j=1,n
+     ac(n+1:2*n,j) = 0.0
+     ac(n+j,    j) = 1.0
+  end do
+    
+  do k=1,n
+     
+     ! FIND  LARGEST ELEMENT IN THE ROW
+     
+     h(k:n) = ac(k,k:n)
+     m = n-k+1
+     L = max_mag_dp(h(k:n),M)+k
+    
+  ! INTERCHANGE COLUMNS IF THE LARGEST ELEMENT IS NOT THE DIAGONAL ELEMENT.
+     
+     if (k-L < 0) then
+        do i=k,2*n
+           dd(i)   = ac(i,k)
+           ac(i,k) = ac(i,L)
+           ac(i,L) = dd(i)
+        end do
+        det = -det
+     end if
+     
+     ! DIVIDE THE COLUMN BY THE LARGEST ELEMENT
+     
+
+     det = det*ac(k,k)
+     if (abs(det) < min_det) then
+        write(*,'(1pe24.16)') det
+        !call error_mesg('invert','DETERMINANT OF MATRIX ='//chtmp// &
+        !     & ' THE MAGNITUDE OF THE DETERMINANT IS LESS THAN THE MINIMUM ALLOWED. &
+        !     &  THE INPUT MATRIX APPEARS TO BE SINGULAR.',FATAL)
+        write(*,*) 'matrix singular'
+        stop
+     endif
+
+
+     h(k:2*n) = ac(k:2*n,k)/ac(k,k)
+     do j=1,n
+        temp(k:2*n,j) = h(k:2*n)*ac(k,j)
+     end do
+     ac(k:2*n,:) = ac(k:2*n,:) - temp(k:2*n,:)
+     ac(k:2*n,k) = h(k:2*n)
+  end do
+  
+  matrix(1:n,:) = ac(n+1:2*n,:)
+  deallocate(ac,dd,h,temp)
+  return
+end subroutine invert_dp
+
+
+
+function max_mag(h,m)
+  use dd_common_mod
+  integer, intent(in) :: m
+  real(kind=fp), intent(in) :: h(m)
+  integer :: max_mag, i
+  real(kind=fp) :: rmax
+  
+  max_mag = 0
+  rmax = abs(h(1))
+  do i=1,m
+     if (abs(h(i)) > rmax ) then
+        rmax = abs(h(i))
+        max_mag = i-1
+     endif
+  end do
+  return
+end function max_mag
+
+function max_mag_dp(h,m)
+  use dd_common_mod
+  integer, intent(in) :: m
+  double precision, intent(in) :: h(m)
+  integer :: max_mag_dp, i
+  double precision :: rmax
+  
+  max_mag_dp = 0
+  rmax = abs(h(1))
+  do i=1,m
+     if (abs(h(i)) > rmax ) then
+        rmax = abs(h(i))
+        max_mag_dp = i-1
+     endif
+  end do
+  return
+end function max_mag_dp
+

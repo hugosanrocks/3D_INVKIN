@@ -1,0 +1,23 @@
+#MASTER Makefile for the TOOLBOX
+include Makefile.inc
+
+SUBDIRS= SU_IO OPTIMIZATION DOMAIN_DECOMP/build_mk  CHECK_POINTING/build_mk
+SUBCLEAN = $(addsuffix .clean, $(SUBDIRS))
+
+all: subdirs
+
+subdirs : $(SUBDIRS)
+
+.PHONY: subdirs $(SUBDIRS) clean $(SUBCLEAN)
+
+subdirs: $(SUBDIRS)
+
+clean: $(SUBCLEAN)
+
+$(SUBDIRS):
+	$(MAKE) -C $@
+
+$(SUBCLEAN): %.clean:
+	$(MAKE) -C $* clean
+
+

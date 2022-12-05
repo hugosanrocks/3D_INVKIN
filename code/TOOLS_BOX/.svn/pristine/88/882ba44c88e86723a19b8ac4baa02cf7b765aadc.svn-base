@@ -1,0 +1,34 @@
+!*********************************************!
+!*    SEISCOPE OPTIMIZATION TOOLBOX          *!
+!*********************************************!
+! The routine normL2 returns the Euclidian    !
+! norm of a vector x of size n                !
+!---------------------------------------------!
+! INPUT  : integer n                          !
+!          real,dimension(n) x                !
+! OUTPUT : real norm_x                        !
+!---------------------------------------------!
+subroutine normL2(n,x,norm_x,my_mpi_comm)
+
+  use mpi
+ 
+  implicit none
+
+  !IN
+  integer :: n
+  real,dimension(n) :: x
+  !IN/OUT
+  real :: norm_x
+  !Local variables
+  integer :: i, ierr_mpi, my_mpi_comm
+  
+  norm_x=0.
+  do i=1,n
+     norm_x=norm_x+x(i)**2
+  enddo
+
+  call MPI_allreduce(MPI_IN_PLACE,norm_x,1,MPI_REAL,MPI_SUM,my_mpi_comm,ierr_mpi)
+
+  norm_x=sqrt(norm_x)
+  
+end subroutine normL2

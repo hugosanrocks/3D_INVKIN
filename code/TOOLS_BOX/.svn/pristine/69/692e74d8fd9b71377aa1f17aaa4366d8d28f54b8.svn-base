@@ -1,0 +1,1434 @@
+ 
+
+% \usepackage{vmargin}
+% \usepackage{graphicx}
+% \usepackage{nicefrac}
+% \usepackage{tikz}
+% \usetikzlibrary{trees}
+% \usepackage{listings}
+
+\documentclass[a4paper,twoside,final,onecolumn,11pt,openright]{article}
+%\documentclass[a4paper,11pt,twoside,openright]{article}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% packages
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\usepackage{epsfig}
+\usepackage{natbib}
+\usepackage{graphicx}         % image
+\usepackage[utf8x]{inputenc} 
+\usepackage[english]{babel}
+
+\usepackage{fancyhdr}         %gestion entete /pied de pages
+\usepackage{amsmath}
+ \usepackage{amssymb}
+\usepackage{amsfonts}
+\DeclareMathAlphabet{\mathsl}{OT1}{cmss}{m}{sl}
+\renewcommand{\floatpagefraction}{1.0}
+\renewcommand{\topfraction}{1.0}
+\renewcommand{\bottomfraction}{0.0}
+\renewcommand{\textfraction}{0.0}
+\usepackage{algorithms/algorithm}
+\usepackage{algorithms/algorithmic}
+\usepackage{url}
+\usepackage{hyperref}
+\hypersetup{
+dvips,
+%colorlinks=true,
+%urlcolor= blue,
+backref=true,
+pagebackref=true,
+breaklinks=true,
+bookmarks=true,
+bookmarksopen=true,
+%linkcolor= blue,
+hyperindex=true,
+}
+
+
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{3}
+\setcounter{totalnumber}{4}
+\def \mathbb #1{{\cal #1}}
+
+\usepackage{tikz}
+ \usetikzlibrary{trees}
+ \usepackage{listings}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% mise en page
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%\textheight = 210.0 true mm
+\textwidth  = 164.0 true mm
+
+%\textheight = 220 true mm  
+\textheight = 225 true mm
+%\textwidth = 164 true mm
+\textwidth = 158 true mm
+
+\marginparwidth = 0 mm
+\marginparsep = 0 mm
+%\evensidemargin = -0.5 cm  
+%\oddsidemargin = 0. cm
+\evensidemargin = +0.3 cm
+\oddsidemargin = 0.3 cm
+
+%%\topmargin 0.7 cm
+%\topmargin 0.5 cm
+%\topmargin 0.2 cm
+\topmargin 0. cm
+
+%%\topmargin -1. cm
+
+\setlength{\parskip}{1ex plus 0.5ex minus 0.2ex}%{1.2ex plus .9ex minus .4ex}
+%\textheight = 210.0 true mm
+%\textwidth = 180.0 true mm
+
+% marge gauche des pages paires
+%\setlength{\evensidemargin} { -8 true mm}
+\setlength{\parindent}{0 mm}
+% marge gauche des pages impaires
+%\setlength{\oddsidemargin }{ -8 true mm}
+
+\newcommand{\entetepaire}{SEISCOPE Project}
+\newcommand{\enteteimpaire}{SEISCOPE OPTIMIZATION TOOLBOX MANUAL}
+
+\fancypagestyle{monstyle}{
+\fancyhf{}
+\fancyhead[LE]{\entetepaire}
+\fancyhead[RO]{\enteteimpaire}
+\fancyfoot[CE,CO]{\thepage}}
+\pagestyle{monstyle}
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%         Macro equations
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%% debut macro %%%%
+\makeatletter
+\renewcommand\theequation{\thesection.\arabic{equation}}
+\@addtoreset{equation}{section}
+\makeatother
+
+\begin{document}
+
+\title{SEISCOPE OPTIMIZATION TOOLBOX MANUAL}
+
+%TO MODIFY
+\date{code version 1.1 - SVN revision 16394 - March 2018\\
+code version 1.0 - SVN revision 3873 - July 2014}
+%\date{code version 1.0 - SVN revision 3873 - July 2014}
+
+\author{{\Large{Ludovic M\'etivier, Laure Tavard}} \\
+{\it{ludovic.metivier@univ-grenoble-alpes.fr, laure.tavard@univ-grenoble-alpes.fr}}}
+
+\maketitle
+
+$\;$ \\[2 cm]
+	
+{\huge{\bf{\centerline{SEISCOPE Consortium}}}} 
+{\large{\bf{\centerline{\url{http://seiscope2.osug.fr}}}}} 
+	
+$\;$ \\[1 cm]
+
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=12 cm]{logo}
+\end{center}
+\label{figlogo}
+\end{figure}
+
+ \newpage
+ \strut
+ \newpage
+
+\section*{Legal statement}
+\small
+\begin{verbatim}
+Copyright 2013-2016 SEISCOPE II project, All rights reserved.
+
+Redistribution and use in source and binary forms, with or
+without modification, are permitted provided that the following
+conditions are met:
+
+    *  Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+    *  Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials provided
+       with the distribution.
+    *  Neither the name of the SEISCOPE project nor the names of
+       its contributors may be used to endorse or promote products
+       derived from this software without specific prior written permission.
+
+Warranty Disclaimer:
+THIS SOFTWARE IS PROVIDED BY THE SEISCOPE PROJECT AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+SEISCOPE PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+\end{verbatim}
+\normalsize
+
+\section*{Acknowledgments}
+The SEISCOPE OPTIMIZATION TOOLBOX codes have been developed in the framework of the SEISCOPE and SEISCOPE II consortia and we thank
+the sponsors of these projects. We also thank the French National Center for Scientific Research (CNRS) for his support. Access to the high  performance computing facilities of the meso-center CIMENT (Univ. Grenoble Alpes, Fr, https://ciment.ujf-grenoble.fr/) provided the required computer resources to develop this package
+
+\newpage
+\section*{Conditions of use}
+ The SEISCOPE OPTIMIZATION TOOLBOX code is provided open-source (see Legal Statement). Please refer to the following article in any publication that would use this toolbox
+\begin{itemize}
+ \item The SEISCOPE Optimization Toolbox: A large-scale nonlinear optimization library based on reverse communication, 2016, Geophysics, L. M\'etivier and R. Brossier, \citet{Metivier_2015_SOT}.
+\end{itemize}
+
+ Examples of applications of this toolbox in the framework of seismic imaging through full waveform inversion can be found in the two publications
+\begin{itemize}
+ \item Full Waveform Inversion and the truncated Newton method: Quantitative imaging of complex subsurface structures, 2014, Geophysical Prospecting, L. M\'etivier, R. Brossier, S. Operto, J. Virieux, DOI: 10.1111/1365-2478.12136, \citet{Metivier_2014_FWI} 
+ \item Full Waveform Inversion and the Truncated Newton Method, L.M\'etivier, R.Brossier, J.Virieux, S.Operto,  2013, SIAM J. Sci. Comput, 35(2), B401-B437, \citet{Metivier_2013_TRU}
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\section{Introduction}
+The SEISCOPE OPTIMIZATION TOOLBOX is a library of optimization routines developed in \texttt{FORTRAN 90} for solving unconstrained and bound constrained nonlinear large-scale minimization problems. Six optimization methods are implemented.
+\begin{enumerate}
+ \item The (preconditioned) steepest descent.
+ \item The (preconditioned) nonlinear conjugate gradient.
+ \item The $l$-BFGS method.
+ \item The preconditioned $l$-BFGS method.
+ \item The truncated Newton method.
+ \item The preconditioned truncated Newton method.
+\end{enumerate}
+The library is self-consistent: no other existing \texttt{FORTRAN} libraries are needed to use the code. All the routines of the SEISCOPE OPTIMIZATION TOOLBOX are implemented in a reverse communication framework to facilitate their use. 
+
+This manual is organized as follows:
+\begin{itemize}
+ \item In Section 2, we give a quick overview of the different optimization methods available in the SEISCOPE OPTIMIZATION TOOLBOX. References to detailed presentation of the algorithms which are implemented are given.
+ \item In Section 3, we present how to install the SEISCOPE OPTIMIZATION TOOLBOX. For each of the optimization routines, a simple test case is provided. The corresponding programs should be used as templates for using the SEISCOPE OPTIMIZATION TOOLBOX routines. 
+ \item In Section 4, we present in details how to use each of the optimization routines.
+ \item In Section 5, additional information on some technical points are given. 
+\end{itemize}
+The information contained in the manual is redundant: there is no many differences in the use of the different routines. However, we prefer repeating the information. The user can directly read the part corresponding to the routine he wants to use without having to real all the documentation about the other routines. 
+
+\newpage 
+\section{An overview of the routines in the toolbox}
+The routines implemented in the SEISCOPE OPTIMIZATION TOOLBOX are designed to solve unconstrained and bound constrained nonlinear minimization problems, under the general form
+\begin{equation}
+\label{min_pb}
+ \min_{x\in\Omega} f(x)
+\end{equation}
+where 
+\begin{equation}
+ \Omega=\prod_{i=1}^n [a_i, b_i] \subset \mathbb{R}^n\;\; n \in \mathbb{N}
+\end{equation}
+
+All the routines belong to the class of local descent algorithms. From an initial guess $x_{0}$, a sequence of iterates is built following the recurrence
+\begin{equation}
+\label{min_seq}
+ x_{k+1}=x_k+\alpha_k \Delta x_k,
+\end{equation}
+where 
+\begin{itemize}
+ \item $\alpha_k$ is a steplength; 
+ \item $\Delta x_k$ is a descent direction.
+\end{itemize}
+The recurrence \eqref{min_seq} is repeated until convergence is reached (in a certain sense). The steplength $\alpha_k$ is computed through a linesearch process which is the same for all the routines in the TOOLBOX. This linesearch process satisfies the Wolfe conditions: this ensures that from an arbitrary initial guess, convergence toward a \textbf{local} minimum will be obtained, provided $f(x)$ is bounded (and sufficiently smooth) \citep{Nocedal_2006_NO}. The satisfaction of the bound constraints is ensured through the projection of each iterate within the feasible domain $\Omega$ in the linesearch process. 
+
+The computation of the descent direction differs from one routine to the other. The different routines which are implemented in the SEISCOPE OPTIMIZATION TOOLBOX are presented in the following.
+\subsection{Preconditioned steepest descent: PSTD}
+
+The preconditioned steepest descent uses the following descent direction
+\begin{equation}
+ \Delta x_k=-P_k\nabla f(x_k),
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $P_k$ is an arbitrary preconditioning matrix. 
+\end{itemize}
+Following the reverse communication implementation ot the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the solver for using the PSTD routine is thus
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function multiplied by the preconditioner $P_k\nabla f(x_k)$ for a given $x_k$ where $P_k$ is the preconditioner
+\end{itemize}
+Note that if the user does not have any preconditioner at hand, the use of the identity is possible. The method thus reduces to a standard steepest-descent method. 
+
+\subsection{Preconditioned nonlinear conjugate gradient: PNLCG}
+
+The preconditioned nonlinear conjugate gradient method uses the following descent direction
+\begin{equation}
+\label{nlcg}
+ \Delta x_k=-P_k\nabla f(x_k)+ \beta_k \Delta x_{k-1},
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $P_k$ is an arbitrary preconditioning matrix; 
+ \item $\beta_k$ is computed following the formula of \citet{DAI_1999_NCG}.
+\end{itemize}
+Following the reverse communication implementation of the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the solver for using the PNLCG routine is thus
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function multiplied by the preconditioner $P_k\nabla f(x_k)$ for a given $x_k$ where $P_k$ is the preconditioner
+\end{itemize}
+Note again that if the user does not have preconditioner at hand, the use of the identity is possible. The method thus reduce to a standard nonlinear conjugate gradient method.
+
+\subsection{Quasi-Newton $l$-BFGS method: LBFGS}
+
+The $l$-BFGS method uses the following descent direction
+\begin{equation}
+ \Delta x_k=-Q_k\nabla f(x_k),
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $Q_k$ is the $l$-BFGS approximation of the inverse Hessian operator $H(x_k)^{-1}=\nabla^2 f(x_k)^{-1}$ (more details on this approximation can be found in \citet{Byrd_1995_LMB,Nocedal_2006_NO}). 
+\end{itemize}
+Following the reverse communication implementation ot the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the LBFGS routine is thus 
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for a given $x_k$.
+\end{itemize}
+The $l$-BFGS approximation $Q_k$ is directly determined by the LBFGS routine. No specific action of the user is requested to compute it.  
+
+\subsection{Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}
+
+The preconditioned $l$-BFGS method uses the following descent direction
+\begin{equation}
+ \Delta x_k=-\tilde{Q}_k\nabla f(x_k),
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $\tilde{Q}_k$ is the $l$-BFGS approximation of the inverse Hessian operator $H(x_k)^{-1}=\nabla^2 f(x_k)^{-1}$ computed from an initial estimation $P_k$ of $H(x_k)^{-1}$ (more details on this approximation can be found in \citet{Byrd_1995_LMB,Nocedal_2006_NO}). 
+\end{itemize}
+Following the reverse communication implementation ot the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the LBFGS routine is thus 
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for  a given $x_k$;
+ \item the preconditioned gradient of the cost function $P_0\nabla f(x_0)$ at the first iteration; 
+ \item the multiplication of a given vector $v$ by a preconditioning matrix $P_k$ provided by the user: $P_kv$.
+\end{itemize}
+The only difference with the LBFGS routine is that an additional information $P_k$ on the inverse Hessian approximation is inserted in the computation of $Q_k$. For the user, this amounts to a preconditioning operation, since this information is taken into account by multiplying a vector by $P_k$. \textit{This can drastically enhance the convergence of the conventional $l$-BFGS algorithm.} 
+
+\subsection{Truncated Newton method: TRN}
+
+The truncated Newton method computes an approximate solution of the linear system
+\begin{equation}
+ H(x_k)\Delta x_k=-\nabla f(x_k),
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $H(x_k)$ is the Hessian operator $H(x_k)=\nabla^2 f(x_k)$.
+\end{itemize}
+This approximate solution of the linear system is computed through a matrix-free conjugate gradient algorithm. The stopping criterion for this system is
+\begin{equation}
+\|H(x_k)\Delta x_k+\nabla f(x_k)\|\leq \eta_k \|\nabla f(x_k)\|;
+\end{equation}
+where $\eta_k$ is a forcing term which depends on the gradient current and previous value (see \citet{Eisenstat_1994_TRN,Metivier_2013_TRU} for more details). 
+
+Following the reverse communication implementation of the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the TRN routine is thus 
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for  a given $x_k$;
+ \item the multiplication of a given vector $v$ by the Hessian matrix $H(x_k)$: $H(x_k)v$.
+\end{itemize}
+
+\subsection{Preconditioned truncated Newton method: PTRN}
+
+The preconditioned truncated Newton method computes an inexact solution of the linear system
+\begin{equation}
+ P_kH(x_k)\Delta x_k=-P_k \nabla f(x_k),
+\end{equation}
+where 
+\begin{itemize}
+ \item $\nabla f(x_k)$ is the gradient of the function $f(x_k)$ at point $x_k$;
+ \item $H(x_k)$ is the Hessian operator $H(x_k)=\nabla^2 f(x_k)$;
+\item $P_k$ is a preconditioning matrix.
+\end{itemize}
+This inexact solution of the linear system is computed through a matrix-free conjugate gradient algorithm. The stopping criterion for this system is
+\begin{equation}
+\|H(x_k)\Delta x_k+\nabla f(x_k)\|\leq \eta_k \|\nabla f(x_k)\|,
+\end{equation}
+where $\eta_k$ is a forcing term which depends on the gradient current and previous value (see \citet{Eisenstat_1994_TRN,Metivier_2013_TRU} for more details). 
+
+Following the reverse communication implementation ot the SEISCOPE OPTIMIZATION TOOLBOX, the information the user has to provide to the PTRN routine is thus 
+\begin{itemize}
+ \item the cost function $f(x_k)$ for  a given $x_k$;
+ \item the gradient of the cost function $\nabla f(x_k)$ for  a given $x_k$;
+ \item the multiplication of a given vector $v$ by the preconditioner $P_k$: $P_kv$;
+ \item the multiplication of a given vector $v$ by the Hessian matrix $H(x_k)$: $H(x_k)v$.
+\end{itemize}
+
+\newpage
+\section{Installation}
+
+To install the SEISCOPE OPTIMIZATION TOOLBOX, the user first has to decompress the file \texttt{SEISCOPE\_OPTIMIZATION\_TOOLBOX.tgz}. This is achieved through the command
+\\
+\\
+\texttt{tar -xvzf SEISCOPE\_OPTIMIZATION\_TOOLBOX.tgz}
+\\
+\\
+This command will create the following directories
+
+\vspace{0.5cm}
+\tikzstyle{every node}=[draw=black,thick,anchor=west]
+\tikzstyle{selected}=[draw=red,fill=red!30]
+\tikzstyle{optional}=[dashed,fill=gray!50]
+ \begin{tikzpicture}[
+  grow via three points={one child at (0.5,-0.7) and
+  two children at (0.5,-0.7) and (0.5,-1.4)},
+  edge from parent path={(\tikzparentnode.south) |- (\tikzchildnode.west)}
+  ]
+  \node[dashed,fill=gray!50] {\texttt{Makefile.inc}};
+  \end{tikzpicture}
+ 
+ \begin{tikzpicture}[
+  grow via three points={one child at (0.5,-0.7) and
+  two children at (0.5,-0.7) and (0.5,-1.4)},
+  edge from parent path={(\tikzparentnode.south) |- (\tikzchildnode.west)}
+]
+   \node {OPTIMIZATION}    
+     child { node {COMMON}}		
+     child { node {DOC}}
+     child { node {PSTD}}
+     child { node {PNLCG}}
+     child { node {LBFGS}} 
+     child { node {PLBFGS}}
+     child { node {TRN}}
+     child { node {PTRN}}
+     child { node {lib}}
+     child { node [optional] {\texttt{Makefile}}}
+     child { node [optional]{\texttt{00README}}}
+     child { node [optional]{\texttt{00LEGAL\_STATEMENT}}};          
+ \end{tikzpicture}
+
+\vspace{0.5cm}
+
+The SEISCOPE OPTIMIZATION TOOLBOX is used as a static library. This means that the set of routines are gathered in a file \texttt{*.a} after the compilation. This library has to be linked by the program calling the routines from the SEISCOPE OPTIMIZATION TOOLBOX. Examples are provided in the sequel for generating small test programs. 
+
+\subsection{Compilation}
+\paragraph*{Notes on hard coded data values to ensure the success of the compilation}
+Due to the use of different clusters (and "old" compilers), we decided to replace the use of \texttt{NEWUNIT} statement (Fortran2008) in some subroutines by hard-coding the value of the unit number specifier in the \texttt{COMMON/include/optim\_type.h} file.\\
+The value is set as above\\
+\texttt{INTEGER :: iunit = 14}.\\
+If users encounter an issue, this value can be initialized with an other value.
+
+In this section and the next one, \texttt{[ ]}  means optional arguments.\\
+
+For compiling the library and generate the file \texttt{libSEISCOPE\_OPTIM.a}, the user first has to open the file \texttt{Makefile.inc} and define which compiler should be used. This is done by editing the first lines of \texttt{Makefile.inc}. \\
+ The default compiler is \texttt{ifort} (see at the end of this section to use GNU compiler):
+\\
+\\
+\texttt{FC    =   ifort}
+\\
+\\
+Different compilation options can be chosen by modifying the macro \texttt{FFLAGS}. The default option is 
+\\
+\\
+\texttt{FFLAGS  =  -O3 -assume byterecl}. 
+\\
+\\
+Once this is done, the user simply has to type in the terminal the command
+\\
+\\
+\texttt{make [-s]}
+\\
+\\
+This will generate the file \texttt{libSEISCOPE\_OPTIM.a} in the directory \texttt{./lib}.
+\\
+\\
+It is possible to test the installation. The user has to type
+\\
+\\
+\texttt{make test}
+\paragraph{Clean generated files} It is possible to remove all generated files by the compilation (objects and library files) and the test phase (results files) by typing the command
+\\
+\\
+\texttt{make distclean} \hspace{1cm} or \hspace{1cm} \texttt{make clean \&\& make testclean}
+
+\paragraph{GNU or IBM compilers}To use GNU compiler and options, the user has to add \texttt{GNU=1} or \texttt{XL=1} at the end of each command line. For example:\\
+\texttt{make GNU=1} or \texttt{make XL=1}\\
+\texttt{make test GNU=1} or \texttt{make test XL=1}
+
+\paragraph{To generate a log file}, the user can type the above command line:\\
+\texttt{make test [GNU=1] | tee test.log}  \hspace{2em}  \# - with all the details\\
+\texttt{make test [GNU=1] -s | tee test.log}\hspace{1em}  \# - only results output
+
+
+\subsection{Compiling and running the test programs}
+In this section, \texttt{[ ]}  means optional arguments.\\
+
+Once the library has been compiled, the test programs can be compiled and executed. For each optimization method, the directory is organized as follows:
+
+ \begin{tikzpicture}[
+  grow via three points={one child at (0.5,-0.7) and
+  two children at (0.5,-0.7) and (0.5,-1.4)},
+  edge from parent path={(\tikzparentnode.south) |- (\tikzchildnode.west)}
+]
+   \node {\textit{method}}
+      child { node [optional] {\texttt{Makefile}}}
+      child { node {lib}}
+      child { node {kernel}}      
+       child { node {test}
+        child { node {run}} 
+        child { node {bin}}   
+	child { node {src}
+                   child { node [optional] {\texttt{test.f90}}}
+                    }        
+       };  
+ \end{tikzpicture}
+
+\vspace{0.5cm}
+
+The source code of the test program is in the file \texttt{test.f90}. The test consists in the minimization of the 2D Rosenbrock function. 
+\begin{equation}
+ f(x_1,x_2)  = (1-x_1)^2+100(x_2-x_1^2)^2
+\end{equation}
+This function is famous in the optimization community as an example of a non-convex function with a global minimum in a narrow flat shaped valley. The convergence to this global minimum is difficult. The source code of the Rosenbrock function is in
+\\
+\\
+\texttt{OPTIMIZATION/COMMON/test/rosenbrock.f90}. 
+\\
+\\
+The function \texttt{Rosenbrock(x,fcost,grad)} computes the cost function and its gradient at point \texttt{x} and return their values in \texttt{fcost} and \texttt{grad} respectively. 
+
+The function \texttt{Rosenbrock\_Hess(x,d,Hd)} computes the product of the vector \texttt{d} by the Hessian operator $H(x)$ and return the value in \texttt{Hd}. \\
+
+\vspace{0.5cm}
+
+To compile the test program, the \texttt{Makefile} is in the directory \texttt{OPTIMIZATION/\textit{method}/} and linked to the \texttt{Makefile.inc} located at the level of the \texttt{OPTIMIZATION} directory. The user can edit the \texttt{Makefile.inc} to set the compiler. The default one is \texttt{ifort}:
+\\
+\\
+\texttt{FC    =   ifort}
+\\
+\\
+Again, different compilation options can be chosen by modifying the macro \texttt{FFLAGS}. The default option is 
+\\
+\\
+\texttt{FFLAGS  =  -O3 -assume byterecl}. 
+\\
+\\
+Once this is done, the compilation is done by typing 
+\\
+\\
+\texttt{make [GNU=1 or XL=1] \&\& make test [GNU=1 or XL=1]}
+\\
+\\
+in the directory \texttt{OPTIMIZATION/\textit{method}}. This will automatically create the test object files, link them to the library ande run the executable 
+\\
+\\
+\texttt{OPTIMIZATION/\textit{method}/test/bin/test.bin}
+\\
+\\
+For all the test cases, we compare the obtained results with the analytical solution of the Rosenbrok function wich is $x\_exact=(1,1)$.
+\\
+\\
+The output on the console should be (for the PSTD algorithm)
+\\
+\\
+\texttt{
+---------------------------------------------\\
+ FINAL iterate is :    1.000495       1.000981\\
+ See the convergence history in iterate\_ST.dat\\
+ --- OPTIMIZATION PSTD .............*** Passed\\
+ ---------------------------------------------
+}
+\\
+\\
+The compiled files (objects and executable files) can be removed by typing the command
+\\
+\\
+\texttt{make distclean} (or \texttt{make clean \&\& make testclean})
+\\
+in the directory \texttt{OPTIMIZATION/\textit{method}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\newpage 
+\section{How to use the optimization routines?}
+
+All the routines of the SEISCOPE OPTIMIZATION TOOLBOX are implemented in a reverse communication form. The function $f(x)$ is minimized in a loop in which at each iteration, the solver from the SEISCOPE OPTIMIZATION TOOLBOX is called. In return, a communication FLAG tells the user the action he has to perform. These actions can be listed as: 
+\begin{itemize}
+ \item compute the cost function;  
+ \item compute the gradient;
+ \item apply the preconditioner; 
+ \item apply the Hessian operator.
+\end{itemize}
+
+
+To use the optimization routines of the SEISCOPE OPTIMIZATION TOOLBOX, \textit{we recommend the user to use the test files in the directory of each optimization routines as template files.} We describe in details these templates files in the following subsections.  
+
+\subsection{Preconditioned Steepest Descent: PSTD}
+
+\subsubsection{Variables declaration}
+The first step for using the PSTD method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by PSTD.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the vector \texttt{grad\_preco}, which corresponds to the preconditioned gradient of the cost function $f$ at $x$: $P\nabla f(x) \in \mathbb{R}^{n}$.  
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the PSTD routine and the user. 
+\end{enumerate}
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PSTD/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section). 
+\item Set the flag for printing output: if \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise.
+\item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+ \item Set the level of of information in the output file \texttt{iterate\_ST.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed, otherwise, if it is set to \texttt{false}, the file \texttt{iterate\_ST.dat} will contain only the convergence history (see \ref{ls_info} for more details).
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad}. 
+\item VERY IMPORTANT: multiply the gradient by the preconditioner and store the result in \texttt{grad\_preco}. Note that if no preconditioner is available, you simply have to copy \texttt{grad} in \texttt{grad\_preco}. This means that the preconditioner is identity. In this case the PSTD method is a standard steepest descent method (without preconditioning). 
+\end{enumerate}
+\textit{It is very important that \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco }are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver PSTD.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PSTD/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied (or the maximum number of iteration has been reached), in this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the PSTD solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the PSTD routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco }contain respectively $f(x_0)$, $\nabla f(x_0)$ and $P_0\nabla f(x_0)$. 
+\item On return of the call to the PSTD routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}. If the user wants, he can also apply a preconditioner to the gradient value. In this case, the value $P_k \nabla f(x)$ is stored in \texttt{grad\_preco}. Note that the preconditioner can change throughout the iterations. 
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PSTD/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using PSTD. 
+
+The convergence history is written in the file \texttt{iterate\_ST.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iteration. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $7$ columns the convergence history.
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient. 
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the total number of gradient computation.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/PSTD/iterate_ST.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_ST.dat}.} 
+\end{center} 
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\subsection{Preconditioned nonlinear conjugate gradient: PNLCG}
+
+\subsubsection{Variables declaration}
+The first step for using the PNLCG method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by PNLCG.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+\item Declare the vector \texttt{grad\_preco}, which corresponds to the gradient of the cost function $f$ at $x$ multiplied by the preconditioner: $P_k\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the PNLCG routine and the user.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PNLCG/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section).
+\item  Set the flag for printing output: \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise. 
+ \item Set the level of of information in the output file \texttt{iterate\_CG.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed, otherwise, if it is set to \texttt{false}, the file \texttt{iterate\_ST.dat} will contain only the convergence history (see \ref{ls_info} for more details).
+\item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad}
+\item VERY IMPORTANT: multiply the gradient by the preconditioner and store the result in \texttt{grad\_preco}. Note that if no preconditioner is available, you simply have to copy \texttt{grad} in \texttt{grad\_preco}. This means that the preconditioner is identity. In this case the PNLCG method is a standard nonlinear conjugate gradient (without preconditioning). 
+\end{enumerate}
+\textit{It is very important that \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco} are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver PNLCG.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PNLCG/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied. In this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the PNLCG solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the PNLCG routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco }contain respectively $f(x_0)$, $\nabla f(x_0)$ and $P_0\nabla f(x_0)$. 
+\item On return of the call to the PNLCG routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}. The user also has the possibility of using his preconditioner. To do so he has to compute $P_k\nabla f(x)$ and store it in the variable \texttt{grad\_preco}. Note that the preconditioner can change throughout the iterations. If no preconditioner is available, the user has to copy the gradient value $\nabla f(x)$ in \texttt{grad\_preco}. In this case, the PNLCG method is equivalent to a nonlinear conjugate gradient method. 
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PNLCG/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using the PNLCG. 
+
+The convergence history is written in the file \texttt{iterate\_PC.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iteration. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $7$ columns the convergence history. 
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient.
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the total number of gradient computation.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/PNLCG/iterate_CG.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_CG.dat}.} 
+\end{center} 
+\end{figure}
+
+
+
+% \textbf{Remark.}\textit{ The difference in use for PSTD and PNLCG is related to the use of the preconditioner. In PSTD, the preconditioner applies directly to the variable \texttt{grad}, which contains $P_k\nabla f(x)$. In PNLCG, two variables are used: \texttt{grad} and \texttt{grad\_preco}. The variable \texttt{grad} contains the gradient $\nabla f(x)$. The variable \texttt{grad\_preco} contains the preconditioned gradient $P_k\nabla f(x)$.}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage 
+\subsection{Quasi-Newton $l$-BFGS method: LBFGS}
+
+\subsubsection{Variables declaration}
+The first step for using the LBFGS method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by LBFGS.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the LBFGS routine and the user.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/LBFGS/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section). 
+\item  Set the flag for printing output: \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise.
+ \item Set the level of of information in the output file \texttt{iterate\_LB.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed, otherwise, if it is set to \texttt{false}, the file \texttt{iterate\_LB.dat} will contain only the convergence history (see \ref{ls_info} for more details).
+\item Set the maximum number of pairs of vectors which will be used to compute the $l$-BFGS approximation of the inverse Hessian. This is the variable \texttt{optim\%l}. Usual choices for $l$ go from $3$ to $40$. 
+\item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad} 
+\end{enumerate}
+\textit{It is very important that \texttt{fcost}, and \texttt{grad} are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver LBFGS.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/LBFGS/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied. In this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the LBFGS solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the LBFGS  routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost} and \texttt{grad} contain respectively $f(x_0)$ and $\nabla f(x_0)$.
+\item On return of the call to the LBFGS routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/LBFGS/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using LBFGS. 
+
+The convergence history is written in the file \texttt{iterate\_LB.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iteration. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $7$ columns the convergence history. 
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient.
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the total number of gradient computation.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/LBFGS/iterate_LB.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_LB.dat}.} 
+\end{center}
+ \end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\subsection{Quasi-Newton preconditioned $l$-BFGS method: PLBFGS}
+
+\subsubsection{Variables declaration}
+The first step for using the PLBFGS method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by PLBFGS.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the vector \texttt{grad\_preco}, which corresponds to the gradient of the cost function $f$ at $x$ multiplied by the preconditioner: $P_k\nabla f(x) \in \mathbb{R}^{n}$. This structure is used only at the first iteration.
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the PLBFGS routine and the user.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PLBFGS/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section). 
+\item  Set the flag for printing output: \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise.
+ \item Set the level of of information in the output file \texttt{iterate\_PLB.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed, otherwise, if it is set to \texttt{false}, the file \texttt{iterate\_LB.dat} will contain only the convergence history (see \ref{ls_info} for more details).
+\item Set the maximum number of pairs of vectors which will be used to compute the $l$-BFGS approximation of the inverse Hessian. This is the variable \texttt{optim\%l}. Usual choices for $l$ go from $3$ to $40$. 
+item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad} 
+\item VERY IMPORTANT: apply the preconditioner ONLY AT FIRST ITERATION on the gradient; \texttt{grad\_preco} should contain $P_0\nabla f(x_0)$ at initialization. This has to be done only at initialization. The preconditioning operations within the loop  need not act on the gradient \texttt{grad}.
+\end{enumerate}
+\textit{It is very important that \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco} are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver PLBFGS.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PLBFGS/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied. In this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the PLBFGS solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the PLBFGS  routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco} contain respectively $f(x_0)$, $\nabla f(x_0)$ and  $P_0\nabla f(x_0)$.
+\item On return of the call to the PLBFGS routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}.
+\item On return of the call to the PLBFGS routine, if the communication flag is 'PREC' then the user has the possibility of applying his preconditioner. To do so, the user must multiply the vector \texttt{optim\%q\_plb} by the preconditioner $P_k$, and store the result directly in \texttt{optim\%q\_plb}. The old value of \texttt{optim\%q\_plb} does not have to be stored. If nothing is done at this stage, the PLBFGS method is equivalent to the LBFGS method (no preconditioning is applied). Note that the preconditioner can change throughout the iterations. 
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PLBFGS/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using PLBFGS. 
+
+The convergence history is written in the file \texttt{iterate\_PLB.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iteration. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $7$ columns the convergence history. 
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient.
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the total number of gradient computation.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/PLBFGS/iterate_PLB.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_PLB.dat}.} 
+\end{center}
+ \end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\newpage
+\subsection{Truncated Newton method: TRN}
+
+\subsubsection{Variables declaration}
+The first step for using the TRN method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by TRN.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the TRN routine and the user.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section). 
+\item  Set the flag for printing output: \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise.
+ \item Set the level of of information in the output files \texttt{iterate\_TRN.dat} and \texttt{iterate\_TRN\_CG.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed in \texttt{iterate\_TRN.dat}. In addition, extra information on the convergence of the inner iterations through the conjugate gradient algorithm will be printed in \texttt{iterate\_TRN\_CG.dat} (namely the decrease of the quadratic form associated to the symmetric definite linear system). Otherwise, if it is set to \texttt{false}, the files \texttt{iterate\_TRN.dat} and \texttt{iterate\_TRN\_CG.dat} will contain only the convergence history (see \ref{ls_info} and \ref{qk} for more details).
+\item Set the maximum number of iterations \texttt{optim\%niter\_CG\_max} for the resolution of the inner linear system using the matrix-free conjugate gradient algorithm. This linear system is solved to compute an approximation of the Newton descent direction. 
+item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad} 
+\end{enumerate}
+\textit{
+It is very important that \texttt{fcost}, and \texttt{grad} are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver TRN.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied. In this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the TRN solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the TRN routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost} and \texttt{grad} contain respectively $f(x_0)$ and $\nabla f(x_0)$.
+\item On return of the call to the TRN routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}.
+\item On return of the call to the TRN routine, if the communication flag is 'HESS' then the user is requested for performing one Hessian-vector product for the resolution of the inner linear system. The vector to multiply is in \texttt{optim\%d}. The result of the multiplication of this vector by the Hessian operator has to be stored in the varialbe \texttt{optim\%Hd}. Be careful not to modify the value of the vector \texttt{optim\%d}.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using TRN. 
+
+The convergence history is written in the file \texttt{iterate\_TRN.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iterations. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $10$ columns the convergence history. 
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient.
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the number of conjugate gradient iteration used to compute the descent direction
+\item Column 8 is for the forcing term $\eta$ used to define the stopping criterion for the inner iterations. 
+\item Column 9 is for the total number of gradient computation.
+\item Column 10 is for the total number of Hessian-vector products.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/iterate_TRN.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_TRN.dat}.} 
+\end{center}
+ \end{figure}
+
+Additional information on the convergence of the inner linear system is written in the file \texttt{iterate\_TRN\_CG.dat}. This file contains a remainder of the optimization settings: convergence criterion, maximum number of iterations, maximum number of iteration for the resolution of the inner linear systems.  He also presents the initial cost without normalization and the initial norm of the gradient. Then, for each nonlinear iteration, a convergence history of the inner liner system using the matrix-free conjugate gradient is presented. The number of the nonlinear iteration appears at the top, as well as the value of the forcing term $\eta$ for this nonlinear iteration. Then, the convergence history is presented on 4 columns. 
+\begin{itemize}
+\item Column 1 is for the iteration number
+\item Column 2 is for the value of the quadratic function associated with the linear system, which is supposed to be symmetric definite. This information is available only if the option \texttt{optim\%debug} is set to \texttt{true}. If it is set to \texttt{false}, only $0$ is written as a default value. 
+\item Column 3 is for the norm of the residuals of the inner system. 
+\item Column 4 is for the relative residuals value. When this value becomes lower than $\eta$, the stopping criterion is satisfied. 
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/iterate_TRN_CG.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_TRN\_CG.dat}.} 
+\end{center}
+ \end{figure}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\subsection{Preconditioned truncated Newton method: PTRN}
+
+\subsubsection{Variables declaration}
+The first step for using the PTRN method is to declare the inputs and outputs of the function. 
+\begin{enumerate}
+ \item Include the header file optim.h to declare the data structure optim which will contain most of the information required by TRN.
+ \item Declare the integer $n$, dimension of the problem \eqref{min_pb}.
+ \item Declare the real \texttt{fcost}, the cost function $f$ computed at $x$.
+ \item Declare the vector \texttt{x}, the unknown $x \in \mathbb{R}^{n}$ of the minimization problem \eqref{min_pb}.
+ \item Declare the vector \texttt{grad}, which corresponds to the gradient of the cost function $f$ at $x$: $\nabla f(x) \in \mathbb{R}^{n}$.
+\item Declare the vector \texttt{grad\_preco}, which corresponds to the gradient of the cost function $f$ at $x$ multiplied by the preconditioner: $P_k\nabla f(x) \in \mathbb{R}^{n}$.
+ \item Declare the data structure optim.
+ \item Declare the chain of character of length 4 FLAG. This is the flag for the reverse communication between the TRN routine and the user.
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PTRN/declaration.f90} 
+} 
+\normalsize
+\begin{center}
+\textbf{Declaration of the \texttt{FORTRAN} variables.} 
+\end{center}
+
+\subsubsection{Initialization}
+
+The second step consists in initializing the problem.
+\begin{enumerate}
+ \item Set the dimension $n$ of the problem, $n$ should be chosen such that $n\geq1$.
+ \item Initialize the communication flag to 'INIT'.
+ \item Set the maximum number of nonlinear iteration that can be performed \texttt{optim\%niter\_max}.
+ \item Set the tolerance parameter for the stopping criterion \texttt{optim\%conv}. The stopping criterion which is implemented by default is 
+\begin{equation}
+ \left(f(x)/f(x_0)< \texttt{optim\%conv}\right) \; \textrm{OR} \;\;  \left(\texttt{optim\%niter}\geq\texttt{optim\%niter\_max}\right).
+\end{equation}
+This means that the flag 'CONV' will be returned to the user when this condition is met. However, the user can define his own convergence criterion, as he defines himself the convergence loop (see next section). 
+\item Set the flag for printing output: \texttt{optim\%print\_flag} is set to $1$ the output files containing information on the convergence history are created. No output files are created otherwise.
+ \item Set the level of of information in the output files \texttt{iterate\_PTRN.dat} and \texttt{iterate\_PTRN\_CG.dat}: if \texttt{optim\%debug} is set to \texttt{true} then information concerning the linesearch process will be printed in \texttt{iterate\_PTRN.dat}. In addition, extra information on the convergence of the inner iterations through the conjugate gradient algorithm will be printed in \texttt{iterate\_PTRN\_CG.dat} (namely the decrease of the quadratic form associated to the symmetric definite linear system). Otherwise, if it is set to \texttt{false}, the files \texttt{iterate\_PTRN.dat} and \texttt{iterate\_PTRN\_CG.dat} will contain only the convergence history (see \ref{ls_info} and \ref{qk} for more details).
+\item Set the maximum number of iterations \texttt{optim\%niter\_CG\_max} for the resolution of the inner linear system using the matrix-free conjugate gradient algorithm. This linear system is solved to compute an approximation of the Newton descent direction. 
+item Set the flag for using/not using bound constraints: if \texttt{optim\%bound} is set to $1$, bound constraints are used. If  \texttt{optim\%bound} is set to $0$, no bound constraints are imposed.
+\item If bound constraints have been activated, then the user must set additional variables. First, allocate the vectors \texttt{optim\%ub} and \texttt{optim\%lb} for respectively ``upper bounds'' and ``lower bounds''. The size of this vectors has to be equal to the dimension of the optimization problem $n$. Then set \texttt{optim\%ub} and \texttt{optim\%lb} with the corresponding bound constraints values. Each component $i$ of these vectors define upper and lower bounds for the component $x_i$ of the unknown. Finally, set the tolerance \texttt{optim\%threshold}. This value gives the tolerance with which the bound constraints are satisfied. In practice, we enforce the condition
+\begin{equation}
+ \texttt{optim\%lb}_i + \texttt{optim\%threshold} \leq x_i \leq \texttt{optim\%ub}_i - \texttt{optim\%threshold}
+\end{equation}
+\item Define the initial guess: the unknown \texttt{x} has to be allocated and initialized to a specific value. 
+\item VERY IMPORTANT: compute the cost function and the gradient corresponding to the initial guess and store the result in \texttt{fcost} and \texttt{grad}
+\item VERY IMPORTANT: multiply the gradient by the preconditioner and store the result in \texttt{grad\_preco}. Note that if no preconditioner is available, you simply have to copy \texttt{grad} in \texttt{grad\_preco}. This means that the preconditioner is identity. In this case the PTRN method is a standard TNR method (without preconditioning).  
+\end{enumerate}
+\textit{
+It is very important that \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco} are initialized to the values corresponding to the initial guess \texttt{x} on the first call to the solver PTRN.}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PTRN/init.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Initialization.} 
+\end{center}
+
+\subsubsection{Minimization within the reverse communication loop}
+
+The third step consists in performing the minimization within the reverse communication loop. 
+\begin{enumerate}
+ \item Define the \texttt{while} loop. In the chosen example, the loop is terminated when the convergence criterion is satisfied. In this case the communication flag is 'CONV'. The loop is also terminated when the flag returned by the PTRN solver is 'FAIL', which indicates that the linesearch process has failed in finding a suitable steplength in the current descent direction. 
+ \item At each iteration of the while loop, call the PTRN routine. On first call, the flag is set to 'INIT', the unknown \texttt{x} is initialized to the initial guess $x_0$, and the variables \texttt{fcost}, \texttt{grad} and \texttt{grad\_preco} contain respectively $f(x_0)$, $\nabla f(x_0)$ and $P_0\nabla f(x_0)$.
+\item On return of the call to the PTRN routine, if the communication flag is 'GRAD' then the value of $x$ has been modified. Compute the cost function $f(x)$ and the gradient $\nabla f(x)$ at this new point in the variables \texttt{fcost} and \texttt{grad}. The user also has the possibility of using his preconditioner. To do so he has to compute $P_k\nabla f(x)$ and store it in the variable \texttt{grad\_preco}. Note that the preconditioner can change throughout the iterations. If no preconditioner is available, the user has to copy the gradient value $\nabla f(x)$ in \texttt{grad\_preco}. 
+\item On return of the call to the PTRN routine, if the communication flag is 'HESS' then the user is requested for performing one Hessian-vector product for the resolution of the inner linear system. The vector to multiply is in \texttt{optim\%d}. The result of the multiplication of this vector by the Hessian operator has to be stored in the variable \texttt{optim\%Hd}. Be careful not to modify the value of the vector \texttt{optim\%d}.
+\item On return of the call to the PTRN routine, if the communication flag is 'PREC' then the user has the possibility of applying his preconditioner. To do so, the user must multiply the vector \texttt{optim\%residual} by the preconditioner, and store the result in \texttt{optim\%residual\_preco}. Be careful not to modify the value of the variable \texttt{optim\%residual}. If no preconditioner is available, the use has to copy the value of \texttt{optim\%residual} into \texttt{optim\%residual\_preco}. Note that the preconditioner can change throughout the iterations. 
+\end{enumerate}
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/PTRN/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Reverse communication loop.} 
+\end{center}
+
+\subsubsection{End of the loop and output file}
+At the end of the reverse communication loop, either convergence has been reached and the communication flag is 'CONV', or the linesearch has failed and the communication flag is 'FAIL'. In both cases, the vector \texttt{x} contains the last value of the minimization sequence \eqref{min_seq}, the best approximation to the solution of the minimization problem that can be found using PTRN. 
+
+The convergence history is written in the file \texttt{iterate\_PTRN.dat}. This file contains a remainder of the optimization settings: convergence criterion and maximum number of iterations. He also presents the initial cost without normalization and the initial norm of the gradient. Then, it presents on $10$ columns the convergence history. 
+\begin{itemize}
+\item Column 1 is for the nonlinear iteration number.
+\item Column 2 is for the non normalized cost function value.
+\item Column 3 is for the norm of the gradient.
+\item Column 4 is for the relative cost function value (normalized by the initial value, on the first iteration this value is then always equal to $1$).
+\item Column 5 is for the size of the steplength taken.
+\item Column 6 is for the number of linesearch iteration for determining the steplength.
+\item Column 7 is for the number of conjugate gradient iteration used to compute the descent direction
+\item Column 8 is for the forcing term $\eta$ used to define the stopping criterion for the inner iterations. 
+\item Column 9 is for the total number of gradient computation.
+\item Column 10 is for the total number of Hessian-vector products.
+\end{itemize}
+
+\begin{figure}
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/PTRN/iterate_PTRN.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_PTRN.dat}.} 
+\end{center} 
+\end{figure}
+
+
+Additional information on the convergence of the inner linear systems is written in the file \texttt{iterate\_PTRN\_CG.dat}. This file contains a remainder of the optimization settings: convergence criterion, maximum number of iterations, maximum number of iteration for the resolution of the inner linear systems. He also presents the initial cost without normalization and the initial norm of the gradient. Then, for each nonlinear iteration, a convergence history of the inner liner system using the matrix-free conjugate gradient is presented. The number of the nonlinear iteration appears at the top, as well as the value of the forcing term $\eta$ for this nonlinear iteration. Then, the convergence history is presented on 4 columns. 
+\begin{itemize}
+\item Column 1 is for the iteration number
+\item Column 2 is for the value of the quadratic function associated with the linear system, which is supposed to be symmetric definite. This information is available only if the option \texttt{optim\%debug} is set to \texttt{true}. If it is set to \texttt{false}, only $0$ is written as a default value. 
+\item Column 3 is for the norm of the residuals of the inner system. 
+\item Column 4 is for the relative residuals value. When this value becomes lower than $\eta$, the stopping criterion is satisfied. 
+\end{itemize}
+
+\tiny
+\lstinputlisting[language=FORTRAN]{./src_code/TRN/iterate_TRN_CG.dat} 
+\normalsize
+\begin{center}
+\textbf{Output file \texttt{iterate\_TRN.dat}.} 
+\end{center}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\section{Technical details}
+
+\subsection{Writing intermediate values of $x$}
+
+It is possible to follow the construction of the sequence of iterates $x_k$ by tracking an additional flag: 'NSTE'. When the communicator flag is equal to 'NSTE', this means that a descent direction and a steplength in this direction has been found. The unknown $x$ has been updated, and the user may want to print it or save it in a file. This option is available for all the routines of the SEISCOPE OPTIMIZATION TOOLBOX. 
+
+Doing so only requires to add one line in the reverse communication loop. We give an example for the PSTD algorithm (it is exactly the same for the other algorithms). 
+
+\framebox{
+\small
+\lstinputlisting[language=FORTRAN]{./src_code/new_step/reverse_communication_loop.f90} 
+}
+\normalsize
+\begin{center}
+\textbf{Tracking the sequence of iterates in the reverse communication loop.} 
+\end{center}
+
+\subsection{Linesearch algorithm}
+
+\subsubsection{The Wolfe criterion}
+
+The linesearch algorithm which is implemented computes a steplength $\alpha$ which satisfies the Wolfe criterion. For a given descent direction $\Delta x$, $\alpha$ should satisfy
+\begin{equation}
+ f(x+\alpha \Delta x)\leq f(x)+m_1\alpha \nabla f(x)^{T}\Delta x, \;\;
+\end{equation}
+and
+\begin{equation}
+ \nabla f(x+\alpha \Delta x)^{T}\Delta x \geq m_2 \nabla f(x)^{T}\Delta x
+\end{equation}
+where $m_1$ and $m_2$ are scalar parameters. These parameters are set respectively to 
+\begin{equation}
+ m_1=10^{-4}, \;\; m_2=0.9
+\end{equation}
+This is done in the routines \texttt{init\_\textit{method}.f90}, in the variables 
+\\
+\\
+\texttt{optim\%m$_1$} and \texttt{optim\%m$_2$}. 
+\\
+\\
+The initialization of the steplength $\alpha$ is also done in the routines \texttt{init\_\textit{method}.f90}. By default, $\alpha$ is initialized to $1$, in the variable 
+\\
+\\
+\texttt{optim\%alpha}
+\\
+\\
+\subsubsection{Linesearch algorithm}
+The algorithm for computing a steplength $\alpha$ which satisfies the Wolfe conditions is as follows
+\begin{enumerate}
+ \item Initialize $\alpha_{min}$ and $\alpha_{max}$ to 0.
+ \item Check if the current value of $\alpha$ satisfies the Wolfe condition. If this is the case \textbf{stop}. 
+ \item If the first condition is not satisfied, then 
+\begin{itemize}
+ \item $\alpha_{max}=\alpha$
+ \item $\alpha=0.5\times(\alpha_{min}+\alpha_{max})$
+ \item Go back to 2
+\end{itemize}
+\item If the second condition is not satisfied, then 
+ \begin{itemize}
+  \item  $\alpha_{min}=\alpha$
+  \item If $\alpha_{max}=0$ then $\alpha=10\times \alpha$
+  \item If $\alpha_{max}\ne 0$ then $\alpha =0.5\times(\alpha_{min}+\alpha_{max})$
+   \item Go back to 2
+ \end{itemize}       
+\item If no suitable steplength $\alpha$ has been found after \texttt{optim\%nls\_max} linesearch iterations, declare a linesearch failure: \texttt{FLAG} is set to 'FAIL'.
+\end{enumerate}
+Note that each time the algorithm goes through step 2, the computation of $\nabla f(x+\alpha \Delta x)$ is required. 
+
+In addition, the parameter 
+\\
+\\
+\texttt{optim\%nls\_max}
+\\
+\\
+is set in the routines \texttt{init\_\textit{method}.f90}. By default, it is set to $20$ in all the optimization routines of the SEISCOPE OPTIMIZATION TOOLBOX.  
+
+\subsubsection{Initialization of the linesearch parameter $\alpha$}
+In practice, for reasonably smooth functions, the behavior of the minimization algorithms is as follows:
+\begin{itemize}
+ \item At first nonlinear iteration, the linesearch algorithm can require a certain number of iterations to converge to a first steplength $\alpha$ which satisfies the Wolfe criterion.
+ \item After the first nonlinear iteration, since the previous value of $\alpha$ is used as a first guess, none or very few linesearch iterations should be necessary (unless the cost function presents rapid variations) 
+\end{itemize}
+The user may want to speed-up the process to avoid spending to much time in the linesearch process. To do so, it is possible to modify the initial value for the steplength to a value closer than the optimal one. This can be done by modifying the variable
+\\
+\\
+\texttt{optim\%alpha} 
+\\
+\\
+in the routines \texttt{init\_\textit{method}.f90}.
+\\
+\\
+\indent In the current version, in order to force the minimization algorithms to converge as far as they can, a special feature has also be implemented. As stated in the previous section, a linesearch failure is declared whenever no suitable steplength has been found after \texttt{otim\%nls\_max} linesearch iterations have been performed. However, if the steplength computed after this maximum number of linesearch iteration produces a decrease of the misfit function, it is accepted, even if it does not satisfy the Wolfe criterion. This situation however occurs very rarely to the best of our knowledge. 
+
+\subsubsection{Bound constraints: projection into the feasible set}
+
+In the SEISCOPE OPTIMIZATION TOOLBOX, we implement a simple method to account for bound constraints. We want to ensure that the sequence $x_k$ stays within the box $\Omega$, defined as 
+\begin{equation}
+ \Omega=\prod_{i=1}^{n}[a_i; b_i] \subset \mathbb{R}^n, \;\; n \in \mathbb{N}
+\end{equation}
+Each time a steplength $\alpha$ is tested within the linesearch process, the corresponding iterate 
+\begin{equation}
+ x_{k+1}=x_{k}+\alpha \Delta x_{k}
+\end{equation}
+is projected into the feasible set $\Omega$. The Wolfe criterion are then evaluated at the points
+\begin{equation}
+ \widetilde{x}_{k+1}=\mathcal{P}_{\Omega}x_{k+1}
+\end{equation}
+where the component $i$ of $\mathcal{P}_{\Omega}z$ is given by 
+\begin{equation}
+ \left(\mathcal{P}_{\Omega}z\right)_i=
+\left\{
+\begin{array}{ccc}
+ z_{i} &\textrm{if}& a_i \leq z_i \leq b_i
+ \\
+ a_i+\tau &\textrm{if}& z_i < a_i
+\\
+ b_i-\tau &\textrm{if}& z_i > b_i
+\end{array}
+\right.
+\end{equation}
+The parameter $\tau$ is the tolerance \texttt{optim\%threshold} set by the user.
+
+\subsubsection{Output files and debug option}
+\label{ls_info}
+When the debug option \texttt{optim\%debug} is set to true, the output files generated by the SEISCOPE OPTIMIZATION TOOLBOX routines 
+will contain the convergence history of the linesearch algorithm. At each iteration of the linesearch algorithm, step 3 of the linesearch algorithm will be identified as \texttt{failure 1}. Step 4 will be identified as \texttt{failure 2}. The different values will be printed:
+\begin{itemize}
+\item \texttt{fcost} which correspond to $f(x+\alpha_k \Delta x)$
+\item \texttt{optim\%f0} which correspond to $f(x_0)$
+ \item \texttt{optim\%fk} which correspond to $f(x)$
+ \item \texttt{optim\%alpha} which correspond to $\alpha_k$
+\item \texttt{optim\%q0} which correspond to $\nabla f(x)^{T}\Delta x$
+\item \texttt{optim\%q} which correspond to $\nabla f(x+\alpha_k \Delta x)^{T}\Delta x$
+\item \texttt{optim\%m1} which corresponds to $m_1$
+\item \texttt{optim\%cpt\_ls} which is the counter for the current number of linesearch iterations
+\end{itemize}
+
+\subsection{Nonlinear conjugate gradient}
+
+Implementation of the nonlinear conjugate gradient differs from the computation of the scalar parameter $\beta_k$ from \eqref{nlcg}. Standard formulas are Fletcher-Reeves or Polak-Ribi\`ere formulas (see \citet{Nocedal_2006_NO}). However, based on these formulations, the nonlinear conjugate gradient requires to satisfy the \textbf{strong} Wolfe condition to ensure global convergence toward local minima. As we wanted to use the same linesearch procedure for all the routines within the SEISCOPE OPTIMIZATION TOOLBOX, we decided to implement the nonlinear conjugate gradient algorithm proposed by \citet{DAI_1999_NCG}. This algorithm only requires the satisfaction of the standard Wolfe conditions to ensure global convergence. Following this algorithm, the scalar $\beta_k$ is computed from
+\begin{equation}
+ \beta_{k}=\frac{\nabla f(x_k)^{T}P_{k}\nabla f(x_k)}{\left(\nabla f(x_k)-\nabla f(x_{k-1}\right)^{T}\Delta x_{k-1}}.
+\end{equation} 
+
+\subsection{Practical issues for the truncated Newton method}
+
+\subsubsection{Choice of $\eta_0$ for the truncated Newton method}
+
+The initial forcing term $\eta_0$ controls the precision of the inner linear system resolution at the first nonlinear iteration. The value of $\eta_0$ is set in the routines \texttt{init\_TRN.f90} and \texttt{init\_PTRN.f90}. The default value is $0.9$
+\\
+\\
+\texttt{optim\%eta=0.9}
+\\
+\\
+This initial value is proposed by \citet{Eisenstat_1994_TRN}. However, smaller values can be chosen to force the algorithm to solve the inner linear system more accurately at the first nonlinear iteration. This can be interesting when the function to minimize is close to a quadratic function for instance. For the Rosenbrock function, an initial value 
+\\
+\\
+\texttt{optim\%eta=0.1}
+\\
+\\
+will speed-up the convergence. 
+
+\subsubsection{Output files and debug option}
+\label{qk}
+
+When the debug option \texttt{optim\%debug} is set to \texttt{true}, the output files \texttt{iterate\_TRN\_CG.dat} and \texttt{iterate\_PTRN\_CG.dat} contain additional information on the decrease of the quadratic function which is minimized during the conjugate gradient resolution. This quadratic function is 
+\begin{equation}
+ q_k(\Delta x)= \Delta x^{T} H(x_k) \Delta x + \nabla f(x_k)^{T} \Delta x
+\end{equation}
+Since the initial guess for $\Delta x$ is systematically $0$, at the first inner iteration, we have 
+\begin{equation}
+ q_k(\Delta x)=0
+\end{equation}
+Then, while the Hessian matrix $H(x_k)$ remains definite positive, the quantity $q_k(\Delta x)$ decreases throughout the inner iteration of conjugate gradient. The decrease rate provides additional information on the convergence rate of the conjugate gradient. When negative eigenvalues are detected , the conjugate gradient iterations are stopped. 
+
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%
+%%% BIBLIO
+%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage 
+\small
+\bibliographystyle{apalike}
+%\bibliography{/home/ludo/postdoc_ISTERRE/BIBLIO/biblioseiscope.bib,/home/ludo/postdoc_ISTERRE/BIBLIO/bibliotmp.bib}
+\bibliography{/home/laure/BIBLIO/biblioseiscope.bib,/home/laure/BIBLIO/bibliotmp.bib}
+
+
+\end{document}

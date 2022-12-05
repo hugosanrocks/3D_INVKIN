@@ -1,0 +1,137 @@
+module hexa_ref_dof_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+
+  implicit none
+
+  type hexa_ref_dof_t
+
+     sequence
+
+     integer                                        :: ngll1D = 0 ! number of dof of an element in each direction
+     integer                                        :: dummy  = 0 ! To shut up compiler message about possible misaligned fields
+     double precision, dimension(:),    allocatable :: gll1D_coor
+     double precision, dimension(:),    allocatable :: gll1D_weight
+     integer,   dimension(:,:,:,:),     allocatable :: doftoEref ! mapping dof ref (i,j,k,1:4) -> (1)hexahedron vertex, (2)edge, (3)face, (4)inside ref element
+
+  end type hexa_ref_dof_t
+
+  contains
+
+
+  subroutine build_hexa_ref_dof(ngll1D, hexa_ref_dof)
+    integer,                        intent(in)  :: ngll1D
+    type(hexa_ref_dof_t),           intent(out) :: hexa_ref_dof
+    character(len = *),             parameter   :: proc_name = "build_hexa_ref_dof"
+    double precision, dimension(:), allocatable :: gll1D_coor, gll1D_weight
+    double precision                            :: alp, bet
+    integer                                     :: igll, i, j, k, l
+
+    if (ngll1D < 2) then
+      write(*,*) proc_name, " :: ERROR : ngll1D < 2"
+      stop
+    end if
+
+    hexa_ref_dof%ngll1D = ngll1D
+
+    call alloc_(hexa_ref_dof%doftoEref, 1, ngll1D, 1, ngll1D, 1, ngll1D, 1, 4, 'hexa_ref_dof%doftoEref')
+
+    ! Convention mapping between dof (i,j,k) and hexahedra connectivity
+    !
+    !          VERTICES               EDGES                  EDGES                     FACES            DOF
+    !                                                                                  6    4
+    !        8________ 7             ___11___               ________                  _!___/__           
+    !       /|       /|            /|       /|            /|       /|               /| !  /  /|      
+    !      / |      / |         12/ |    10/ |           / |8     / |7             / | ! /  / |     
+    !    5/__|_____/6 |          /__|_9___/  |          /__|_____/  |             /__|_____/ ---3   
+    !     |  |_____|__|          |  |_____|__|          |  |_____|__|          5--|- |_____|__|      k|   /j
+    !     |  /4    |  /3         |  /   3 |  /         5|  /    6|  /             |  /     |  /       |  /
+    !     | /      | /           |4/      | /2          | /      | /              | /  / ! | /        | /
+    !     |/_______|/            |/_______|/            |/_______|/               |/__/__!_|/         |/____ i
+    !    1          2                1                                               /   !         (1,1,1)     
+    !                                                                               2    1                    
+
+    ! mapping between dof (i,j,k) = (1..ngll1D)**3 and element vertices 1..8
+    hexa_ref_dof%doftoEref(     1,     1,     1,VERTEX_ID) = 1 ! gll (1,1,1) coincides with the first vertex defining the hexahedra
+    hexa_ref_dof%doftoEref(ngll1D,     1,     1,VERTEX_ID) = 2
+    hexa_ref_dof%doftoEref(ngll1D,ngll1D,     1,VERTEX_ID) = 3
+    hexa_ref_dof%doftoEref(     1,ngll1D,     1,VERTEX_ID) = 4
+    hexa_ref_dof%doftoEref(     1,     1,ngll1D,VERTEX_ID) = 5
+    hexa_ref_dof%doftoEref(ngll1D,     1,ngll1D,VERTEX_ID) = 6
+    hexa_ref_dof%doftoEref(ngll1D,ngll1D,ngll1D,VERTEX_ID) = 7
+    hexa_ref_dof%doftoEref(     1,ngll1D,ngll1D,VERTEX_ID) = 8
+
+    ! mapping between dof (i,j,k) = (1..ngll1D)**3 and element edges 1..12 (excluding boundary vertices)
+    hexa_ref_dof%doftoEref(2:ngll1D-1,         1,         1,EDGE_ID) =  1
+    hexa_ref_dof%doftoEref(    ngll1D,2:ngll1D-1,         1,EDGE_ID) =  2
+    hexa_ref_dof%doftoEref(2:ngll1D-1,    ngll1D,         1,EDGE_ID) =  3
+    hexa_ref_dof%doftoEref(         1,2:ngll1D-1,         1,EDGE_ID) =  4
+    hexa_ref_dof%doftoEref(         1,         1,2:ngll1D-1,EDGE_ID) =  5
+    hexa_ref_dof%doftoEref(    ngll1D,         1,2:ngll1D-1,EDGE_ID) =  6
+    hexa_ref_dof%doftoEref(    ngll1D,    ngll1D,2:ngll1D-1,EDGE_ID) =  7
+    hexa_ref_dof%doftoEref(         1,    ngll1D,2:ngll1D-1,EDGE_ID) =  8
+    hexa_ref_dof%doftoEref(2:ngll1D-1,         1,    ngll1D,EDGE_ID) =  9
+    hexa_ref_dof%doftoEref(    ngll1D,2:ngll1D-1,    ngll1D,EDGE_ID) = 10
+    hexa_ref_dof%doftoEref(2:ngll1D-1,    ngll1D,    ngll1D,EDGE_ID) = 11
+    hexa_ref_dof%doftoEref(         1,2:ngll1D-1,    ngll1D,EDGE_ID) = 12
+
+    ! mapping between dof (i,j,k) = (1..ngll1D)**3 and element faces 1..6 (excluding boundary edges)
+    hexa_ref_dof%doftoEref(2:ngll1D-1,2:ngll1D-1,         1,FACE_ID) = 1
+    hexa_ref_dof%doftoEref(2:ngll1D-1,         1,2:ngll1D-1,FACE_ID) = 2
+    hexa_ref_dof%doftoEref(    ngll1D,2:ngll1D-1,2:ngll1D-1,FACE_ID) = 3
+    hexa_ref_dof%doftoEref(2:ngll1D-1,    ngll1D,2:ngll1D-1,FACE_ID) = 4
+    hexa_ref_dof%doftoEref(         1,2:ngll1D-1,2:ngll1D-1,FACE_ID) = 5
+    hexa_ref_dof%doftoEref(2:ngll1D-1,2:ngll1D-1,    ngll1D,FACE_ID) = 6
+
+    ! information if a dof (i,j,k) = (1..ngll1D)**3 is inside the element 
+    ! 0 = No, 1 = Yes
+    ! a dof inside the element means that it is not on the boundary of the element
+    ! (i.e. it does not coincide with a vertex, neither an edge or a face)
+    hexa_ref_dof%doftoEref(2:ngll1D-1,2:ngll1D-1,2:ngll1D-1,INSIDE_ELEMENT_ID) = 1
+
+    ! Build reference coordinates
+    alp=0.d0
+    bet=0.d0
+    allocate(hexa_ref_dof%gll1D_coor(ngll1D),hexa_ref_dof%gll1D_weight(ngll1D))
+ 
+    ! ngll1D GLL point in reference segment [-1 1]
+    call zwgljd(hexa_ref_dof%gll1D_coor,hexa_ref_dof%gll1D_weight,ngll1D,alp,bet)
+!     hexa_ref_dof%gll1D_coor(:) = -hexa_ref_dof%gll1D_coor(:) !! to follow Hesthaven, but may be confusing
+
+    if (debug_graph > 0) then
+
+      write(*,*)
+      write(*,*) ngll1D, ' order reference dof info:'
+      write(*,*)
+      do igll = 1, ngll1D
+        write(*,'(A,I3,2(A,F8.4))') 'gll1D(',igll,'): coor =',hexa_ref_dof%gll1D_coor(igll), &
+        &                           ' weight =', hexa_ref_dof%gll1D_weight(igll)
+      end do
+      write(*,*)
+      do k = 1, ngll1D
+        do j = 1, ngll1D
+          do i = 1, ngll1D
+            write(*,'(A,3I3,A,4I3)') '(i,j,k)=', i, j, k, &
+            & ' doftoEref(Vertex Edge Face InElem) =', (hexa_ref_dof%doftoEref(i,j,k,l), l=1,4)
+          end do
+        end do
+      end do
+      if (debug_graph > 1) then
+!         write(*,*)
+!         do k = 1, ngll1D
+!           do j = 1, ngll1D
+!             do i = 1, ngll1D
+!               write(*,'(A,3I3,A,3F8.4)') '(i,j,k)=', i, j, k, ' coor =', hexa_ref_dof%coor(:,i,j,k)
+!             end do
+!           end do
+!         end do
+      end if
+      write(*,*)
+    end if
+    call flush(6);
+  end subroutine build_hexa_ref_dof
+
+
+end module hexa_ref_dof_mod
+

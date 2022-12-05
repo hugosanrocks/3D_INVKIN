@@ -1,0 +1,15 @@
+#include <stdio.h>
+#include <errno.h>
+#include <sys/resource.h>
+
+int
+mem_current() {
+  struct rusage ru;
+  int status = getrusage(RUSAGE_SELF, &ru);
+  if (status != 0) {
+    fprintf(stderr, "Could not get memory usage: '%s'\n", strerror(errno));
+    return errno;
+  }
+  int kb = ru.ru_maxrss;
+  return kb;
+}

@@ -1,0 +1,63 @@
+from rsf.proj import *
+
+nz=301
+dz=5
+nx=301
+dx=5
+nt=1000
+dt=0.001
+
+Plot('wf1','forward_kt.bin',
+	'''	
+	echo in=${SOURCES[0]} n1=%d d1=%g n2=%d d2=%g data_format=native_float|
+	grey  title="forward" gainpanel=all 
+	labelfat=4 font=2 titlefat=4 scalebar=y screenratio=0.9
+	'''%(nz,dz,nx,dx))
+Plot('wb1','reconstructed_kt.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d d1=%g n2=%d d2=%g data_format=native_float|
+	grey  title="backward" gainpanel=all
+	labelfat=4 font=2 titlefat=4 scalebar=y screenratio=0.9
+	'''%(nz,dz,nx,dx))
+
+Result('comparison','wf1 wb1','SideBySideIso')
+
+Flow('trf','trf.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d d1=%g  data_format=native_float 
+	'''%(nt,dt))
+Flow('trb','trb.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d d1=%g data_format=native_float 
+	'''%(nt,dt))
+Flow('trerr','trf trb','add ${SOURCES[1]} scale=1,-1')
+
+Plot('trf','graph grid=y label1=Time unit1=s label2=Amplitude title=Exact')
+Plot('trb',
+	'''
+	graph grid=y label1=Time unit1=s label2=Amplitude title=Interpolated
+	''')
+Plot('trerr',
+	'''
+	graph grid=y label1=Time unit1=s label2=Amplitude title=Error
+	''')
+Result('trcomparison','trf trb trerr','OverUnderAniso')
+
+
+Flow('ef','ef.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d d1=%g  data_format=native_float 
+	'''%(nt,dt))
+Flow('eb','eb.bin',
+	'''
+	echo in=${SOURCES[0]} n1=%d d1=%g data_format=native_float 
+	'''%(nt,dt))
+
+Result('energy','ef eb',
+	'''
+	cat axis=2 ${SOURCES[1]} | 
+	graph dash=0,1 grid=y plotfat=3 label1=Time unit1=s
+	label2= unit2= title="Energy:solid=forw;dash=back" labelfat=2 titlefat=3
+	''')
+
+End()

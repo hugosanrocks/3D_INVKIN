@@ -1,0 +1,814 @@
+module hexa_comm_struct_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use hexa_mesh_struct_mod
+  use mesh_partition_struct_mod
+
+  implicit none
+
+  type, public :: entity_nghb_adj_list_type
+    ! Number of neighbour partitions (dimension of i1 tab)
+    integer                                 :: n      = 0
+
+    ! Total length of the adjacency list (dimension of ie tab)
+    integer                                 :: length = 0
+
+    ! Array containing for each neighbour partition the starting index in ie array: i1(1:n+1)
+    integer, dimension(:),      allocatable :: i1
+
+    ! Array containing the list of entities shared with the neighbour partitions: ie(1:length)
+    integer, dimension(:),      allocatable :: ie
+  end type entity_nghb_adj_list_type
+
+
+  type, public :: hexa_comm_struct_type
+    integer                                   :: nEdeg  = 0, nFdeg = 0
+    integer                                   :: nV     = 0, nEdge = 0, nF = 0, nE = 0
+    integer                                   :: ngll1D = 0
+
+    integer                                   :: nnghb_part ! number of partitions neighbour to the current partition
+    integer, dimension(:),        allocatable :: nghb_part  ! identifier of the partitions neighbour to the current partition
+    !                                                       ! nghb_part(relative nghb index) = absolute nghb index
+
+    type(entity_nghb_adj_list_type)           :: v_nghb_adj
+    type(entity_nghb_adj_list_type)           :: edge_nghb_adj
+    type(entity_nghb_adj_list_type)           :: f_nghb_adj
+    type(entity_nghb_adj_list_type)           :: dof_nghb_adj
+
+  end type hexa_comm_struct_type
+
+
+  public :: read_hexa_comm_struct
+  public :: write_hexa_comm_struct
+  public :: free_hexa_comm_struct
+  public :: compute_hexa_comm_struct
+  public :: dump_entity_nghb_adj_list_type
+  public :: compute_dof_comm_struct
+
+  type, private :: container_type
+    type(entity_loctoglob_type), pointer :: ptr
+  end type container_type
+
+  contains
+
+
+  subroutine compute_dof_comm_struct(comm_part)
+    type(hexa_comm_struct_type), intent(in out) :: comm_part
+    character(len = *),          parameter      :: proc_name = "compute_dof_comm_struct"
+    integer                                     :: npart_nghb, ipart_nghb, ngll1D
+    integer                                     :: nv_shared, nedge_shared, nf_shared, ndof_shared_tot
+    integer                                     :: i1, iEnd, iv, iedge, ifac, ii, idof
+    integer                                     :: ndofperVertex, ndofperEdge, ndofperFace
+    integer                                     :: ndofVertices,  ndofEdges,   ndofFaces
+    integer                                     :: ndofVertices_shared, ndofEdges_shared, ndofFaces_shared
+    integer                                     :: i1dofVertices, i1dofEdges,  i1dofFaces
+    integer                                     :: i1dofVertices_shared, i1dofEdges_shared,  i1dofFaces_shared
+    integer, dimension(:),       allocatable    :: ndof_shared
+    character(len=4)                            :: str4
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    end if
+
+    npart_nghb = comm_part%nnghb_part
+
+    if (npart_nghb > 0) then
+
+      ngll1D = comm_part%ngll1D
+
+      ndofperVertex   = 1                                     ! one gll per vertex
+      ndofperEdge     = (ngll1D-2)                            ! ngll1D gll per edge minus the two extremities already linked to vertices
+      ndofperFace     = (ngll1D-2)*(ngll1D-2)                 ! ngll1D**2 gll per face minus the gll linked to boundary edges
+
+      call alloc_(ndof_shared, 1, npart_nghb, 'ndof_shared')
+
+      ! Compute the number of shared dof with each neighbour partition
+      ndof_shared(:) = 0
+      do ipart_nghb = 1, npart_nghb
+        nv_shared    = comm_part%v_nghb_adj%i1(ipart_nghb + 1)    - comm_part%v_nghb_adj%i1(ipart_nghb)
+        nedge_shared = comm_part%edge_nghb_adj%i1(ipart_nghb + 1) - comm_part%edge_nghb_adj%i1(ipart_nghb)
+        nf_shared    = comm_part%f_nghb_adj%i1(ipart_nghb + 1)    - comm_part%f_nghb_adj%i1(ipart_nghb)
+        ndof_shared(ipart_nghb) = nv_shared * ndofperVertex + nedge_shared * ndofperEdge + nf_shared * ndofperFace
+
+      end do
+
+      if (dd_debug_level > 0) then
+        write(*,*)  myid, ' ndof_shared, ', ndof_shared
+      end if
+
+      ndof_shared_tot = sum(ndof_shared(:))
+
+      comm_part%dof_nghb_adj%n      = npart_nghb
+      comm_part%dof_nghb_adj%length = ndof_shared_tot
+
+      call alloc_(comm_part%dof_nghb_adj%i1, 1, npart_nghb + 1,  'dof_nghb_adj%i1')
+      call alloc_(comm_part%dof_nghb_adj%ie, 1, ndof_shared_tot, 'dof_nghb_adj%ie')
+
+      comm_part%dof_nghb_adj%i1(1) = 1
+      do  ipart_nghb = 1, npart_nghb
+        comm_part%dof_nghb_adj%i1(ipart_nghb+1) = comm_part%dof_nghb_adj%i1(ipart_nghb) + ndof_shared(ipart_nghb)
+      end do
+
+      do ipart_nghb = 1, npart_nghb
+
+        nv_shared       = comm_part%v_nghb_adj%i1   (ipart_nghb + 1) - comm_part%v_nghb_adj%i1   (ipart_nghb)
+        nedge_shared    = comm_part%edge_nghb_adj%i1(ipart_nghb + 1) - comm_part%edge_nghb_adj%i1(ipart_nghb)
+        nf_shared       = comm_part%f_nghb_adj%i1   (ipart_nghb + 1) - comm_part%f_nghb_adj%i1   (ipart_nghb)
+
+        if (dd_debug_level > 0) then
+          write(*,*)  myid, ipart_nghb, ' nv_shared, nedge_shared, nf_shared', nv_shared, nedge_shared, nf_shared
+          if (nv_shared == 0 .or. nedge_shared == 0 .or. nf_shared == 0) then
+            write(*,*) myid, ' : WARNING :: ipart_nghb =', ipart_nghb, ' nv_shared or nedge_shared or nf_shared is null:', &
+            &          nv_shared, nedge_shared, nf_shared
+          end if
+        end if
+
+        ndofVertices_shared    = nv_shared    * ndofperVertex
+        ndofEdges_shared       = nedge_shared * ndofperEdge
+        ndofFaces_shared       = nf_shared    * ndofperFace
+
+        if (ipart_nghb == 1) then
+          ! Initialize starting indices in shared dof numbering
+          i1dofVertices_shared   = 0
+          i1dofEdges_shared      = i1dofVertices_shared + ndofVertices_shared
+          i1dofFaces_shared      = i1dofEdges_shared + ndofEdges_shared
+        else
+          ! starting index in shared entities numbering incremented to indices considering previous partitions
+          i1dofVertices_shared   = sum(ndof_shared(1:ipart_nghb-1)) + 0
+          i1dofEdges_shared      = i1dofVertices_shared + ndofVertices_shared
+          i1dofFaces_shared      = i1dofEdges_shared + ndofEdges_shared
+        end if
+
+        if (dd_debug_level > 0) then
+          write(*,*)  myid, ipart_nghb, ' i1dofVertices_shared, i1dofEdges_shared, i1dofFaces_shared', &
+          & i1dofVertices_shared, i1dofEdges_shared, i1dofFaces_shared
+        end if
+
+        ndofVertices    = comm_part%nV    * ndofperVertex
+        ndofEdges       = comm_part%nEdge * ndofperEdge
+        ndofFaces       = comm_part%nF    * ndofperFace
+
+        ! initialize starting indices in dof partition numbering
+        i1dofVertices   = 0
+        i1dofEdges      = ndofVertices
+        i1dofFaces      = ndofEdges + ndofVertices
+
+        i1 = comm_part%v_nghb_adj%i1(ipart_nghb)
+        do ii = 1, nv_shared
+          iv = comm_part%v_nghb_adj%ie(i1 + ii - 1) ! vertex local index in the partition
+          ! a single gll per vertex idof <=> iv
+
+          if (dd_debug_level > 0) then
+            write(*,*) myid, ipart_nghb, ' : v : write i1 from to :', i1dofVertices_shared + (ii-1)*ndofperVertex + 1, &
+            &                                             i1dofVertices_shared + ii*ndofperVertex
+          end if
+
+          comm_part%dof_nghb_adj%ie(i1dofVertices_shared + (ii-1)*ndofperVertex + 1 : i1dofVertices_shared + ii*ndofperVertex) = &
+          &                     (/ (i1dofVertices + (iv-1)*ndofperVertex + idof, idof = 1, ndofperVertex) /)
+        end do
+
+        i1 = comm_part%edge_nghb_adj%i1(ipart_nghb)
+        do ii = 1, nedge_shared
+          iedge = comm_part%edge_nghb_adj%ie(i1 + ii - 1)
+
+          if (dd_debug_level > 0) then
+            write(*,*) myid, ipart_nghb, ' : edge : write i1 from to :', i1dofEdges_shared + (ii-1)*ndofperEdge + 1, &
+            &                                                i1dofEdges_shared + ii*ndofperEdge
+          end if
+
+          comm_part%dof_nghb_adj%ie(i1dofEdges_shared + (ii-1)*ndofperEdge + 1 : i1dofEdges_shared + ii*ndofperEdge) = &
+          &                     (/ (i1dofEdges + (iedge-1)*ndofperEdge + idof, idof = 1, ndofperEdge) /)
+        end do
+
+        i1 = comm_part%f_nghb_adj%i1(ipart_nghb)
+        do ii = 1, nf_shared
+          ifac = comm_part%f_nghb_adj%ie(i1 + ii - 1)
+
+          if (dd_debug_level > 0) then
+            write(*,*) myid, ipart_nghb, ' : face : write i1 from to :', i1doffaces_shared + (ii-1)*ndofperFace + 1, &
+            &                                                i1dofFaces_shared + ii*ndofperFace
+          end if
+
+          comm_part%dof_nghb_adj%ie(i1doffaces_shared + (ii-1)*ndofperFace + 1 : i1dofFaces_shared + ii*ndofperFace) = &
+          &                      (/ (i1dofFaces + (ifac-1)*ndofperFace + idof, idof = 1, ndofperFace) /)
+        end do
+
+        !write(*,*) myid, ipart_nghb, ' comm_part%dof_nghb_adj%ie', comm_part%dof_nghb_adj%ie
+
+        if (dd_debug_level > 0) then
+          i1   = comm_part%dof_nghb_adj%i1(ipart_nghb)
+          iEnd = comm_part%dof_nghb_adj%i1(ipart_nghb+1)-1
+          write(str4,'(I4)') iEnd - i1 +1
+          write(*,'(I4,A,I4,A,3I4,A,2I4,A,'//str4//'I4)') &
+          & myid, ' : ipart_nghb =', ipart_nghb, &
+          &       ' nv_shared, nedge_shared, nf_shared', nv_shared, nedge_shared, nf_shared, &
+          &       ' dof_nghb_adj%i1 =', i1, iEnd, &
+          &       ' dof_nghb_adj%ie =', comm_part%dof_nghb_adj%ie(i1:iEnd)
+        end if
+
+      end do ! ipart_nghb = 1, npart_nghb
+
+      call dealloc_(ndof_shared, 'ndof_shared')
+
+    end if
+    
+  end subroutine compute_dof_comm_struct
+
+
+  subroutine read_hexa_comm_struct(comm_part, filename)
+    type(hexa_comm_struct_type), intent(in out) :: comm_part
+    character(len=*),            intent(in)     :: filename
+    character(len = *),          parameter      :: proc_name = "read_hexa_comm_struct"
+    integer                                     :: funit, istat
+    logical                                     :: exist
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    end if
+
+    inquire(file = trim(adjustl(filename)), exist = exist)
+    if (.not. exist) then
+      write(*,*) proc_name, " :: ERROR : unexisting file ", trim(adjustl(filename))
+      stop
+    end if
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', action='read', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    read(funit) comm_part%nEdeg, comm_part%nFdeg
+    read(funit) comm_part%nV, comm_part%nEdge, comm_part%nF, comm_part%nE
+    if (dd_debug_level > 3) then
+      write(*,*) comm_part%nEdeg, comm_part%nFdeg
+      write(*,*) comm_part%nV, comm_part%nEdge, comm_part%nF, comm_part%nE
+    end if
+
+    read(funit) comm_part%nnghb_part
+    if (comm_part%nnghb_part > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read nghb_part'
+      call alloc_(comm_part%nghb_part, 1, comm_part%nnghb_part, 'comm_part%nghb_part')
+      read(funit) comm_part%nghb_part(1:comm_part%nnghb_part)
+    end if
+
+    read(funit) comm_part%v_nghb_adj%n, comm_part%v_nghb_adj%length
+    if (comm_part%v_nghb_adj%n > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read v_nghb_adj%i1'
+      call alloc_(comm_part%v_nghb_adj%i1, 1, comm_part%v_nghb_adj%n+1, 'comm_part%v_nghb_adj%i1')
+      read(funit) comm_part%v_nghb_adj%i1(1:comm_part%v_nghb_adj%n+1)
+    end if
+    if (comm_part%v_nghb_adj%length > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read v_nghb_adj%ie'
+      call alloc_(comm_part%v_nghb_adj%ie, 1, comm_part%v_nghb_adj%length, 'comm_part%v_nghb_adj%ie')
+      read(funit) comm_part%v_nghb_adj%ie(1:comm_part%v_nghb_adj%length)
+    end if
+
+    read(funit) comm_part%edge_nghb_adj%n, comm_part%edge_nghb_adj%length
+    if (comm_part%edge_nghb_adj%n > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read edge_nghb_adj%i1'
+      call alloc_(comm_part%edge_nghb_adj%i1, 1, comm_part%edge_nghb_adj%n+1, 'comm_part%edge_nghb_adj%i1')
+      read(funit) comm_part%edge_nghb_adj%i1(1:comm_part%edge_nghb_adj%n+1)
+    end if
+    if (comm_part%edge_nghb_adj%length > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read edge_nghb_adj%ie'
+      call alloc_(comm_part%edge_nghb_adj%ie, 1, comm_part%edge_nghb_adj%length, 'comm_part%edge_nghb_adj%ie')
+      read(funit) comm_part%edge_nghb_adj%ie(1:comm_part%edge_nghb_adj%length)
+    end if
+
+    read(funit) comm_part%f_nghb_adj%n, comm_part%f_nghb_adj%length
+    if (comm_part%f_nghb_adj%n > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read f_nghb_adj%i1'
+      call alloc_(comm_part%f_nghb_adj%i1, 1, comm_part%f_nghb_adj%n+1, 'comm_part%f_nghb_adj%i1')
+      read(funit) comm_part%f_nghb_adj%i1(1:comm_part%f_nghb_adj%n+1)
+    end if
+    if (comm_part%f_nghb_adj%length > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read f_nghb_adj%ie'
+      call alloc_(comm_part%f_nghb_adj%ie, 1, comm_part%f_nghb_adj%length, 'comm_part%f_nghb_adj%ie')
+      read(funit) comm_part%f_nghb_adj%ie(1:comm_part%f_nghb_adj%length)
+    end if
+
+    read(funit) comm_part%dof_nghb_adj%n, comm_part%dof_nghb_adj%length
+    if (comm_part%dof_nghb_adj%n > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read dof_nghb_adj%i1'
+      call alloc_(comm_part%dof_nghb_adj%i1, 1, comm_part%dof_nghb_adj%n+1, 'comm_part%dof_nghb_adj%i1')
+      read(funit) comm_part%dof_nghb_adj%i1(1:comm_part%dof_nghb_adj%n+1)
+    end if
+    if (comm_part%dof_nghb_adj%length > 0) then
+      if (dd_debug_level > 3) write(*,*) ' read dof_nghb_adj%ie'
+      call alloc_(comm_part%dof_nghb_adj%ie, 1, comm_part%dof_nghb_adj%length, 'comm_part%dof_nghb_adj%ie')
+      read(funit) comm_part%dof_nghb_adj%ie(1:comm_part%dof_nghb_adj%length)
+    end if
+
+    close(funit)
+
+  end subroutine read_hexa_comm_struct
+
+
+  subroutine write_hexa_comm_struct(comm_part, filename)
+    type(hexa_comm_struct_type), intent(in) :: comm_part
+    character(len=*),            intent(in) :: filename
+    character(len = *),          parameter  :: proc_name = "write_hexa_comm_struct"
+    integer                                 :: funit, istat
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name, filename
+    endif
+
+    write(*,*)
+    write(*,*) "Write comm struct ... ", trim(adjustl(filename))
+
+    funit = 123
+    open(unit = funit, file = trim(adjustl(filename)), form='unformatted', status = 'replace', action='write', iostat = istat)
+    if (istat /= 0) then
+      write(*,*) proc_name, " :: ERROR : status == ", istat, " unable to open ", trim(adjustl(filename))
+      stop
+    end if
+    rewind(funit)
+
+    write(funit) comm_part%nEdeg, comm_part%nFdeg
+    write(funit) comm_part%nV, comm_part%nEdge, comm_part%nF, comm_part%nE
+    if (dd_debug_level > 3) then
+      write(*,*) comm_part%nEdeg, comm_part%nFdeg
+      write(*,*) comm_part%nV, comm_part%nEdge, comm_part%nF, comm_part%nE
+    endif
+
+    if (comm_part%nnghb_part > 0 .and. allocated(comm_part%nghb_part)) then
+      if (dd_debug_level > 3) write(*,*) ' write nghb_part'
+      write(funit) comm_part%nnghb_part
+      write(funit) comm_part%nghb_part(1:comm_part%nnghb_part)
+    else
+      write(funit) 0
+    end if
+
+    if (      comm_part%v_nghb_adj%n      > 0 .and. allocated(comm_part%v_nghb_adj%i1) &
+    &   .and. comm_part%v_nghb_adj%length > 0 .and. allocated(comm_part%v_nghb_adj%ie)) then
+      if (dd_debug_level > 3) write(*,*) ' write v_nghb_adj%i1, ie'
+      write(funit) comm_part%v_nghb_adj%n, comm_part%v_nghb_adj%length
+      write(funit) comm_part%v_nghb_adj%i1(1:comm_part%v_nghb_adj%n+1)
+      write(funit) comm_part%v_nghb_adj%ie(1:comm_part%v_nghb_adj%length)
+    else
+      write(funit) 0, 0
+    end if
+
+    if (      comm_part%edge_nghb_adj%n      > 0 .and. allocated(comm_part%edge_nghb_adj%i1) &
+    &   .and. comm_part%edge_nghb_adj%length > 0 .and. allocated(comm_part%edge_nghb_adj%ie)) then
+      if (dd_debug_level > 3) write(*,*) ' write edge_nghb_adj%i1, ie'
+      write(funit) comm_part%edge_nghb_adj%n, comm_part%edge_nghb_adj%length
+      write(funit) comm_part%edge_nghb_adj%i1(1:comm_part%edge_nghb_adj%n+1)
+      write(funit) comm_part%edge_nghb_adj%ie(1:comm_part%edge_nghb_adj%length)
+    else
+      write(funit) 0, 0
+    end if
+
+    if (      comm_part%f_nghb_adj%n      > 0 .and. allocated(comm_part%f_nghb_adj%i1) &
+    &   .and. comm_part%f_nghb_adj%length > 0 .and. allocated(comm_part%f_nghb_adj%ie)) then
+      if (dd_debug_level > 3) write(*,*) ' write f_nghb_adj%i1, ie'
+      write(funit) comm_part%f_nghb_adj%n, comm_part%f_nghb_adj%length
+      write(funit) comm_part%f_nghb_adj%i1(1:comm_part%f_nghb_adj%n+1)
+      write(funit) comm_part%f_nghb_adj%ie(1:comm_part%f_nghb_adj%length)
+    else
+      write(funit) 0, 0
+    end if
+
+    if (      comm_part%dof_nghb_adj%n      > 0 .and. allocated(comm_part%dof_nghb_adj%i1) &
+    &   .and. comm_part%dof_nghb_adj%length > 0 .and. allocated(comm_part%dof_nghb_adj%ie)) then
+      if (dd_debug_level > 3) write(*,*) ' write dof_nghb_adj%i1, ie'
+      write(funit) comm_part%dof_nghb_adj%n, comm_part%dof_nghb_adj%length
+      write(funit) comm_part%dof_nghb_adj%i1(1:comm_part%dof_nghb_adj%n+1)
+      write(funit) comm_part%dof_nghb_adj%ie(1:comm_part%dof_nghb_adj%length)
+    else
+      write(funit) 0, 0
+    end if
+
+    close(funit)
+
+  end subroutine write_hexa_comm_struct
+
+
+  subroutine free_hexa_comm_struct(comm_part)
+    type(hexa_comm_struct_type), intent(in out) :: comm_part
+    character(len = *),          parameter      :: proc_name = "free_hexa_comm_struct"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    call dealloc_(comm_part%nghb_part,        'comm_part%nghb_part')
+    call dealloc_(comm_part%v_nghb_adj%i1,    'comm_part%v_nghb_adj%i1')
+    call dealloc_(comm_part%v_nghb_adj%ie,    'comm_part%v_nghb_adj%ie')
+    call dealloc_(comm_part%edge_nghb_adj%i1, 'comm_part%edge_nghb_adj%i1')
+    call dealloc_(comm_part%edge_nghb_adj%ie, 'comm_part%edge_nghb_adj%ie')
+    call dealloc_(comm_part%f_nghb_adj%i1,    'comm_part%f_nghb_adj%i1')
+    call dealloc_(comm_part%f_nghb_adj%ie,    'comm_part%f_nghb_adj%ie')
+    call dealloc_(comm_part%dof_nghb_adj%i1,  'comm_part%dof_nghb_adj%i1')
+    call dealloc_(comm_part%dof_nghb_adj%ie,  'comm_part%dof_nghb_adj%ie')
+
+  end subroutine free_hexa_comm_struct
+
+
+  subroutine compute_hexa_comm_struct(npart, mesh, mesh_part, comm_part, nnghb_part, nghb_part, map_nghb_part, &
+  &                                          Vglobtoloc, Edgeglobtoloc, Fglobtoloc)
+    integer,                                                     intent(in)     :: npart
+    type(hexa_mesh_struct_type),                                 intent(in)     :: mesh
+    type(hexa_mesh_struct_type), dimension(npart),      target,  intent(in)     :: mesh_part
+    type(hexa_comm_struct_type), dimension(npart),      target,  intent(in out) :: comm_part
+    integer,         dimension(npart),                           intent(in)     :: nnghb_part    ! nb neighbour subdomains per partition
+    integer,         dimension(npart,npart),                     intent(in)     :: nghb_part     ! (relative nghb index, part id) = absolute nghb id
+    integer,         dimension(npart,npart),                     intent(in)     :: map_nghb_part ! (absolute part id, absolute part id) = >1 (relative nghb index) or 0 (not nghb)
+    type(entity_part_cell_t), dimension(:), allocatable, target, intent(in)     :: Vglobtoloc, Edgeglobtoloc, Fglobtoloc
+
+    type(entity_nghb_adj_list_type), dimension(npart)                           :: entity_nghb_adj
+    type(container_type), dimension(:), allocatable                             :: entity_loctoglob
+    integer                                                                     :: ipart, nnghb, length, n
+    character(len = *),                                          parameter      :: proc_name = "compute_hexa_comm_struct"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    ! Set up the comm structure for each partition
+    do ipart = 1, npart
+      comm_part(ipart)%nEdeg        = mesh_part(ipart)%nEdeg
+      comm_part(ipart)%nFdeg        = mesh_part(ipart)%nFdeg
+      comm_part(ipart)%nV           = mesh_part(ipart)%nV
+      comm_part(ipart)%nEdge        = mesh_part(ipart)%nEdge
+      comm_part(ipart)%nF           = mesh_part(ipart)%nF
+      comm_part(ipart)%nE           = mesh_part(ipart)%nE
+      nnghb                         = nnghb_part(ipart)
+      comm_part(ipart)%nnghb_part   = nnghb
+      if (nnghb > 0) then
+        call alloc_(comm_part(ipart)%nghb_part, 1, nnghb, 'nghb_part')
+        comm_part(ipart)%nghb_part(:) = nghb_part(1:nnghb,ipart)
+      end if
+    end do
+
+    allocate(entity_loctoglob(1:npart))
+
+    !------------------------------------------------------------------
+    ! Shared vertices communication structure
+    !------------------------------------------------------------------
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) '---------------------'
+      write(*,*) 'Shared vertices info:'
+      write(*,*) '---------------------'
+      write(*,*)
+    end if
+
+    do ipart = 1, npart
+      entity_loctoglob(ipart)%ptr => mesh_part(ipart)%Vloctoglob
+    end do
+
+    ! Compute the number of shared vertices between each neighbour partitions
+    call fulfill_entity_nghb_adj_list_part(npart, mesh%nV, Vglobtoloc, nnghb_part, nghb_part, map_nghb_part, entity_nghb_adj, &
+    &                                      entity_loctoglob)
+
+    ! copy computed data in structure
+    do ipart = 1, npart
+      n = entity_nghb_adj(ipart)%n
+      comm_part(ipart)%v_nghb_adj%n = n
+      if (n > 0) then
+        call alloc_(comm_part(ipart)%v_nghb_adj%i1, 1, n + 1, 'v_nghb_adj%i1')
+        comm_part(ipart)%v_nghb_adj%i1 = entity_nghb_adj(ipart)%i1
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%i1, 'entity_nghb_adj%i1')
+      entity_nghb_adj(ipart)%n = 0
+
+      length = entity_nghb_adj(ipart)%length
+      comm_part(ipart)%v_nghb_adj%length = length
+      if (length > 0) then
+        call alloc_(comm_part(ipart)%v_nghb_adj%ie, 1, length, 'v_nghb_adj%ie')
+        comm_part(ipart)%v_nghb_adj%ie = entity_nghb_adj(ipart)%ie
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%ie, 'entity_nghb_adj%ie')
+      entity_nghb_adj(ipart)%length = 0
+    end do
+
+    !------------------------------------------------------------------
+    ! Shared edges communication structure
+    !------------------------------------------------------------------
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) '---------------------'
+      write(*,*) 'Shared edges info:'
+      write(*,*) '---------------------'
+      write(*,*)
+    end if
+
+    do ipart = 1, npart
+      entity_loctoglob(ipart)%ptr => mesh_part(ipart)%Edgeloctoglob
+    end do
+
+    ! Compute the number of shared edges between each neighbour partitions
+    call fulfill_entity_nghb_adj_list_part(npart, mesh%nEdge, Edgeglobtoloc, nnghb_part, nghb_part, map_nghb_part, &
+    &                                      entity_nghb_adj, entity_loctoglob)
+
+    ! copy computed data in structure
+    do ipart = 1, npart
+      n = entity_nghb_adj(ipart)%n
+      comm_part(ipart)%edge_nghb_adj%n = n
+      if (n > 0) then
+        call alloc_(comm_part(ipart)%edge_nghb_adj%i1, 1, n + 1, 'edge_nghb_adj%i1')
+        comm_part(ipart)%edge_nghb_adj%i1 = entity_nghb_adj(ipart)%i1
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%i1, 'entity_nghb_adj%i1')
+      entity_nghb_adj(ipart)%n = 0
+
+      length = entity_nghb_adj(ipart)%length
+      comm_part(ipart)%edge_nghb_adj%length = length
+      if (length > 0) then
+        call alloc_(comm_part(ipart)%edge_nghb_adj%ie, 1, length, 'edge_nghb_adj%ie')
+        comm_part(ipart)%edge_nghb_adj%ie = entity_nghb_adj(ipart)%ie
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%ie, 'entity_nghb_adj%ie')
+      entity_nghb_adj(ipart)%length = 0
+    end do
+
+    !------------------------------------------------------------------
+    ! Shared faces communication structure
+    !------------------------------------------------------------------
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) '---------------------'
+      write(*,*) 'Shared faces info:'
+      write(*,*) '---------------------'
+      write(*,*)
+    end if
+
+    do ipart = 1, npart
+      entity_loctoglob(ipart)%ptr => mesh_part(ipart)%Floctoglob
+    end do
+
+    ! Compute the number of shared faces between each neighbour partitions
+    call fulfill_entity_nghb_adj_list_part(npart, mesh%nF, Fglobtoloc, nnghb_part, nghb_part, map_nghb_part, entity_nghb_adj, &
+    &                                      entity_loctoglob)
+
+    ! copy computed data in structure
+    do ipart = 1, npart
+      n = entity_nghb_adj(ipart)%n
+      comm_part(ipart)%f_nghb_adj%n = n
+      if (n > 0) then
+        call alloc_(comm_part(ipart)%f_nghb_adj%i1, 1, n + 1, 'f_nghb_adj%i1')
+        comm_part(ipart)%f_nghb_adj%i1 = entity_nghb_adj(ipart)%i1
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%i1, 'entity_nghb_adj%i1')
+      entity_nghb_adj(ipart)%n = 0
+
+      length = entity_nghb_adj(ipart)%length
+      comm_part(ipart)%f_nghb_adj%length = length
+      if (length > 0) then
+        call alloc_(comm_part(ipart)%f_nghb_adj%ie, 1, length, 'f_nghb_adj%ie')
+        comm_part(ipart)%f_nghb_adj%ie = entity_nghb_adj(ipart)%ie
+      end if
+      call dealloc_(entity_nghb_adj(ipart)%ie, 'entity_nghb_adj%ie')
+      entity_nghb_adj(ipart)%length = 0
+    end do
+
+    deallocate(entity_loctoglob)
+
+  end subroutine compute_hexa_comm_struct
+  
+
+  subroutine fulfill_entity_nghb_adj_list_part(npart, nEntity, entity_globtoloc_ht, &
+  &                                            nnghb_part, nghb_part, map_nghb_part, entity_nghb_adj, entity_loctoglob)
+    integer,                                                     intent(in)     :: npart, nEntity
+    type(entity_part_cell_t), dimension(:), allocatable, target, intent(in)     :: entity_globtoloc_ht
+    integer,         dimension(npart),                           intent(in)     :: nnghb_part    ! nb neighbour subdomains per partition
+    integer,         dimension(npart,npart),                     intent(in)     :: nghb_part     ! (relative nghb index, part id) = absolute nghb id
+    integer,         dimension(npart,npart),                     intent(in)     :: map_nghb_part ! (absolute part id, absolute part id) = >1 (relative nghb index) or 0 (not nghb)
+    type(entity_nghb_adj_list_type), dimension(npart),           intent(in out) :: entity_nghb_adj
+    type(container_type), dimension(:), allocatable,             intent(in)     :: entity_loctoglob
+
+    integer,         dimension(npart, npart)                     :: cpt_shared_entity_part
+    integer                                                      :: ipart, ipart_nghb, ipart_rel, ipart_nghb_rel
+    integer                                                      :: nEntity_shared, i1, iEnd, ii, n, iEntity
+    integer                                                      :: i1_nghb, iEnd_nghb, iEntity_nghb
+    character(len=4)                                             :: str4
+    type(entity_part_cell_t),                            pointer :: NextCell => Null(), NextCellNghb => Null()
+    character(len = *),                                parameter :: proc_name = "fulfill_entity_nghb_adj_list_part"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    ! Compute the number of shared entities between each neighbour partitions
+    cpt_shared_entity_part(:,:) = 0
+    do iEntity = 1, nEntity
+      NextCell => entity_globtoloc_ht(iEntity)
+
+      do while (associated(NextCell))
+        ipart = NextCell%ipart
+
+        NextCellNghb => NextCell%next
+        do while (associated(NextCellNghb))
+          ipart_nghb = NextCellNghb%ipart
+
+          if (ipart_nghb == ipart) then
+            write(*,*) ' ERROR :: ipart_nghb == ipart : not supposed to happen'
+            stop
+          end if
+            
+          cpt_shared_entity_part(ipart, ipart_nghb) = cpt_shared_entity_part(ipart, ipart_nghb) + 1
+          cpt_shared_entity_part(ipart_nghb, ipart) = cpt_shared_entity_part(ipart_nghb, ipart) + 1
+
+          NextCellNghb => NextCellNghb%next
+        end do
+
+        NextCell => NextCell%next
+      end do
+
+    end do ! iEntity = 1, nEntity
+
+    if (debug_graph > 0) then
+      write(*,*) 'cpt_shared_entity_part=', cpt_shared_entity_part
+    end if
+
+    ! Keep the previously computed info and allocate structures to store shared entities
+    do ipart = 1, npart
+      ! store the number of nghb partition of the current partition
+      n = nnghb_part(ipart)
+      entity_nghb_adj(ipart)%n = n
+
+      if (n > 0) then
+
+        ! allocate and fulfill the table of entry indexes of the adjacency list of the shared verticies
+        call alloc_(entity_nghb_adj(ipart)%i1, 1, n + 1, 'entity_nghb_adj%i1')
+        entity_nghb_adj(ipart)%i1(1) = 1
+
+        !write(*,*)
+        !write(*,*) 'ipart      ', ipart, ' nnghb_part', n, ' nghb_part ', nghb_part(:, ipart)
+        !write(*,*)
+        do ii = 1, n                        ! ii         = relative index of the neighbour partition
+          ipart_nghb = nghb_part(ii, ipart) ! ipart_nghb = absolute index of the neighbour partition
+          !write(*,*) 'ipart_nghb ', ipart_nghb
+          entity_nghb_adj(ipart)%i1(ii+1) = entity_nghb_adj(ipart)%i1(ii) &
+          &                               + cpt_shared_entity_part(ipart_nghb,ipart)
+          !write(*,*) 'i1, iEnd+1 ', entity_nghb_adj(ipart)%i1(ii), entity_nghb_adj(ipart)%i1(ii+1)
+        end do
+
+      end if ! (entity_nghb_adj(ipart)%n > 0) then
+
+      ! store the length of the adjacency list
+      nEntity_shared = sum(cpt_shared_entity_part(:,ipart))
+      entity_nghb_adj(ipart)%length = nEntity_shared
+
+      ! allocate the table of the adjacency list
+      if (nEntity_shared > 0) then
+        call alloc_(entity_nghb_adj(ipart)%ie, 1, nEntity_shared, 'entity_nghb_adj%ie')
+      end if
+    end do ! ipart = 1, npart
+
+    ! Compute and store the shared entities
+    cpt_shared_entity_part(:,:) = 0
+    do iEntity = 1, nEntity
+      NextCell => entity_globtoloc_ht(iEntity)
+
+      do while (associated(NextCell))
+        ipart = NextCell%ipart
+
+        NextCellNghb => NextCell%next
+        do while (associated(NextCellNghb))
+          ipart_nghb = NextCellNghb%ipart
+
+          if (ipart_nghb == ipart) then
+            write(*,*) ' ERROR :: ipart_nghb == ipart : not supposed to happen'
+            stop
+          end if
+
+          ! Warning: %i1 needs the relative nghb partition index not the absolute one
+
+          ipart_nghb_rel = map_nghb_part(ipart_nghb, ipart)
+          i1 = entity_nghb_adj(ipart)%i1(ipart_nghb_rel)
+          cpt_shared_entity_part(ipart_nghb, ipart) = cpt_shared_entity_part(ipart_nghb, ipart) + 1
+          ii = i1 + cpt_shared_entity_part(ipart_nghb, ipart) - 1
+          !write(*,*) 'ientity ', ientity, ' ipart ', ipart, ' ipart_nghb ', ipart_nghb, &
+          !& ' ipart_nghb_rel ', ipart_nghb_rel, ' i1 ', i1, ' ii ', ii
+          entity_nghb_adj(ipart)%ie(ii) = NextCell%iloc
+
+          ipart_rel = map_nghb_part(ipart, ipart_nghb)
+          i1 = entity_nghb_adj(ipart_nghb)%i1(ipart_rel)
+          cpt_shared_entity_part(ipart, ipart_nghb) = cpt_shared_entity_part(ipart, ipart_nghb) + 1
+          ii = i1 + cpt_shared_entity_part(ipart, ipart_nghb) - 1
+          !write(*,*) 'ientity ', ientity, ' ipart ', ipart, ' ipart_nghb ', ipart_nghb, &
+          !& ' ipart_rel      ', ipart_rel, ' i1 ', i1, ' ii ', ii
+          entity_nghb_adj(ipart_nghb)%ie(ii) = NextCellNghb%iloc
+
+          NextCellNghb => NextCellNghb%next
+        end do
+
+        NextCell => NextCell%next
+      end do
+
+    end do ! iEntity = 1, nEntity
+
+    if (debug_graph > 0) then
+      do ipart = 1, npart
+        write(*,*)
+        write(*,*) '  ipart:', ipart
+        write(*,*)
+        call dump_entity_nghb_adj_list_type(entity_nghb_adj(ipart))
+      end do
+    end if
+
+    if (debug_graph > 0) then
+      write(*,*)
+      write(*,*) 'Check adequacy between shared entities at local partition level and global ones:'
+      write(*,*)
+      do ipart = 1, npart ! absolute index
+        do ipart_nghb_rel = 1, entity_nghb_adj(ipart)%n ! relative index
+          ipart_nghb = nghb_part(ipart_nghb_rel, ipart) ! ipart_nghb     = absolute index of the neighbour partition
+          ipart_rel = map_nghb_part(ipart, ipart_nghb)  ! relative index of ipart from ipart_nghb point of view
+
+          write(*,*)
+          write(*,*) '  ipart:', ipart, ' ipart_nghb:', ipart_nghb
+          write(*,*)
+
+          i1   = entity_nghb_adj(ipart)%i1(ipart_nghb_rel)
+          iEnd = entity_nghb_adj(ipart)%i1(ipart_nghb_rel+1) - 1
+
+          i1_nghb   = entity_nghb_adj(ipart_nghb)%i1(ipart_rel)
+          iEnd_nghb = entity_nghb_adj(ipart_nghb)%i1(ipart_rel+1) - 1
+
+          if (iEnd - i1 /= iEnd_nghb - i1_nghb) then
+            write(*,*) ' Same number of shared entities expected :', iEnd - i1, iEnd_nghb - i1_nghb
+            stop
+          end if
+
+          if (iEnd - i1 + 1 > 0) then
+
+            write(str4,'(I4)') iEnd - i1 + 1
+            write(*,'(A,2I6,2(A,'//str4//'I6))')                              &
+            & '     ipart, ipart_nghb =', ipart, ipart_nghb,                  &
+            & ' shared entities: iloc =', entity_nghb_adj(ipart)%ie(i1:iEnd), &
+            & ' iglob =', (entity_loctoglob(ipart)%ptr%tab(entity_nghb_adj(ipart)%ie(i1+ii-1)), ii = 1, iEnd-i1+1)
+
+            write(str4,'(I4)') iEnd_nghb - i1_nghb + 1
+            write(*,'(A,2I6,2(A,'//str4//'I6))')                                             &
+            & '     ipart_nghb, ipart =', ipart_nghb, ipart,                                 &
+            & ' shared entities: iloc =', entity_nghb_adj(ipart_nghb)%ie(i1_nghb:iEnd_nghb), &
+            & ' iglob =',(entity_loctoglob(ipart_nghb)%ptr%tab(entity_nghb_adj(ipart_nghb)%ie(i1_nghb+ii-1)), ii = 1, iEnd-i1+1)
+
+            do ii = 1, iEnd - i1 + 1
+
+              iEntity      = entity_nghb_adj(ipart)%ie(i1 + ii - 1)
+              iEntity_nghb = entity_nghb_adj(ipart_nghb)%ie(i1_nghb + ii - 1)
+              
+              if (entity_loctoglob(ipart)%ptr%tab(iEntity) /= entity_loctoglob(ipart_nghb)%ptr%tab(iEntity_nghb)) then
+                write(*,*) ' Problem of adequacy between shared entities'
+                stop
+              end if
+
+            end do ! ii = 1, iEnd - i1 + 1
+
+          end if ! (iEnd - i1 + 1 > 0)
+          
+        end do ! ipart_nghb_rel = 1, entity_nghb_adj(ipart)%n
+      end do ! ipart = 1, npart ! absolute index
+      write(*,*)
+    end if
+
+  end subroutine fulfill_entity_nghb_adj_list_part
+
+
+  subroutine dump_entity_nghb_adj_list_type(entity_nghb_adj)
+    type(entity_nghb_adj_list_type), intent(in) :: entity_nghb_adj
+    integer                                     :: ipart_nghb, i1, iEnd
+    character(len=4)                            :: str4
+    character(len = *),              parameter  :: proc_name = "dump_entity_nghb_adj_list_type"
+
+    if (dd_debug_level > 3) then
+      write(*,*) myid, ' : ', proc_name
+    endif
+
+    write(*,'(A,I3)') '      Nb nghb partitions:', entity_nghb_adj%n
+
+    if (allocated(entity_nghb_adj%i1) .and. allocated(entity_nghb_adj%ie)) then
+
+      write(str4,'(I4)') entity_nghb_adj%n + 1
+      write(*,'(A,'//str4//'I4)') '      Entry indexes of adjacency list =', entity_nghb_adj%i1
+      write(*,*)
+
+      do ipart_nghb = 1, entity_nghb_adj%n
+
+        i1   = entity_nghb_adj%i1(ipart_nghb)
+        iEnd = entity_nghb_adj%i1(ipart_nghb+1) - 1
+
+        if (iEnd - i1 + 1 > 0) then
+          write(str4,'(I4)') iEnd - i1 + 1
+          write(*,'(A,I6,A,'//str4//'I4)') '      ipart_nghb =', ipart_nghb, ' shared entities =', entity_nghb_adj%ie(i1:iEnd)
+        end if
+
+      end do
+    end if
+    write(*,*)
+
+  end subroutine dump_entity_nghb_adj_list_type
+
+end module hexa_comm_struct_mod

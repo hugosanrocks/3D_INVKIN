@@ -1,0 +1,22 @@
+#=======================================================================
+#                 Makefile.config for Interpolation toolbox
+#=======================================================================
+
+# for the visualization of the demos
+SHELL = /bin/sh
+RSFSRC_PATH = $(RSFSRC)
+RSFROOT_PATH = $(RSFROOT)
+
+OPTIM = ~/SEISCOPE_CODES/TOOLS_BOX/trunk/OPTIMIZATION
+INTERP = ~/SEISCOPE_CODES/TOOLS_BOX/trunk/INTERPOLATION
+LIB = -L $(OPTIM)/lib -lSEISCOPE_OPTIM -L $(INTERP)/lib -lSEISCOPE_INTERP
+INC = -I $(OPTIM)/COMMON/include 
+
+# fortran compiling settings
+FC		= gfortran
+MPIFC  	= mpif90
+FLAGS	= -O3 -g -ffixed-line-length-none
+
+#build a library for linking
+AR	= ar
+ARFUNCT	= cruv

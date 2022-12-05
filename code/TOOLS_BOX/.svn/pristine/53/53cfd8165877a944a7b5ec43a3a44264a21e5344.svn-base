@@ -1,0 +1,39 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortium
+!!$
+!!$ Author: Pengliang Yang, Univ. Grenoble Alpes
+!!$ Email: pengliang.yang@univ-grenoble-alpes.fr
+!!$==========================================================================
+!!$ References: 
+!!$[1] Yang, P., Brossier, R., Metivier, L. and Virieux, J. (2016), Wavefield 
+!!$   reconstruction in attenuating media: A Checkpointing-assisted 
+!!$   reverse-forward simulation method, Geophysics,  Vol. 81, No. 6, 
+!!$   pp. R349–R362
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016). Wavefield reconstruction
+!!$   from significantly decimated boundaries. Geophysics, Vol. 81, No. 5,
+!!$   T197–T209
+!!$==========================================================================
+subroutine checkpoint_relocate(verb,cpit,nc,ic,it)!set ic=0, c=nc-ic, it=nt-1 as initial
+  implicit none
+
+  logical::verb
+  integer::nc !total number of checkpoints
+  integer::ic !the closest checkpoint prior to current time level-it
+  integer::it !current time level
+  integer::cpit(0:nc-1) !position of checkpoints in time coordinate
+
+  integer::i,l,c,p(0:nc-ic-1)
+
+  c=nc-ic ! the number of idle checkpoints posterior to time level-it
+  cpit(0)=0 ! set the first checkpoint    
+  if(verb) write(0,'(2(A,I4))') "cp[",ic,"] store it=", cpit(ic)
+
+  l=it-cpit(ic)+1
+  if(l>2.and.c>1) then
+     call checkpoint_positioning(p,l,c) 
+     do i=1,c-1
+        if(p(i)>0) cpit(ic+i)=cpit(ic)+p(i)
+        if(verb) write(0,'(2(A,I4))') "cp[",ic+i,"] store it=", cpit(ic+i)
+     enddo
+  endif
+end subroutine checkpoint_relocate
+

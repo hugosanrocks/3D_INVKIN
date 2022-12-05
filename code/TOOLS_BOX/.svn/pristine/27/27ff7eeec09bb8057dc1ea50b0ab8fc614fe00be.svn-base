@@ -1,0 +1,269 @@
+! Viscoacoustic forward-backward simulation with generalized Maxwell body 
+! (3 mechanisms): Checkpointing assisted reverse propagation (CARP) method
+!
+!!$  Copyright (C) 2015 University Joseph Fourier, Grencle (Pengliang Yang)
+!!$
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. M\'etivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+program gmbva_cp
+  use gmbva
+  implicit none
+
+  logical :: verb
+  integer :: it, kt, nt,mt,r, nz, nx, nb, sx, sz,L,K,checkpoint_r
+  integer :: ierr,nc,ic,xtr,ztr,i,j, itt, cpstart, cpsteps=0
+  real  :: dt, dz, dx, amp, fm, vpmax, tmp, idx, idz,dtb, tolerance,wmin,wmax
+  real, parameter::PI=3.14159265359
+  real, dimension (:),   allocatable :: wlt,bb,ef,eb,trf,trb,wl,w
+  real, dimension (:,:), allocatable :: v0, vv,rho, kappa,p,vz,vx,Q0
+  real, dimension (:,:,:), allocatable :: xil,yl
+  integer, dimension(:), allocatable :: cpit
+  type(checkpoint),dimension(:),allocatable ::cp
+
+  ! Read/Write axes
+  nz=301
+  nx=301
+  dz=4
+  dx=4 
+  nb=25
+  dt=0.001
+  nt=1000
+  kt=500
+  dtb=4*dt
+  tolerance=0.01
+  nc=nint(log(real(nt))/log(2.))
+  L=3; K=2*L-1
+  wmin=2.
+  wmax=20.
+  amp=1.
+  fm=wmax/2.5
+  verb=.false.
+  xtr=100
+  ztr=100
+
+  idx=1./dx
+  idz=1./dz
+  sx=(nx+1)/2
+  sz=(nz+1)/2
+  wmin=2*PI*wmin
+  wmax=2*PI*wmax
+  r=nint(dtb/dt)
+  if(mod(nt,r)==0) then
+     write(0,*) 'store boundary every r-step: r=', r
+     mt=nt/r !N=nt;M=mt; M=N/r
+  else
+     write(0,*) 'dt for boundary saving is chosen inappropriately.'
+     call exit(0)
+  endif
+
+  allocate(wlt(0:nt-1))
+  allocate(bb(nb))
+  allocate(v0(nz,nx))
+  allocate(Q0(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vv(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(rho(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(kappa(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(yl(-nb+1:nb+nz,-nb+1:nb+nx,L))
+  allocate(p(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vz(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(vx(-nb+1:nb+nz,-nb+1:nb+nx))
+  allocate(xil(-nb+1:nb+nz,-nb+1:nb+nx,L))
+  allocate(wl(L))
+  allocate(w(K))
+  allocate(ef(0:nt-1))
+  allocate(eb(0:nt-1))
+  allocate(trf(0:nt-1))
+  allocate(trb(0:nt-1))
+  allocate(cp(0:nc-1))
+  allocate(cpit(0:nc-1))
+  call checkpoint_init(cp,nc,nt,nz,nx,nb,L)
+
+  !generate ricker wavelet with a delay
+  do it=0,nt-1
+     tmp=PI*fm*(it*dt-1.0/fm)
+     tmp=tmp*tmp
+     wlt(it)=amp*(1.0-2.0*tmp)*exp(-tmp)
+  enddo
+  v0=2000.
+  vpmax=maxval(v0)
+  call check_sanity(vpmax, dt, dx, dz)
+  call expand2d(vv, v0, nz, nx, nb)
+  rho=1000.
+  call expand2d(rho, rho(1:nz,1:nx), nz, nx, nb)
+  call sponge_coeff(bb,vpmax,dx,dt,nb)
+  kappa=rho*vv*vv
+  p=0.
+  vx=0.
+  vz=0.
+  xil=0.
+  trf=0.
+  trb=0.
+  !specify frequencies in logarithmic equaldistance
+  do i=1,L
+     wl(i)=wmin*(wmax/wmin)**(real(i-1.)/real(L-1.))
+  enddo
+  do i=1,K
+     w(i)=wmin*(wmax/wmin)**(real(i-1.)/real(K-1.))
+  enddo
+  Q0=60.
+  call expand2d(Q0, Q0(1:nz,1:nx), nz, nx, nb)
+!  call lsq_model(verb,Q0(1:nz,1:nx),Yl(1:nz,1:nx,:),wl,w,L,K,nz,nx)
+  call lsq_valhall2d(verb,Q0(1:nz,1:nx),Yl(1:nz,1:nx,:),wl,w,L,K,nz,nx)
+  do i=1,L
+    call expand2d(Yl(:,:,i), Yl(1:nz,1:nx,i), nz, nx, nb)
+  enddo
+
+  !forward modeling
+  ic=0
+  call checkpoint_relocate(verb,cpit,nc,ic,nt-1)
+  do it=0,nt-1
+     call add_sources(p, dt, wlt(it), sz, sx,nz,nx,nb)
+     call step_forward_v(p, vz, vx, rho, dt, idz, idx,nz,nx,nb)
+     call apply_sponge(vz,bb,nz,nx,nb) 
+     call apply_sponge(vx,bb,nz,nx,nb) 
+     call step_forward_p(p,vz,vx,kappa,xil,yl,wl,dt,idz,idx,nz,nx,nb,L)
+     call apply_sponge(p,bb,nz,nx,nb) 
+     do i=1,L
+        call apply_sponge(xil(:,:,i),bb,nz,nx,nb) 
+     enddo
+     cpsteps=cpsteps+1
+     call compute_energy(ef(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+     !record snapshots to restart reverse propagation
+     if(ic<nc.and.it==cpit(ic)) then
+        cp(ic)%p=p
+        cp(ic)%vz=vz
+        cp(ic)%vx=vx       
+        cp(ic)%xil=xil
+        ic=ic+1 !index of the snapshot/cp
+     endif
+
+     if(verb) write(0,*) "forward simulation: it=",it
+     !record a random trace for reconstruction checking
+     trf(it)=p(ztr,xtr)
+     if (it==kt)then
+     	call window2d(v0, p, nz, nx, nb)
+        open(10,file='forward.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+  enddo
+  ! store forward energy history
+  open(10,file='ef.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) ef
+  close(10)
+  !store the trace recorded in forward simulation
+  open(10,file='trf.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trf
+  close(10)
+
+  !backward reconstruction
+  do it=nt-1,0,-1     
+     !find the closesest checkpoint prior to current time level-it
+     ic=nc-1
+     do while(ic>=0 .and. it<cpit(ic))
+        ic=ic-1
+     enddo
+     !after searching cpit(ic) is the closest checkpoint location 
+     !prior or equal to current time level-it: it>=cp(ic)%it
+     p=cp(ic)%p
+     vz=cp(ic)%vz
+     vx=cp(ic)%vx
+     xil=cp(ic)%xil
+
+     if(verb) write(0,*) "backward reconstruction: it=",it
+     if (it>cpit(ic)) then ! if it is not checkpoint, do remodeling
+        !then evenly distribute idle checkpoints between cp(ic)%it+1:it
+        !the idle checkpoint are [ic:nc-1]
+        call checkpoint_relocate(verb,cpit,nc,ic,it)
+
+        j=1
+        do itt=cpit(ic)+1,it
+           call add_sources(p, dt, wlt(itt), sz, sx,nz,nx,nb)
+           call step_forward_v(p, vz, vx, rho, dt, idz, idx,nz,nx,nb)
+           call apply_sponge(vz,bb,nz,nx,nb) 
+           call apply_sponge(vx,bb,nz,nx,nb) 
+           call step_forward_p(p,vz,vx,kappa,xil,yl,wl,dt,idz,idx,nz,nx,nb,L)
+           call apply_sponge(p,bb,nz,nx,nb) 
+           do i=1,L
+              call apply_sponge(xil(:,:,i),bb,nz,nx,nb) 
+           enddo
+           !store (nc-ic) snapshots into the idle checkpoints on the fly
+           !they may be used later
+           do while(ic+j<nc.and.itt==cpit(ic+j)) 
+              !it is possible that several checkpoints resides in the same position
+              cp(ic+j)%p=p
+              cp(ic+j)%vz=vz
+              cp(ic+j)%vx=vx
+              cp(ic+j)%xil=xil
+              j=j+1
+           enddo
+           cpsteps=cpsteps+1
+        enddo
+     endif
+     !the checkpoint computed wavefield is free of error
+     !thus, the energy is the same as forward simulation
+     call compute_energy(eb(it),vz(1:nz,1:nx),vx(1:nz,1:nx),p(1:nz,1:nx),&
+          rho(1:nz,1:nx),kappa(1:nz,1:nx),nz,nx)
+
+     !record a random trace for checking the reconstruction
+     trb(it)=p(ztr,xtr)
+     if(it==kt)then
+        call window2d(v0, p, nz, nx, nb)
+        open(10,file='reconstructed.bin',access='direct',recl=4*nz*nx,status='replace')
+        write(10,rec=1) v0
+        close(10)
+     endif
+  enddo
+  !store backward energy history
+  open(10,file='eb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) ef
+  close(10)
+  !store the trace recorded in backward simulation
+  open(10,file='trb.bin',access='direct',recl=4*nt,status='replace')
+  write(10,rec=1) trb
+  close(10)
+
+  cpsteps=cpsteps-checkpoint_r(nt,nc)-1!This is because the standard checkpointing only do adjoint steps from nt-2 to 0 while we do it from nt-1 to 0; thus we requre checkpoint_r(nt,nc)+1 additional steps of forward modeling to go from last checkpoint to nt-1 
+  write(0,*) "Number of forward timestepping in checkpointing:",cpsteps
+  write(0,*) "Recomputation ratio/Slowdown factor:",real(cpsteps)/real(nt)
+
+  call checkpoint_free(cp,nc)
+  deallocate(cp)
+  deallocate(cpit)
+  deallocate(wlt)
+  deallocate(bb)
+  deallocate(ef)
+  deallocate(eb)
+  deallocate(v0)
+  deallocate(Q0)
+  deallocate(vv)
+  deallocate(rho)
+  deallocate(kappa)
+  deallocate(yl)
+  deallocate(p)
+  deallocate(vz)
+  deallocate(vx)  
+  deallocate(xil)
+  deallocate(wl)
+  deallocate(w)
+  deallocate(trf)
+  deallocate(trb)
+
+  call exit(0)
+end program gmbva_cp
+

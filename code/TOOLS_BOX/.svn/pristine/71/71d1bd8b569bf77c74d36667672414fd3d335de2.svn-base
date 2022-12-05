@@ -1,0 +1,196 @@
+
+#=====================#
+#      compiler       #
+#=====================#
+include ../../Makefile.inc
+CXXFLAGS = $(OPTCXX)
+FFLAGS   = $(OPTF)
+
+ifeq ($(GNU),1)
+  SUFFIX = _gnu
+  OPTF+=-fopenmp
+else
+  OPTF+=-openmp
+endif
+
+# MPIFC=mpif90
+# ifeq ($(findstring ada,$(HOSTNAME)), ada)
+# MPIFC=mpiifort
+# endif
+# 
+# # Intel compiler options (default one)
+# FFLAGS= -O3 -ipo -xHost
+# # FFLAGS = -g -C -CB -CU -fpe0 -ftrapuv -fp-model precise
+# # FFLAGS+= -warn all
+# FFLAGS+= -fopenmp
+# FFLAGS+= -assume byterecl -align
+# LDFLAGS=
+# AR=xiar
+# 
+# # gnu compiler options (make GNU=1)
+# ifeq ($(GNU),1)
+#   SUFFIX=_gnu
+#   FFLAGS= -O3
+#   # FFLAGS= -g -Wall -pedantic -fbounds-check -ffpe-trap=invalid,overflow,zero
+#   FFLAGS+= -fopenmp
+#   LDFLAGS=
+#   AR=ar
+# endif
+
+DDLIB=domdecomp_static
+METIS_LIB_DIR=/home/combe/svn/SEISCOPE_CODES/GEOINV3D/trunk/TOOL/partitioning/metis-4.0
+METIS_LIB_NAME=metis$(SUFFIX)
+
+#=====================#
+#     directories     #
+#=====================#
+
+DD_DIR     = ..
+SRC_DIR    = $(DD_DIR)/src
+COMMON_DIR = $(SRC_DIR)/COMMON
+SGRID_DIR  = $(SRC_DIR)/SGRID
+UGRID_DIR  = $(SRC_DIR)/UGRID
+UGRID_UTILS_DIR     = $(UGRID_DIR)/UTILS
+UGRID_HEXA_SEM_DIR  = $(UGRID_DIR)/HEXA_SEM
+UGRID_TETRA_DGM_DIR = $(UGRID_DIR)/TETRA_DGM
+BIN_DIR    = $(DD_DIR)/bin
+LIB_DIR    = $(DD_DIR)/lib$(SUFFIX)
+TEST_DIR   = $(DD_DIR)/test/test_dd_sgrid:$(DD_DIR)/test/test_dd_sg_ac_iso_o4:$(DD_DIR)/test/test_dd_sg_ac_iso_o4_optim:$(DD_DIR)/test/ug_test_tetra:$(DD_DIR)/test/ug_test_hexa:$(DD_DIR)/dg_test
+
+#=====================#
+#       vpaths        #
+#=====================#
+
+VPATH = $(COMMON_DIR):$(SGRID_DIR):$(UGRID_DIR):$(UGRID_UTILS_DIR):$(UGRID_HEXA_SEM_DIR):$(UGRID_TETRA_DGM_DIR):$(TEST_DIR)
+
+#=====================#
+# objects and modules #
+#=====================#
+
+COMMON_OBJ = dd_common.o       mem_alloc.o       grid.o       zone.o       comm_engine.o
+COMMON_MOD = dd_common_mod.mod mem_alloc_mod.mod grid_mod.mod zone_mod.mod comm_engine_mod.mod
+
+SGRID_OBJ = sgrid.o       sg_points_zone.o       sg_comm.o
+SGRID_MOD = sgrid_mod.mod sg_points_zone_mod.mod sg_comm_mod.mod
+
+UGRID_UTILS_OBJ = mesh_utils.o       mesh_readers.o       mesh_writers.o       mesh_partition_struct.o       mesh_partition.o       
+UGRID_UTILS_MOD = mesh_utils_mod.mod mesh_readers_mod.mod mesh_writers_mod.mod mesh_partition_struct_mod.mod mesh_partition_mod.mod 
+
+UGRID_HEXA_SEM_OBJ = hexa_mesh_struct.o       hexa_comm_struct.o       hexa_mesh_graphs.o       hexa_mesh_partition.o       hexa_ref_dof.o       hexa_glob_dof.o       hexa_mesh.o       hexa_comm.o
+UGRID_HEXA_SEM_MOD = hexa_mesh_struct_mod.mod hexa_comm_struct_mod.mod hexa_mesh_graphs_mod.mod hexa_mesh_partition_mod.mod hexa_ref_dof_mod.mod hexa_glob_dof_mod.mod hexa_mesh_mod.mod hexa_comm_mod.mod
+
+UGRID_TETRA_DGM_OBJ = preprocessing_dg.o input_dg.o time_stepping_dg.o acoustic_dg_kernel.o elastic_dg_kernel.o elastic_dg_leapfrog_kernel.o source_function_dg.o output_dg.o
+UGRID_TETRA_DGM_MOD = 
+
+UGRID_OBJ =  basis_function_on_tetra.o gll_library.o \
+            ref_dof.o  global_parameters_mod.o     mat_csr.o       glob_dof.o       ugrid.o       ug_comm.o \
+            tetra_mesh_graphs.o       
+UGRID_MOD =                                         \
+            ref_dof_mod.mod  global_parameters_mod.mod mat_csr_mod.mod glob_dof_mod.mod ugrid_mod.mod ug_comm_mod.mod \
+            tetra_mesh_graphs_mod.mod 
+
+
+ALL_OBJ = $(COMMON_OBJ) $(SGRID_OBJ) $(UGRID_UTILS_OBJ) $(UGRID_OBJ) $(UGRID_HEXA_SEM_OBJ) $(UGRID_TETRA_DGM_OBJ)
+ALL_MOD = $(COMMON_MOD) $(SGRID_MOD) $(UGRID_UTILS_MOD) $(UGRID_MOD) $(UGRID_HEXA_SEM_MOD) $(UGRID_TETRA_DGM_MOD)
+
+.SUFFIXES: .o .f90
+.f90.o:
+	$(MPIFC) -c $(FFLAGS) $<
+
+default: $(DDLIB)
+
+all: $(DDLIB) test
+
+$(DDLIB): $(ALL_OBJ) | $(LIB_DIR)
+	echo
+	echo 'Create static library :$(DDLIB)'
+	$(AR) rcvfs $(LIB_DIR)/lib$(DDLIB).a $(ALL_OBJ)
+	for i in $(ALL_MOD) ;  do \
+		#echo $$i ; \
+		cp $$i $(LIB_DIR)/. ; \
+	done
+
+$(LIB_DIR):
+	echo
+	echo 'Create directory :$(LIB_DIR)'
+	mkdir -p $(LIB_DIR)
+
+#test : test_dd_sgrid test_dd_sg_ac_iso_o4 test_dd_sg_ac_iso_o4_optim ug_test_tetra_seq ug_test_hexa_seq ug_test_tetra_par ug_test_hexa_par dg_test proto_dg
+test : proto_dg
+
+test_dd_sgrid.o: test_dd_sgrid.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+test_dd_sgrid: test_dd_sgrid.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+test_dd_sg_ac_iso_o4.o: test_dd_sg_ac_iso_o4.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+test_dd_sg_ac_iso_o4: test_dd_sg_ac_iso_o4.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+test_dd_sg_ac_iso_o4_optim.o: test_dd_sg_ac_iso_o4_optim.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+test_dd_sg_ac_iso_o4_optim: test_dd_sg_ac_iso_o4.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+ug_test_tetra_seq.o: ug_test_tetra_seq.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+ug_test_tetra_seq: ug_test_tetra_seq.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+ug_test_tetra_par.o: ug_test_tetra_par.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+ug_test_tetra_par: ug_test_tetra_par.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB) -L$(METIS_LIB_DIR) -l$(METIS_LIB_NAME)
+
+ug_test_hexa_seq.o: ug_test_hexa_seq.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+ug_test_hexa_seq: ug_test_hexa_seq.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+ug_test_hexa_mesh_partition.o: ug_test_hexa_mesh_partition.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+ug_test_hexa_mesh_partition: ug_test_hexa_mesh_partition.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB) -L$(METIS_LIB_DIR) -l$(METIS_LIB_NAME)
+
+ug_test_hexa_par.o: ug_test_hexa_par.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+ug_test_hexa_par: ug_test_hexa_par.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB) -L$(METIS_LIB_DIR) -l$(METIS_LIB_NAME)
+
+dg_test.o: dg_test.f90
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR)
+
+dg_test: dg_test.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB)
+
+proto_dg.o: proto_dg.f90 
+	$(MPIFC) -c $(FFLAGS) $< -I$(LIB_DIR) 
+
+proto_dg: proto_dg.o
+	$(MPIFC) $(FFLAGS) -o $(BIN_DIR)/$@$(SUFFIX) $< -I$(LIB_DIR) -L$(LIB_DIR) -l$(DDLIB) 
+
+clean:
+	rm -f *.o *.mod
+
+cleantest:
+	rm -f $(BIN_DIR)/test_dd_sgrid$(SUFFIX)
+	rm -f $(BIN_DIR)/test_dd_sg_ac_iso_o4$(SUFFIX)
+	rm -f $(BIN_DIR)/test_dd_sg_ac_iso_o4_optim$(SUFFIX)
+	rm -f $(BIN_DIR)/ug_test_tetra_seq$(SUFFIX)
+	rm -f $(BIN_DIR)/ug_test_hexa_seq$(SUFFIX)
+	rm -f $(BIN_DIR)/ug_test_tetra_par$(SUFFIX)
+	rm -f $(BIN_DIR)/ug_test_hexa_par$(SUFFIX)
+	rm -f $(BIN_DIR)/dg_test$(SUFFIX)
+	rm -f $(BIN_DIR)/proto_dg$(SUFFIX)
+
+cleanall: clean cleantest
+	rm -f $(LIB_DIR)/lib$(DDLIB).a $(LIB_DIR)/*.mod

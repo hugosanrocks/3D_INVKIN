@@ -1,0 +1,239 @@
+!  3D 4th order FD for wavefield reconstruction in non-attenuating medium
+!-----------------------------------------------------------------------
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+program test_dft_3d !3d forward-backward propagation
+  implicit none
+
+  integer :: ib, it, kt, nt, mt,r, nz, nx, ny, nb, sz, sx, sy, nzpad, nxpad, nypad
+  real  :: dt,dtb, dz, dx, dy, fm,amp,vpmax, tmp, idz, idx, idy
+  real*8, parameter::PI=4.*atan(1.)
+  real, dimension(:), allocatable :: wlt,bb,aa,ef,eb
+  real, dimension(:,:,:), allocatable :: v0, vv, rho,kappa
+  real, dimension(:,:,:), allocatable :: p, vz, vx, vy
+  complex, dimension(:,:,:,:),allocatable:: bvzt, bvzb, bvxl, bvxr, bvyf, bvyr
+  !----------------------------------------------------------------!
+  !variables and parameter for L2-norm
+  !----------------------------------------------------------------!
+  real :: nrm, l2nrm !the computed norm
+  real :: l2err !absolute error between the reference and the computed norm
+  real,parameter::l2ref=8.4323606E-17 !the computed norm is tested against this on
+
+  ! Read/Write axes
+  nz=101
+  nx=101
+  ny=101
+  dz=5.
+  dx=5.
+  dy=5.
+  nb=25 !number of boundary layers
+  nt=50
+  dt=0.001
+  fm=30
+  dtb=5*dt
+  kt=150
+  amp=1.
+
+  idz=1./dz
+  idx=1./dx
+  idy=1./dy
+  nzpad=nz+2*nb
+  nxpad=nx+2*nb
+  nypad=ny+2*nb
+  sz=(nzpad+1)/2
+  sx=(nxpad+1)/2
+  sy=(nypad+1)/2
+  r=nint(dtb/dt)
+  if(mod(nt,r)==0) then
+     write(0,*) 'store boundary every r-step: r=', r
+     mt=nt/r !N=nt;M=mt; M=N/r
+  else
+     write(0,*) 'dt for boundary saving is chosen inappropriately.'
+     call exit(0)
+  endif
+
+  allocate(wlt(nt))
+  allocate(bb(nb))
+  allocate(aa(nb))
+  allocate(v0(nz,nx,ny))
+  allocate(vv(nzpad,nxpad,nypad))
+  allocate(rho(nzpad,nxpad,nypad))
+  allocate(kappa(nzpad,nxpad,nypad))
+  allocate(p(nzpad,nxpad,nypad))
+  allocate(vz(nzpad,nxpad,nypad))
+  allocate(vx(nzpad,nxpad,nypad))
+  allocate(vy(nzpad,nxpad,nypad))
+  allocate(bvzt(mt/2+1,-1+nb:1+nb,1+nb:nx+nb,1+nb:ny+nb))
+  allocate(bvzb(mt/2+1,-1+nz+nb:1+nz+nb,1+nb:nx+nb,1+nb:ny+nb))
+  allocate(bvxl(mt/2+1,1+nb:nz+nb,-1+nb:1+nb,1+nb:ny+nb))
+  allocate(bvxr(mt/2+1,1+nb:nz+nb,-1+nx+nb:1+nx+nb,1+nb:ny+nb))
+  allocate(bvyf(mt/2+1,1+nb:nz+nb,1+nb:nx+nb,-1+nb:1+nb))
+  allocate(bvyr(mt/2+1,1+nb:nz+nb,1+nb:nx+nb,-1+ny+nb:1+ny+nb))
+  allocate(ef(nt))
+  allocate(eb(nt))
+
+  !generate ricker wavelet with a delay
+  do it=1,nt  
+     tmp=PI*fm*(it*dt-1.0/fm)
+     tmp=tmp*tmp
+     wlt(it)=(1.0-2.0*tmp)*exp(-tmp)
+  enddo
+  v0=2000.
+  vpmax=maxval(v0)
+  call check_sanity(vpmax,dt,dz,dx,dy)
+  call expand3d(vv, v0, nz, nx, ny, nb)
+  rho=1000.
+  call expand3d(rho, v0, nz, nx, ny, nb)
+  call cpmlcoeff_init(bb,aa,vpmax,dx,dt,fm,nb)
+  kappa=rho*vv*vv
+  p=0.
+  vx=0.
+  vz=0.
+  vy=0.
+  ef=0.
+  eb=0.
+  !--------------------------------------------------------------!
+  !first, one need to initialize the boundary variables for storing
+  !the decimated boundaries
+  !--------------------------------------------------------------!
+  bvzt=0.; bvzb=0. ! boundaries for vz on top and bottom
+  bvxl=0.; bvxr=0. ! boundaries for vx on left and right
+  bvyf=0.; bvyr=0. ! boundaries for vy in front and rear
+
+  !forward modeling
+  do it=1,nt
+     call add_sources(p, dt, wlt(it), sz, sx, sy, nzpad, nxpad, nypad)
+     call step_forward_v(p, vz, vx, vy, rho, dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call apply_sponge3d(vz,bb,nz,nx,ny,nb)
+     call apply_sponge3d(vx,bb,nz,nx,ny,nb)
+     call step_forward_p(p, vz, vx, vy, kappa, dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call apply_sponge3d(p,bb,nz,nx,ny,nb)
+     !---------------------------------------------------------------!
+     !do decimation with flag v2b=.true. when invoking the subroutine
+     !---------------------------------------------------------------!
+     call dft_interp(.true.,bvzt,vz(-1+nb:1+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nb,1+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvzb,vz(-1+nz+nb:1+nz+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nz+nb,1+nz+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvxl,vx(1+nb:nz+nb,-1+nb:1+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nb,1+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvxr,vx(1+nb:nz+nb,-1+nx+nb:1+nx+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nx+nb,1+nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvyf,vy(1+nb:nz+nb,1+nb:nx+nb,-1+nb:1+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+nb,1+nb,nt,mt,it)
+     call dft_interp(.true.,bvyr,vy(1+nb:nz+nb,1+nb:nx+nb,-1+ny+nb:1+ny+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+ny+nb,1+ny+nb,nt,mt,it)
+
+     if(it==kt) then ! record snapshot at it=kt
+        call window3d(v0, p, nz, nx, ny, nb)
+        !open(10,file='forward_kt.bin',access='direct',recl=4*nz*nx*ny,status='replace')
+        !write(10,rec=1) v0
+        !close(10)
+     endif
+     call compute_energy(ef(it),vz(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          vx(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          vy(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          p(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          rho(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          kappa(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),nz,nx,ny)
+  enddo
+  !open(10,file='ef.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) ef
+  !close(10)
+  write(0,*) 'forward done!'
+
+
+  !backward reconstruction
+  do it=nt,1,-1     
+     !---------------------------------------------------------------!
+     !do interpolation with flag v2b=.false. when invoking the subroutine
+     !---------------------------------------------------------------!
+     call dft_interp(.false.,bvzt,vz(-1+nb:1+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nb,1+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvzb,vz(-1+nz+nb:1+nz+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nz+nb,1+nz+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvxl,vx(1+nb:nz+nb,-1+nb:1+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nb,1+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvxr,vx(1+nb:nz+nb,-1+nx+nb:1+nx+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nx+nb,1+nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvyf,vy(1+nb:nz+nb,1+nb:nx+nb,-1+nb:1+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+nb,1+nb,nt,mt,it)
+     call dft_interp(.false.,bvyr,vy(1+nb:nz+nb,1+nb:nx+nb,-1+ny+nb:1+ny+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+ny+nb,1+ny+nb,nt,mt,it)
+
+     call compute_energy(eb(it),vz(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          vx(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          vy(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          p(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          rho(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),&
+          kappa(nb+1:nb+nz,nb+1:nb+nx,nb+1:nb+ny),nz,nx,ny)
+
+     if(it==kt) then ! record snapshot at it=kt
+        call window3d(v0, p, nz, nx, ny, nb)
+        !open(10,file='reconstructed_kt.bin',access='direct',recl=4*nz*nx*ny,status='replace')
+        !write(10,rec=1) v0
+        !close(10)
+     endif
+     call step_forward_p(p, vz, vx, vy, kappa, -dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call step_forward_v(p, vz, vx, vy, rho, -dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call add_sources(p, -dt, wlt(it), sz, sx, sy, nzpad, nxpad, nypad)
+  enddo
+  !open(10,file='eb.bin',access='direct',recl=4*nt,status='replace')
+  !write(10,rec=1) eb
+  !close(10)
+  write(0,*) 'backward done!'
+
+  !l2-norm on eb
+  do it=1,nt
+    nrm = 0.
+    nrm=nrm+(eb(it)**2)
+  enddo
+  l2nrm=sqrt(nrm)
+  l2err=abs(l2nrm-l2ref)/l2ref
+
+  write(*,*) '----------------------------------------------'
+  if (l2err .gt. 1E-3) then
+    write(*,*) 'CAUTION: l2nrm_ref= ', l2ref
+    write(*,*) '         l2nrm    = ', l2nrm
+    write(*,*) '         ERR      = ', l2err
+    write(*,*) '--- INTERPOLATION dft_3d ...........*** Failed'
+  else
+    write(*,*) '--- INTERPOLATION dft_3d ...........*** Passed'
+  endif
+  write(*,*) '----------------------------------------------'
+
+  deallocate(wlt)
+  deallocate(bb)
+  deallocate(aa)
+  deallocate(v0)
+  deallocate(vv)
+  deallocate(rho)
+  deallocate(kappa)
+  deallocate(p)
+  deallocate(vz)
+  deallocate(vx)  
+  deallocate(vy)
+  deallocate(bvzt)
+  deallocate(bvzb)
+  deallocate(bvxl)
+  deallocate(bvxr)
+  deallocate(bvyf)
+  deallocate(bvyr)
+  deallocate(ef)
+  deallocate(eb)
+
+  call exit(0)
+end program test_dft_3d
+
+
+

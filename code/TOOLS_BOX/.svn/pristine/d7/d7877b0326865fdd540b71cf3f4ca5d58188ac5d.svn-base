@@ -1,0 +1,51 @@
+#include <stdio.h>
+#include <assert.h>
+
+#include "../CPP/revolve.h"
+
+extern "C" {
+  void revolve_ctor_wrp(void **ptr, int *steps, int *snaps, int *info) {
+    /** Constructor for Offline-Checkpointing*/
+    Revolve *r = new Revolve(*steps, *snaps);
+    assert(r);
+    r->set_info(*info);
+    *ptr = (void*) r;
+  }
+
+  void revolve_dtor_wrp(void **ptr){
+    Revolve *r = (Revolve *)(*ptr);
+    assert(r);
+    delete r;
+  }
+
+  int revolve_revolve_wrp(void **ptr) {
+    Revolve *r = (Revolve*)(*ptr);
+    assert(r);
+    return int(r->revolve());
+  }
+  
+  int revolve_getcheck_wrp(void **ptr) {
+    Revolve *r = (Revolve*)(*ptr);
+    assert(r);
+    return r->getcheck();
+  }
+  
+  int revolve_getcapo_wrp(void **ptr) {
+    Revolve *r = (Revolve*)(*ptr);
+    assert(r);
+    return r->getcapo();
+  }
+  
+  int revolve_getoldcapo_wrp(void **ptr) {
+    Revolve *r = (Revolve*)(*ptr);
+    assert(r);
+    return r->getoldcapo();
+  }
+  
+  int revolve_getinfo_wrp(void **ptr) {
+    Revolve *r = (Revolve*)(*ptr);
+    assert(r);
+    return r->getinfo();
+  }
+
+}

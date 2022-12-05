@@ -1,0 +1,343 @@
+TYPE su_header
+SEQUENCE
+	INTEGER tracl!	/* Trace sequence number within line
+	!		   --numbers continue to increase if the
+!			   same line continues across multiple
+!			   SEG Y files.
+!			 */
+
+	INTEGER tracr!	/* Trace sequence number within SEG Y file
+!			   ---each file starts with trace sequence
+!			   one
+!			 */
+
+	INTEGER fldr!	/* Original field record number */
+
+	INTEGER tracf!	/* Trace number within original field record */
+
+	INTEGER ep!		/* energy source point number
+!			   ---Used when more than one record occurs
+!			   at the same effective surface location.
+!			 */
+
+	INTEGER cdp!	/* Ensemble number (i.e. CDP, CMP, CRP,...) */
+
+	INTEGER cdpt!	/* trace number within the ensemble
+!			   ---each ensemble starts with trace number one.
+!			 */
+
+	INTEGER(KIND=2) trid!	/* trace identification code:
+!			-1 = Other
+!		         0 = Unknown
+!			 1 = Seismic data
+!			 2 = Dead
+!			 3 = Dummy
+!			 4 = Time break
+!			 5 = Uphole
+!			 6 = Sweep
+!			 7 = Timing
+!			 8 = Water break
+!			 9 = Near-field gun signature
+!			10 = Far-field gun signature
+!			11 = Seismic pressure sensor
+!			12 = Multicomponent seismic sensor
+!				- Vertical component
+!			13 = Multicomponent seismic sensor
+!				- Cross-line component 
+!			14 = Multicomponent seismic sensor
+!				- in-line component 
+!			15 = Rotated multicomponent seismic sensor
+!				- Vertical component
+!			16 = Rotated multicomponent seismic sensor
+!				- Transverse component
+!			17 = Rotated multicomponent seismic sensor
+!				- Radial component
+!			18 = Vibrator reaction mass
+!			19 = Vibrator baseplate
+!			20 = Vibrator estimated ground force
+!			21 = Vibrator reference
+!			22 = Time-velocity pairs
+!			23 ... N = optional use 
+!				(maximum N = 32,767)
+!
+!			Following are CWP id flags:
+!
+!			109 = autocorrelation
+!			110 = Fourier transformed - no packing
+!			     xr[0],xi[0], ..., xr[N-1],xi[N-1]
+!			111 = Fourier transformed - unpacked Nyquist
+!			     xr[0],xi[0],...,xr[N/2],xi[N/2]
+!			112 = Fourier transformed - packed Nyquist
+!	 		     even N:
+!			     xr[0],xr[N/2],xr[1],xi[1], ...,
+!				xr[N/2 -1],xi[N/2 -1]
+!				(note the exceptional second entry)
+!			     odd N:
+!			     xr[0],xr[(N-1)/2],xr[1],xi[1], ...,
+!				xr[(N-1)/2 -1],xi[(N-1)/2 -1],xi[(N-1)/2]
+!				(note the exceptional second & last entries)
+!			113 = Complex signal in the time domain
+!			     xr[0],xi[0], ..., xr[N-1],xi[N-1]
+!			114 = Fourier transformed - amplitude/phase
+!			     a[0],p[0], ..., a[N-1],p[N-1]
+!			115 = Complex time signal - amplitude/phase
+!			     a[0],p[0], ..., a[N-1],p[N-1]
+!			116 = Real part of complex trace from 0 to Nyquist
+!			117 = Imag part of complex trace from 0 to Nyquist
+!			118 = Amplitude of complex trace from 0 to Nyquist
+!			119 = Phase of complex trace from 0 to Nyquist
+!			121 = Wavenumber time domain (k-t)
+!			122 = Wavenumber frequency (k-omega)
+!			123 = Envelope of the complex time trace
+!			124 = Phase of the complex time trace
+!			125 = Frequency of the complex time trace
+!			130 = Depth-Range (z-x) traces
+!			201 = Seismic data packed to bytes (by supack1)
+!			202 = Seismic data packed to 2 bytes (by supack2)
+!			*/
+
+	INTEGER(KIND=2) nvs!	/* Number of vertically summed traces yielding
+!!			   this trace. (1 is one trace, 
+!			   2 is two summed traces, etc.)
+!			 */
+
+	INTEGER(KIND=2) nhs!	/* Number of horizontally summed traces yielding
+!			   this trace. (1 is one trace
+!			   2 is two summed traces, etc.)
+!			 */
+
+	INTEGER(KIND=2) duse!	/* Data use:
+!				1 = Production
+!				2 = Test
+!			 */
+
+	INTEGER offset!	/* Distance from the center of the source point 
+!			   to the center of the receiver group 
+!			   (negative if opposite to direction in which 
+!			   the line was shot).
+!			 */
+
+	INTEGER gelev!	/* Receiver group elevation from sea level
+!			   (all elevations above the Vertical datum are 
+!			   positive and below are negative).
+!			 */
+
+	INTEGER selev!	/* Surface elevation at source. */
+
+	INTEGER sdepth!	/* Source depth below surface (a positive number). */
+
+	INTEGER gdel!	/* Datum elevation at receiver group. */
+
+	INTEGER sdel!	/* Datum elevation at source. */
+
+	INTEGER swdep!	/* Water depth at source. */
+
+	INTEGER gwdep!	/* Water depth at receiver group. */
+
+	INTEGER(KIND=2) scalel!	/* Scalar to be applied to the previous 7 entries
+!			   to give the real value. 
+!			   Scalar = 1, +10, +100, +1000, +10000.
+!			   If positive, scalar is used as a multiplier,
+!			   if negative, scalar is used as a divisor.
+!			 */
+
+	INTEGER(KIND=2) scalco!	/* Scalar to be applied to the next 4 entries
+!			   to give the real value. 
+!			   Scalar = 1, +10, +100, +1000, +10000.
+!			   If positive, scalar is used as a multiplier,
+!			   if negative, scalar is used as a divisor.
+!			 */
+
+	INTEGER  sx!	/* Source coordinate - X */
+
+	INTEGER  sy!	/* Source coordinate - Y */
+
+	INTEGER  gx!	/* Group coordinate - X */
+
+	INTEGER  gy!	/* Group coordinate - Y */
+
+	INTEGER(KIND=2) counit!	/* Coordinate units: (for previous 4 entries and
+!				for the 7 entries before scalel)
+!			   1 = Length (meters or feet)
+!			   2 = Seconds of arc
+!			   3 = Decimal degrees
+!			   4 = Degrees, minutes, seconds (DMS)
+!
+!			In case 2, the X values are longitude and 
+!			the Y values are latitude, a positive value designates
+!			the number of seconds east of Greenwich
+!				or north of the equator
+!
+!			In case 4, to encode +-DDDMMSS
+!			counit = +-DDD*10^4 + MM*10^2 + SS,
+!			with scalco = 1. To encode +-DDDMMSS.ss
+!			counit = +-DDD*10^6 + MM*10^4 + SS*10^2 
+!			with scalco = -100.
+!			*/
+
+	INTEGER(KIND=2) wevel!	/* Weathering velocity. */
+
+	INTEGER(KIND=2) swevel!	/* Subweathering velocity. */
+
+	INTEGER(KIND=2) sut!	/* Uphole time at source in milliseconds. */
+
+	INTEGER(KIND=2) gut!	/* Uphole time at receiver group in milliseconds. */
+
+	INTEGER(KIND=2) sstat!	/* Source static correction in milliseconds. */
+
+	INTEGER(KIND=2) gstat!	/* Group static correction  in milliseconds.*/
+
+	INTEGER(KIND=2) tstat!	/* Total static applied  in milliseconds.
+!			   (Zero if no static has been applied.)
+!			*/
+
+	INTEGER(KIND=2) laga!	/* Lag time A, time in ms between end of 240-
+!			   byte trace identification header and time
+!			   break, positive if time break occurs after
+!			   end of header, time break is defined as
+!			   the initiation pulse which maybe recorded
+!			   on an auxiliary trace or as otherwise
+!			   specified by the recording system */
+
+	INTEGER(KIND=2) lagb!	/* lag time B, time in ms between the time break
+!			   and the initiation time of the energy source,
+!			   may be positive or negative */
+
+	INTEGER(KIND=2) delrt!	/* delay recording time, time in ms between
+!			   initiation time of energy source and time
+!			   when recording of data samples begins
+!			   (for deep water work if recording does not
+!			   start at zero time) */
+
+	INTEGER(KIND=2) muts!	/* mute time--start */
+
+	INTEGER(KIND=2) mute!	/* mute time--end */
+
+	 INTEGER(KIND=2) ns!	/* number of samples in this trace */
+
+	 INTEGER(KIND=2) dt!	/* sample interval! in micro-seconds */
+
+	INTEGER(KIND=2) gain!	/* gain type of field instruments code:
+!				1 = fixed
+!				2 = binary
+!				3 = floating point
+!				4 ---- N = optional use */
+
+	INTEGER(KIND=2) igc!	/* instrument gain constant */
+
+	INTEGER(KIND=2) igi!	/* instrument early or initial gain */
+
+	INTEGER(KIND=2) corr!	/* correlated:
+!				1 = no
+!				2 = yes */
+
+	INTEGER(KIND=2) sfs!	/* sweep frequency at start */
+
+	INTEGER(KIND=2) sfe!	/* sweep frequency at end */
+
+	INTEGER(KIND=2) slen!	/* sweep length in ms */
+
+	INTEGER(KIND=2) styp!	/* sweep type code:
+!				1 = linear
+!				2 = cos-squared
+!				3 = other */
+
+	INTEGER(KIND=2) stas!	/* sweep trace length at start in ms */
+
+	INTEGER(KIND=2) stae!	/* sweep trace length at end in ms */
+
+	INTEGER(KIND=2) tatyp!	/* taper type: 1=linear, 2=cos^2, 3=other */
+
+	INTEGER(KIND=2) afilf!	/* alias filter frequency if used */
+
+	INTEGER(KIND=2) afils!	/* alias filter slope */
+
+	INTEGER(KIND=2) nofilf!	/* notch filter frequency if used */
+
+	INTEGER(KIND=2) nofils!	/* notch filter slope */
+
+	INTEGER(KIND=2) lcf!	/* low cut frequency if used */
+
+	INTEGER(KIND=2) hcf!	/* high cut frequncy if used */
+
+	INTEGER(KIND=2) lcs!	/* low cut slope */
+
+	INTEGER(KIND=2) hcs!	/* high cut slope */
+
+	INTEGER(KIND=2) year!	/* year data recorded */
+
+	INTEGER(KIND=2) day!	/* day of year */
+
+	INTEGER(KIND=2) hour!	/* hour of day (24 hour clock) */
+
+	INTEGER(KIND=2) minute!	/* minute of hour */
+
+	INTEGER(KIND=2) sec!	/* second of minute */
+
+	INTEGER(KIND=2) timbas!	/* time basis code:
+!				1 = local
+!				2 = GMT
+!				3 = other */
+
+	INTEGER(KIND=2) trwf!	/* trace weighting factor, defined as 1/2^N
+!			   volts for the least sigificant bit */
+
+	INTEGER(KIND=2) grnors!	/* geophone group number of roll switch
+!			   position one */
+
+	INTEGER(KIND=2) grnofr!	/* geophone group number of trace one within
+!			   original field record */
+
+	INTEGER(KIND=2) grnlof!	/* geophone group number of last trace within
+!			   original field record */
+
+	INTEGER(KIND=2) gaps!	/* gap size (total number of groups dropped) */
+
+	INTEGER(KIND=2) otrav!	/* overtravel taper code:
+!				1 = down (or behind)
+!				2 = up (or ahead) */
+
+!	/* cwp local assignments */
+	REAL d1!	/* sample spacing for non-seismic data */
+
+	REAL f1!	/* first sample location for non-seismic data */
+
+	REAL d2!	/* sample spacing between traces */
+
+	REAL f2!	/* first trace location */
+
+	REAL ungpow!	/* negative of power used for dynamic
+!			   range compression */
+
+	REAL unscale!	/* reciprocal of scaling factor to normalize
+!			   range */
+!
+	INTEGER(KIND=2)  mark!	/* mark selected traces */
+
+!	/* SLTSU local assignments */ 
+	INTEGER(KIND=2)  mutb!	/* mute time at bottom (start time)  */
+!			/* bottom mute ends at last sample   */
+	REAL dz!	/* depth sampling interval in (m or ft)  */
+!			/* if =0.0, input are time samples       */
+
+	REAL fz!	/* depth of first sample in (m or ft)  */
+
+	INTEGER(KIND=2)  n2!	/* number of traces per cdp or per shot */
+
+        INTEGER(KIND=2)  shortpad! /* alignment padding */
+
+	INTEGER ntr! 	/* number of traces */
+
+!	/* SLTSU local assignments end */ 
+
+  INTEGER(KIND=2)  unass(8)!	/* unassigned */
+  END TYPE su_header
+
+TYPE su_data
+SEQUENCE
+
+ TYPE(su_header),pointer,dimension(:) :: suhdr
+ REAL,pointer,dimension(:,:) :: trace
+ INTEGER :: ns,nr  !number of time-step and number of trace in the structure
+
+END TYPE su_data

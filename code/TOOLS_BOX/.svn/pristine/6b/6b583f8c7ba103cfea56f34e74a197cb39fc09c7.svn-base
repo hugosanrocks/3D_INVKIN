@@ -1,0 +1,598 @@
+\documentclass[a4paper,twoside,final,onecolumn,11pt,openright]{article}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\graphicspath{{Fig/}}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{framed}
+\usepackage[lined,linesnumbered,ruled]{algorithm2e}
+
+%--------------------fonts available---------------------------------------
+\usepackage[T1]{fontenc}
+%\usepackage{newcent}
+%\usepackage[sc]{mathpazo}
+%\usepackage{times}
+%\usepackage{mathptmx}
+%--------------------------------------------------------------------------
+
+\usepackage{fancyhdr}         
+\usepackage[latin1]{inputenc} 
+\usepackage[T1]{fontenc}
+\usepackage[left=2.5 cm,top=3cm,right=2.5cm,bottom=3cm]{geometry}
+
+\DeclareMathAlphabet{\mathsl}{OT1}{cmss}{m}{sl}
+\renewcommand{\floatpagefraction}{1.0}
+\renewcommand{\topfraction}{1.0}
+\renewcommand{\bottomfraction}{0.0}
+\renewcommand{\textfraction}{0.0}
+
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{3}
+\setcounter{totalnumber}{4}
+\def \mathbb #1{{\cal #1}}
+
+\newcommand{\entetepaire}{SEISCOPE Project}
+\newcommand{\enteteimpaire}{CARFS Manual}
+
+\fancypagestyle{monstyle}{
+\fancyhf{}
+\fancyhead[LE]{\entetepaire}
+\fancyhead[RO]{\enteteimpaire}
+\fancyfoot[CE,CO]{\thepage}}
+\pagestyle{monstyle}
+\makeatletter
+\renewcommand{\verbatim@font}{\small\ttfamily}
+\makeatother
+
+
+\begin{document}
+
+%--------------------------------------------------------------------------------------------
+\begin{titlepage}
+
+\title{A user's guide to SEISCOPE CARFS toolbox}
+
+\author{{\Large{Pengliang Yang}} \\
+{\it{pengliang.yang@univ-grenoble-alpes.fr}}}
+
+\maketitle
+
+{\large{\bf{\centerline{http://seiscope2.osug.fr/}}}} 
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=12 cm]{logo.pdf}
+\end{center}
+\label{figlogo}
+\end{figure}
+
+{\centerline{\it{Seismic imaging of complex structures}}}
+{\centerline{\it{from multicomponent global offset data by full waveform inversion}}}
+{\centerline{\it{from multiparameter imaging to rock physics properties}}}
+
+\begin{abstract}
+3D implementations of reverse time migration and full waveform inversion requires efficient schemes to access the incident field in order to apply the imaging-condition of RTM or build the gradient of FWI. Wavefield reconstruction by reverse propagation using final snapshot and saved boundaries appears quite efficient but unstable in attenuating media, while checkpointing strategy is a stable alternative at the expense of increased computational cost through repeated forward modeling. 
+The SEISCOPE CARFS toolbox described here implemented a checkpointing-assisted reverse-forward simulation (CARFS) method to achieve optimal efficiency to access the incident wavefield for seismic inversion.  At each backward reconstruction step, the CARFS algorithm makes a smart decision between forward modeling using checkpoints and reverse propagation based on the minimum timestepping cost and an energy measure. The CARFS method therefore allows accurate wavefield reconstruction using less timesteppings than optimal checkpointing, even if seismic attenuation is very strong; it boils down to efficient reverse propagation without attenuation. The proposed CARFS method can be straightforwardly applied to general anisotropic viscous media, providing an accurate and efficient tool for practical RTM and FWI implementation. The laguange used in this software package is based on Fortran 90. In order to reproduce the computing examples in the toolbox, the users are encouraged to install Seismix Unix (SU) or Madagascar for the convenience of visualization. The users are referred to \cite{Yang_2016_CAR} for more algorithmic details.
+\end{abstract}
+
+{\bf Keywords}: Full waveform inversion (FWI); Reverse time migration; Wavefield reconstruction; Optimal checkpointing;  Gradient computation; Imaging condition 
+         
+\medskip
+
+\end{titlepage}
+
+%--------------------------------------------------------------------------------------------
+
+
+\newpage
+
+\section*{Legal statement}
+\small
+\begin{verbatim}
+Copyright 2008-2011 SEISCOPE project, All rights reserved.
+Copyright 2013-2015 SEISCOPEII project, All rights reserved.
+
+Redistribution and use in source and binary forms, with or
+without modification, are permitted provided that the following
+conditions are met:
+
+    *  Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+    *  Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials provided
+       with the distribution.
+    *  All redistributions of the source code or binary form must
+       be done in agreement of the SEISCOPE diffusion policy for 
+       restricted access softwares or with specific written permission. 
+    *  Neither the name of the SEISCOPE project nor the names of
+       its contributors may be used to endorse or promote products
+       derived from this software without specific prior written permission.
+
+Warranty Disclaimer:
+THIS SOFTWARE IS PROVIDED BY THE SEISCOPE PROJECT AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+SEISCOPE PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+
+Acknowledgements:
+CARFS and other SEISCOPE project's codes have been developed 
+in the framework of SEISCOPE and SEISCOPE 2 consortium, and we thank
+the sponsors of these projects
+\end{verbatim}
+\normalsize
+
+\cleardoublepage
+\section*{Acknowledgments}
+CARFS and other SEISCOPE project's codes have been developed in the framework of SEISCOPE and SEISCOPE II consortium. 
+
+Many thanks to SEISCOPE II sponsors supporting the second phase of the SEISCOPE consortium (\url{ http://seiscope2.osug.fr}) devoted to high resolution seismic imaging using full waveforms : BP, CGG, Chevron, ExxonMobil, 
+JGI, Petrobras, Saudi Aramco, Shell, Schlumberger, Sinopec, Statoil, Total and Woodside.
+
+Access to the high performance computing facilities of the CIMENT center (University Grenoble Alpes) and the SIGAMM center (University of Nice-Sophia Antipolis, Nice) in addition to the national centers from GENCI-CINES and GENCI-IDRIS (046091 and 082280 grants) provided the required computer resources of most of this work.
+
+\cleardoublepage
+\tableofcontents
+\newpage
+\clearpage
+
+\cleardoublepage
+
+
+\section{Introduction}
+Seismic imaging techniques such as reverse time migration (RTM) and full waveform inversion (FWI) are computationally and memory demanding for 3D applications. One challenging step of such implementations is applying the imaging condition of RTM, equivalent to the gradient building step of FWI: in both cases, one needs to access the incident wavefield backwards in time while computing the adjoint/receiver wavefield. 
+
+Several strategies have been proposed to conduct this key step: (1) The most naive strategy consists in storing the incident wavefield on disk when performing the forward modeling. Then it is accessed it at each time step when backpropagating the adjoint/receiver wavefield for building the gradient. This approach is time consuming due to highly demanding I/O cost. (2) A more efficient scheme is the wavefield reconstruction by reverse propagation (RP) based on the wavefield values stored at boundaries and on the final wavefield snapshot. The adjoint wavefield is formed on the fly \citep{Clapp_2008_RTM,Dussaud_2008_CSR,Brossier_2014_TFF}. This implementation relies on the reversibility of the wave equation as the incident field is recomputed backwards in time. (3) Another option is the optimal checkpointing strategy \citep{Griewank_2000_CHP,Symes_2007_RTM,Anderson_2012_TCM}, which recomputes the incident field forward in time inside a time window started with saved snapshots (checkpoints) at specific times. The recomputation ratio and the memory request of the third approach is generally higher than the second one.
+
+The development of RTM and FWI in complex media, in particular involving attenuation, requires efficient computing methods for reconstructing the incident wavefield in time-reversal manner. This checkpointing assisted reverse-forward simulation (CARFS) method was implemented within SEISCOPE software framewrok, combining the efficiency of RP and stability of checkpointing in attenuating medium.
+
+\section{Theory}\label{theory_section}
+
+This part describes the theoretical points related to CARFS. For brevity, we  denote the forward wave extrapolation from time level $n$ to time level $n+1$ as
+\begin{equation}
+ \mathbf{w}^{n+1}=F^n \mathbf{w}^n
+\end{equation}
+where $\mathbf{w}^n$ stands for the wavefield state vector at time $n$.
+
+\subsection{Binomial checkpointing strategy}
+
+The checkpointing strategy uses a small number of memory units (checkpoints) to store the system state at distinct times. The recomputation of required states that have not been stored is obtained by restarting the forward modeling from the checkpoints. \citet{Griewank_1992_ALG,Griewank_2000_CHP} mathematically proved that for $N$ steps of forward evolution and $c$ number of checkpoints, the minimum number of forward timesteppings for reverse mode is given by
+\begin{equation}\label{eq:cpsteps}
+ N'=rN-\beta(c+1,r-1),
+\end{equation}
+where $\beta(s,t)$ is a combinatorial number
+\begin{equation} 
+\beta(s,t):=\begin{pmatrix} s+t\\t\end{pmatrix},
+\end{equation}
+while the number $r$ is the maximum repetition number for recovering any particular state uniquely determined by $\beta(c,r-1)< N \leq \beta(c,r)$. The recomputation ratio of the optimal checkpointing is equal to $R=N'/N$, provided the $c$ checkpoints during N temporal steps of forward simulations are stored in the following positions
+\begin{equation}\label{eq:binomial1}
+ s_{i+1}=s_i+d_{i+1}, i=0,\cdots,c-1,
+\end{equation}
+where the first checkpoint is assumed to start at the initial state $s_0=0$, and the distance between two neighboring checkpoints $s_k$ and $s_{k+1}$ are given by \citep{Stumm_2009_MAO}
+\begin{equation}\label{eq:binomial2}
+ d_{i+1}=\begin{cases}
+          \beta(c-i,r-2), \mbox{if}\quad N\leq \beta(c,r-1)+\beta(c-i-2,r-1)+s_i\\
+          \beta(c-i,r-1), \mbox{else if}\quad N\geq \beta(c-i,r)-\beta(c-i-3,r)+s_i\\
+          N-s_i-\beta(c-i-1,r-1)-\beta(c-i-2,r-2), \mbox{otherwise.}
+         \end{cases}
+\end{equation}
+Then the multistage ($r$-level) binomial checkpointing strategy, as shown in algorithm \ref{alg:checkpointing}, can be carried out by recursively invoking these forward steps while storing the snapshots in redistributed idle checkpoints. An illustration is available in Figure \ref{fig:rpcp}.
+
+\begin{algorithm}[!tbh]
+    \caption{Binomial checkpointing}\label{alg:checkpointing}
+       Distribute checkpoints $s_0,\cdots,s_{c-1}$ in time following the binomial law of optimal checkpointing given in \eqref{eq:binomial1} and \eqref{eq:binomial2}\;       
+       \For{$n=0,\cdots,N-1$}{
+	  compute the wavefield state forward in time : $F^{n}:\mathbf{w}^{n} \rightarrow \mathbf{w}^{n+1}$\;
+          \lIf{$n\in s_0,\cdots,s_{c-1}$ }{store the snapshot $\mathbf{w}^{n+1}$}
+       }
+       \For{$n=N-1,\cdots,0$}{
+	   find the closest checkpoint $s_i$ prior to current time level $n$ ($s_i\leq n<s_{i+1}$) (the checkpoints  $s_j>n,j=i+1,\cdots,c-1$ posterior to current time level $n$ are idle now)\;
+           read the snapshot $\mathbf{w}^{s_i+1}$ in the checkpoint $s_i$\;
+           \If{$n\neq s_i$}{
+	      redistribute the idle checkpoints $s_{i+1},\cdots,s_{c-1}$ between $s_i$ and $n$ according to the binomial law in \eqref{eq:binomial1} and \eqref{eq:binomial2}\;
+	      \For{$k=s_i+1,n$}{
+	        do forward modeling $F^{k}:\mathbf{w}^{k} \rightarrow \mathbf{w}^{k+1}$\;
+	        \lIf{$k\in s_{i+1},\cdots,s_{c-1}$}{store the snapshot $k$ at these relocated checkpoint positions}
+	      }
+           }
+       }
+\end{algorithm}
+
+Several checkpointing techniques have been developed to achieve an acceptable compromise between memory requirement and recomputation increase. The optimal value for the number of snapshots/checkpoints is related to the total number of time steps $N$ by $c=\log_2(N)$ according to \citet{Griewank_2000_CHP} and \citet{Symes_2007_RTM}. 
+An interesting observation is that for realistic imaging applications, the total number of time steps $N$ generaly ranges over $[1000, 10000]$, giving a number of stored snapshots $c$ lower that 14. With such a range of timesteps number, we are able to bound the recomputation ratio $R\in(3.64,4.84)$, which implies generaly an affordable but significant computational cost less than five times for the incident field. 
+
+
+\subsection{Reverse propagation using final snapshot and stored boundaries}
+
+The main idea of the RP method is to compute the incident wavefield twice: once in forward time during which the boundary values are stored in core-memory (and disk if required) until the final time-step. Then, during the computation of the adjoint/receiver field, the incident field is synchronously recomputed backwards in time from the final snapshots, as initial condition  \citep{Gauthier_1986_TDN,Tromp_2005_STA}, and the saved boundary condition, acting as Dirichlet boundary condition at each time-step \citep{Clapp_2008_RTM,Dussaud_2008_CSR,Brossier_2014_TFF}. The minimum memory requirement for the boundary storage have been investigated in the literature, in particular when involving staggered-grid FD \citep{Yang_2014_RTM,Yang_2014_SEG,Nguyen_2015_ASS} and different absorbing boundary conditions \citep{Yang_2015_GPU}. For 3D applications, the memory complexity is associated to one 3D data volume, involving two spatial dimensions and one temporal dimension. This memory request can be significantly decreased up to one or two orders of magnitude based on the temporal sampling determined by Nyquist principle, rather than the more restrictive relation from the Courant-Friedrichs-Lewy (CFL) condition  \citep{Sun_2013_TWO,Yang_2016_DPI,Yang_2016_WRB}. Using different interpolation techniques, the missing boundary elements can be accurately recovered, making the in-core boundary storage practically feasible for 3D large scale applications. Therefore, the RP method appears quite appealing thanks to its efficiency and limited memory requirements, see Figure \ref{fig:rpcp} for an intuitive illustration. Mathematically, reverse propagation from time level $n+1$ to time level $n$ can be briefly specified by
+\begin{equation}
+ \mathbf{w}^n = (F^n)^{-1}\mathbf{w}^{n+1}.
+\end{equation}
+
+
+Unfortunately, reverse propagation in attenuating media usually suffers from instability due to the accumulation of exponentially growing errors rather than the discretization of the wave equation based upon a rigorous mathematical formulation. The numerical errors are accumulated in the memory variable and then transferred to the pressure $p$ and particle velocities $\mathbf{v}$. This kind of instability significantly depends on whether the digital errors induced by the truncation of the floating point representation in computer are amplified to an intolerable magnitude. Reverse propagation with regularly stored snapshots (RPSS) may find its value for efficient wavefield reconstruction backwards in time, however, the required number of snapshots is generally very large and difficult to predict in practice for long duration simulation in attenuating medium.
+
+\begin{figure}
+ \centering
+ \includegraphics[width=0.6\textwidth]{rpcp}
+ \caption{For every non-checkpoint position $n$, 
+ (a) RPSS performs backward wavefield extrapolation from previous state  $n+1$ to compute current state, with only one step of reverse simulation cost.
+ (b) Checkpointing strategy tries to recompute the current state $n$ from the closest checkpoint prior to $n$, with generally more than one step of forward simulation cost.
+ (c) Only if the closest checkpoint prior to $n$ is $n-1$, checkpoint attains the same efficiency as RPSS using only one step of forward simulation cost. 
+ If all checkpoints are equally spaced and the number of checkpoints $c\ge N/2$, particularly $c=N/2$, the distance to reach step $n$ is 1 for both checkpointing and RPSS, either from $n-1$ to $n$ or from $n+1$ to $n$.  
+ (d) Assume the number of checkpoints are equally spaced. When $c<N/2$, the timestepping steps required by checkpointing to reach step $n$ would be larger than RPSS. }\label{fig:rpcp}
+\end{figure}
+
+\subsection{CARFS algorithm}
+
+If no snapshots are stored, the reverse propagation approach enjoying a recomputation ratio of 2, although very efficient in non-attenuating media, is generally unstable in the presence of seismic attenuation. While recomputation ratio might be higher than two for moderate available memory, checkpointing is stable for attenuating media as only forward in time modeling is performed.  
+To benefit from the efficiency of reverse propagation and the stability of checkpointing in the presence of attenuation, we design a checkpointing assisted reverse-forward simulation (CARFS) method. This approach relies on an indicator of the stability of reverse propagation. We choose the total energy  in the computing volume $\Omega$, giving for acoustic wave
+\begin{equation}\label{eq:energydef}
+E=\frac{1}{2}\langle\rho\mathbf{v},\mathbf{v} \rangle_\Omega+\frac{1}{2}\langle\frac{1}{\kappa}p,p \rangle_\Omega
+=\frac{1}{2}\int_{\Omega} \left(\rho \mathbf{v}^2+\frac{1}{\kappa}p^2\right)\mathrm{d}\mathbf{x}
+\end{equation}
+This measure is a good candidate to monitor the stability of the simulation, thanks to its sensitivity to variations in the pressure and the particle velocities (any other measure efficient to compute could be considered as well). The main idea of CARFS is to use, as a default setting, the reverse propagation even in attenuating media, while monitoring the energy of the computation. At any given timestep, if the energy of the backward simulation deviates (by a user-defined threshold) from the one of the forward simulation, which has been monitored and kept, the reverse propagation is temporarily stopped and checkpointing is used starting from the closest snapshot prior to current state to redo some forward timestepping in order to reinitialize the reverse propagation. The numerical workflow is described in algorithm \ref{alg:CARFS} and Figure \ref{fig:carfs}.
+
+\begin{algorithm}[!tbh]
+    \caption{CARFS algorithm}\label{alg:CARFS}
+       Distribute checkpoints $s_0,\cdots,s_{c-1}$ in time following the binomial law of optimal checkpointing given in \eqref{eq:binomial1} and \eqref{eq:binomial2}\;       
+       \For{$n=0,\cdots,N-1$}{
+	  compute the wavefield state forward in time : $F^{n}:\mathbf{w}^{n} \rightarrow \mathbf{w}^{n+1}$ and record the total energy $E_f^{n+1}$ for $\mathbf{w}^{n+1}$\;         
+          store the boundary of $\mathbf{w}^{n+1}$ at decimated temporal locations according to Nyquist sampling  \citep{Yang_2016_WRB}\;
+          \lIf{$n\in s_0,\cdots,s_{c-1}$ }{store the snapshot $\mathbf{w}^{n+1}$}}
+       \For{$n=N-1,\cdots,0$}{
+	 find the closest checkpoint $s_i$ prior to current time level $n$ ($s_i\leq n<s_{i+1}$) (the checkpoints  $s_j>n,j=i+1,\cdots,c-1$ posterior to current time level $n$ are idle now)\;
+	 
+         \eIf{$n=s_i$}{
+	    read the snapshot $\mathbf{w}^{n+1}$ and set the backward energy $E_b^{n+1}=E_f^{n+1}$\;
+	 }{
+	    interpolate the boundary of $\mathbf{w}^{n+1}$ and compute the energy measure  $E_b^{n+1}$\;
+	 }
+         \If{$|E_f^{n+1}-E_b^{n+1}|>\mbox{tolerance}\cdot E_f^{n+1}$}{
+           read the snapshot $\mathbf{w}^{s_i+1}$ in the checkpoint $s_i$\;
+           redistribute the idle checkpoints $s_{i+1},\cdots,s_{c-1}$ between $s_i$ and $n$ according to the binomial law in \eqref{eq:binomial1} and \eqref{eq:binomial2}\;
+           \For{$k=s_i+1,n$}{
+	      do forward modeling $F^{k}:\mathbf{w}^{k} \rightarrow \mathbf{w}^{k+1}$\;
+	      \lIf{$k\in s_{i+1},\cdots,s_{c-1}$}{store the snapshot $k$ at these relocated checkpoint positions}
+           }
+           override the backward energy $E_b^{n+1}$ with $E_f^{n+1}$: $E_b^{n+1}=E_f^{n+1}$\;
+         }
+	 perform reverse propagation $(F^{n})^{-1}:\mathbf{w}^{n+1} \rightarrow \mathbf{w}^{n}$
+       }
+\end{algorithm}
+
+
+\begin{figure}
+ \centering
+ \includegraphics[width=0.8\textwidth]{carfs}
+ \caption{Proposed checkpointing assisted reverse-forward simulation (CARFS) method: 
+ (a) The best case is that the wavefield at every time step is recovered by reverse propagation without violation of the energy tolerance. The numerical errors are controlled within a negligible magnitude, therefore no need for repeated forward modeling from checkpointing strategy.
+ (b) The CARFS method  switches to binomial checkpointing when reverse propagation explodes, i.e., the tolerance of energy measure is broken.
+ (c) One may need several levels of checkpointing to obtain a backup of the wavefield at time levels between two checkpoints through repeated forward modeling, if the attenuation is strong enough. }\label{fig:carfs}
+\end{figure}
+
+
+To detect the instability of reverse propagation in CARFS, one may employ some other quantities rather than the energy measure. A good alternative to the energy measure used in this paper should be efficient to compute and sensitive to the variations of pressure and particle velocities in the wavefield. A key ingredient of the CARFS algorithm for successful 3D large-scale application is that the heavy storage requirement has to be decreased dramatically up to one to two orders of magnitude in terms of Nyquist sampling theorem, while the missing values between sampled boundary elements need to be interpolated accurately \citep{Yang_2016_WRB,Yang_2016_DPI}. The decimation ratio depends on the velocity contrast.  The CARFS algorithm works equally well even when the decimation ratio for the boundary values is very large. Besides, the tolerance of the energy mismatch may be chosen differently in CARFS. However, the empirical experiments show that it has little influence on the efficiency of CARFS algorithm.
+
+
+\begin{figure}
+ \centering
+ \includegraphics[width=0.55\textwidth]{ratio}
+ \caption{A schematic plot of the recomputation ratios related to the number of checkpoints $c$ used for reverse propagation, checkpointing and CARFS methods. The horizontal axis is the number of snapshots stored. Storing all wavefield snapshots leads to a recomputation ratio of $R=1$ because only one times of forward simulation was done. The recomputation ratio of reverse propagation approach is $R=2$ due to backpropagation the incident wavefield at each correlation step. In checkpointing strategy, the best tradeoff for the number of checkpoints and repeated forward modeling steps can be achieved at $c=\log_2(N)$ according to \citet{Griewank_2000_CHP} and \citet{Symes_2007_RTM}. For most of application, $1000\leq N\leq 10000$ leads to $c\le 14$ and a recomputation ratio bounded by $R\in(3.6,4.9)$.  Using  $c<N/2$ equal-spaced checkpoints, RPSS always outperforms checkpointing strategy in terms of recomputation cost. RPSS and checkpointing can achieve the same recomputation ratio if $c\ge N/2$.  Due to smart decision between forward timestepping and reverse propagation, CARFS uses less timesteppings compared with checkpointing (smaller $N'$) to reconstruct the wavefield, implying a smaller recomputation ratio as well as the stability in attenuating medium. }\label{fig:ratio}
+\end{figure}
+
+\subsection{Complexity analysis}
+
+Let us compare all the methods in terms of computation complexity and memory request. Consider $N$ steps of wave simulation for a 3D cubic model of size $n_x^3$. Storing all the wavefield snapshots has the highest memory consumption  without any need for recomputing the incident wavefield. Even if the data compression technique can be utilized during the storing procedure \citep{Sun_2013_TWO}, the actual amount of storage, involving some computation for compression and decompression, is still of order $O(\frac{1}{a}\times N\times n_x^3)$ with only a constant factor $\frac{1}{a}$ depending on the compression rate $a$ of the algorithm used. The checkpointing strategy needs to store $c$ checkpoints where the factor $c$ grows logarithmically according to the simulation steps $N$, $c=\log_2(N)$. The recomputation ratio of checkpointing is generally much higher than 2 because of the limited memory resource available. Particularly, if all the snapshots are allowed to be stored as checkpoints, the checkpointing strategy converges to the scheme of storing all wavefield, involving only one times of forward modeling ($R=1$). The reverse propagation method involves six faces of the boundary (front-rear, left-right, top-bottom) at every time step, with the storage of order $O(\frac{1}{b}\times N\times n_x^2)$ in which $b$ is the decimation rate if the decimation and interpolation techniques are employed for storing and restoring the wavefield at boundaries. The recomputation ratio of the reverse propagation is $R=2$ because the incident wavefield has to be reverted backwards when backpropagating the adjoint wavefield \citep{Yang_2016_WRB}. Introducing $c$ snapshots in $N$ steps of reverse propagation leads to RPSS method with a recomputation ratio $R_{RPSS}=1+\frac{N-c}{N}$.
+As already shown, RP and RPSS methods using insufficient number of snapshots cannot work in viscous medium. CARFS algorithm supplies a good tradeoff between memory overhead and the computation complexity. Compared with Checkpointing, CARFS needs the extra memory for storing boundary to perform reverse propagation, resulting a lower recomputation ratio. CARFS will be equivalent to RPSS when every reverse propagation step succeeds. Compared with RPSS, CARFS can work quite well in strong attenuating media using less snapshots because the errorneous wavefield can be overrided by checkpointing strategy from the closest checkpoint prior to current time level, if the energy tolerance is violated. Table \ref{table:comparison} and Figure \ref{fig:ratio} summarize the memory complexity and the recomputation ratios of all the existing methods. It can be seen that the CARFS method using both forward and reverse propagation is a practical solution for large scale imaging applications thanks to the good tradeoff between the computation complexity and the memory requirement.
+
+\begin{table} 
+\centering
+  \caption{Comparison of memory and computation complexity for the methods in different medium}\label{table:comparison}  
+  \begin{tabular}{ l|c|c|c|c}   
+  \hline
+  Methods 		& Memory overhead		& Recomputation ratio 		& Non-viscous& Viscous \\ 
+  \hline
+  Storing-all 		& $\frac{1}{a} n_x^3 N$ 	& $R_S=1$			& Yes		&Yes\\
+  Checkpointing 	& $c n_x^3$			& $R_C>1$			& Yes		&Yes\\
+  RP 			& $\frac{1}{b} n_x^2 N$  	& $R_{RP}=2$			& Yes		& No\\
+  RPSS 			& $c n_x^3+\frac{1}{b} n_x^2 N$& $R_{RPSS}=1+\frac{N-c}{N}$	& Yes		& Yes/No\\
+  CARFS 		& $c n_x^3+\frac{1}{b} n_x^2 N$ &  $R_{RPSS}<R_{CARFS}<R_{C}$ &Yes		& Yes\\  
+  \hline
+  \end{tabular}
+\end{table}
+
+
+
+%------------------------------------------------------------------------
+\section{Running with CARFS}
+
+
+\subsection{Package structure}
+
+The CARFS package contains several directories and files that are  described bellow :
+\begin{itemize}
+  \item \texttt{doc} directory that contains this manual 
+  \item \texttt{include} directory that contains several files included during compilation. The user shouldn't have to modify this files.
+  \item \texttt{src} directory that contains the source files of CARFS. is written in Fortran language. 
+  \item \texttt{lib} directory that contains library to be linked by the user in their application.
+  \item \texttt{demo} directory that numerical examples.
+  \item \texttt{LEGAL\_STATEMENT} file that contains the licensing statement of the code, under a FreeBSD-like license, but with restrictions for diffusion.
+  \item \texttt{Installation\_Instructions} that contains basics information on how to install and run the demos.
+\end{itemize}
+
+
+\subsection{Compilation/installation}
+
+For compilation of CARFS, Fortran compilers are required for compilation. CARFS have passed testing with \texttt{gfortran} and Intel \texttt{ifort}. Before compiling, the users have to specify the environment variables and compilers in the following.
+
+\begin{framed}
+\begin{verbatim}
+# for the visualization of the demos
+SHELL = /bin/sh
+RSFSRC_PATH = $(RSFSRC)
+RSFROOT_PATH = $(RSFROOT)
+
+OPTIM = ~/SEISCOPE_CODES/TOOLS_BOX/trunk/OPTIMIZATION
+INTERP = ~/SEISCOPE_CODES/TOOLS_BOX/trunk/INTERPOLATION
+LIB = -L $(OPTIM)/lib -lSEISCOPE_OPTIM -L $(INTERP)/lib -lSEISCOPE_INTERP
+INC = -I $(OPTIM)/COMMON/include 
+
+# fortran compiling settings
+FC	= gfortran
+MPIFC  	= mpif90
+FLAGS	= -O3 -g -ffixed-line-length-none
+
+#build a library for linking
+AR	= ar
+ARFUNCT	= cruv
+\end{verbatim}
+\end{framed}
+Since the demostrative examples in CARFS/demo have to perform least-squares optimization to approximate constant Q, CARFS is therefore compiled and linked with SEISCOPE  Optimization toolbox. Since 3-D wavefield reconstruction using the stored bounaries involves heavy memory consumption, to run the 3-D demos given in \texttt{CARFS/demo} for long duration forward simulation and backward reconstruction, one may also need to link with SEISCOPE Interpolation toolbox. For the convenience of visualization after running the demos, one may install Madagascar or Seismic Unix (SU). A good strategy is configuring your machine using environment variables as follows:
+
+\begin{itemize}
+  \item \texttt{RSFSRC\_PATH}: the path of Madagascar source files. The users do not need to specify it if using SU for visualization of the computational outcome.
+  \item \texttt{RSFROOT\_PATH}: the path of Madagascar executable files. The users do not need to specify it if using SU for visualization of the computational outcome.
+  \item \texttt{OPTIM}: the path of Seiscope optimization toolbox.
+  \item \texttt{INTERP}: the path of Seiscope interpolation toolbox.
+  \item \texttt{LIB}: the libraries of Seiscope optimization and interpolation toolbox.
+  \item \texttt{INC}: the include files
+  \item \texttt{FC}: fortran compiler, can be \texttt{gfortran}, \texttt{ifort}, etc.
+  \item \texttt{MPIFC}: MPI fortran compiler, can be \texttt{mpif90}, \texttt{mpiifort}, etc.
+  \item \texttt{FLAGS}: compiling flags.
+  \item \texttt{AR}: to build the library for linking by the user.
+  \item \texttt{ARFUNCT}: to build the library for linking by the user.
+\end{itemize}
+
+The main part of CARFS is located in \texttt{src}. A \texttt{Makefile} allows to compile the source. Once the \texttt{Makefile.inc} is filled, the user can compile the code with a simple make command \texttt{make} in their terminal to compile CARFS source file to build the libraries for future usage.
+
+%----------------------------------------------------------------------------------------
+\subsection{Run the demos}
+
+In \texttt{CARFS/demo}, I provide a \texttt{readme.txt} file to guide the user on how to run two reproducible examples for comparison: optimal checkpointing strategy and CARFS approach. 
+
+To reproduce this example, the users need to go into the subdirectory (\texttt{test\_{cp}} or \texttt{test\_{carfs}}) and then
+\begin{enumerate}
+  \item \texttt{make}
+  \item \texttt{./test.x}
+  \item \texttt{scons view}
+\end{enumerate}
+After \texttt{make}, Makefile will be executed to generate a executable \texttt{text.x}. The user can then perform the computation by typing \texttt{./test.x}, yielding the resulting binary data. These data will be displayed nicely using \texttt{scons view} if Madagascar is well installed.
+
+To remove all the intermediate files, the users may type in their terminal:
+\begin{enumerate}
+  \item \texttt{scons -c}
+  \item \texttt{make clean}
+\end{enumerate}
+
+Following the above instructions in \texttt{CARFS/demo/test\_carfs}, the users will end up with Figure \ref{fig:rsf} by running \texttt{scons view}. 
+If the user has no Madagascar installed, you may end up with Figure \ref{fig:su} by running \texttt{sh ./plot.sh} if Seismic Unix is in a good shape on your machine.
+\begin{figure}
+\centering
+ \includegraphics[width=\textwidth]{trcarfs}
+ \caption{Comparison of backward reconstruction and forward simulation in CARFS based on (a) the energy measure, (b) a randomly extracted seismic trace, and (c) the trace error.}\label{fig:rsf}
+\end{figure}
+
+\begin{figure}
+\centering
+ \includegraphics[width=0.9\textwidth]{rec}
+ \caption{Comparison of backward reconstruction and forward simulation in CARFS according to the wavefield snapshots at the time (a) $n=200$ and (b) $n=500$, as well as (c,d) the corresponding snapshot errors.}\label{fig:su}
+\end{figure}
+
+\subsection{Use CARFS in your code}
+
+Since CARFS is a hybrid of optimal checkpointing strategy and reverse propagation, the careful user may find that I only coded optimal checkpointing in \texttt{CARFS/src/}. Application of CARFS to achieve better reconstruction efficiency without loss of accuracy is a workflow  by following the example given in \texttt{CARFS/demo/test\_carfs/test\_carfs.f90}, which is actually a template to start your job. 
+
+
+A careful reminder is that the time index for \texttt{it} to start modeling. If you start with \texttt{it=0} and end with \texttt{it=nt-1}, you need to make sure in \texttt{CARFS/src/checkpointing\_relocate.f90} there are several lines as follows: 
+\begin{itemize}
+  \item \texttt{  if(ic==0) cpit(ic)=0 ! set the first checkpoint}
+  \item \texttt{  call checkpoint\_relocate(verb,cpit,nc,ic,nt-1)}
+\end{itemize}
+If you start with \texttt{it=1} and end with \texttt{it=nt}, you need to modify  \texttt{CARFS/src/checkpointing\_relocate.f90} the lines in to be:
+\begin{itemize}
+  \item \texttt{  if(ic==0) cpit(ic)=1 ! set the first checkpoint}
+  \item \texttt{  call checkpoint\_relocate(verb,cpit,nc,ic,nt)}
+\end{itemize}
+Of course the user has to re-compile by typing \texttt{make} in \texttt{CARFS/src} prior to do compiling for their own code. Then, one may link your own code with the CARFS toolbox by specifying where the CARFS libraries are. For example, to link \texttt{TOYxDAC\_TIME} with \texttt{CARFS}, we have the following line in \texttt{Makefile} in \texttt{TOYxDAC\_TIME/src}
+\begin{verbatim}
+  LIB_TOOLS_BOX = -L $(TOOLS_BOX_DIR)/CARFS/lib/ \
+    -L $(TOOLS_BOX_DIR)/INTERPOLATION/lib/ -lSEISCOPE_INTERP \
+    -L $(TOOLS_BOX_DIR)/OPTIMIZATION/lib/ -lSEISCOPE_OPTIM \
+    -L $(TOOLS_BOX_DIR)/SU_IO/lib/ -lSU_IO 
+\end{verbatim}
+where \texttt{TOOLS\_BOX\_DIR} specifies the trunk path/directory of SEISCOPE toolbox, which may be pre-defined by the environment variable in \texttt{.bashrc}:
+\begin{verbatim}
+ TOOLS_BOX_DIR=~/SEISCOPE_CODES/TOOLS_BOX/trunk
+\end{verbatim}
+Note also that the users may need the SEISCOPE interpolation toolbox to interpolate the boundaries to reconstruct the interior wavefield. We encourage the users to refer to the mannual of the \texttt{Interpolation} toolbox as well.
+
+Once the above things done, the user can use CARFS algorithm. There are still  many things the users have to do:
+\begin{itemize}
+  \item write a subroutine to compute your total energy or your instability detector based on other measures;
+  \item replace the wave extrapolation operator/subroutines with your own. For example, if you are playing with VTI viscoacoustic inversion, you need to replace the isotropic modeling subroutine with your VTI modeling engine.
+  \item replace the subroutine to apply sponge boundary condition with your own if you have the subroutine, for instance, using PML absorbing boundary condition.
+  \item also note that the array to store time index of checkpoints is defined as \texttt{cpit(0:nc-1)}, where \texttt{nc} is the number of checkpoints used.
+\end{itemize}
+
+The following code snippet is the CARFS usage in \texttt{TOYxDAC\_Time} for illustration purpose. First, we have to prepare the subroutines to allocate memory for checkpoints in \texttt{manage\_wavefield.f90}. Then, in \texttt{pbdirect\_fdtd\_incident.f90} we need to do forward modeling while computing the energy and storing the $nc$ checkpoints:
+\begin{verbatim}
+      !=======================================================
+     if(pbdir%iinv==1) then
+        !compute partial energy for efficient gradient building
+        call compute_partial_energy(pbdir,pbdir%ef(it))
+
+        !record snapshots to restart reverse propagation
+        if(pbdir%nc>0 .and. (ic<pbdir%nc.and.it-1==pbdir%cpit(ic))) then
+           pbdir%cpvx1(:,:,:,ic)=pbdir%vx1(:,:,:)
+           pbdir%cpvy1(:,:,:,ic)=pbdir%vy1(:,:,:)
+           pbdir%cpvz1(:,:,:,ic)=pbdir%vz1(:,:,:)
+           pbdir%cpg1(:,:,:,ic)=pbdir%g1(:,:,:)
+           pbdir%cpq1(:,:,:,ic)=pbdir%q1(:,:,:)
+           pbdir%cpxig1(:,:,:,:,ic)=pbdir%xig1(:,:,:,:)
+           pbdir%cpxiq1(:,:,:,:,ic)=pbdir%xiq1(:,:,:,:)
+           ic=ic+1 !index of the snapshot/cp
+        endif
+     endif
+  enddo
+\end{verbatim}
+In the sequel, in \texttt{pbdirect\_fdtd\_adjoint\_FWI\_gradient.f90} the adjoint simulation is performed while the gradient can be built based on CARFS:
+\begin{verbatim} 
+  !loop over time sample
+  do it=1,pbdir%nt
+     it_inc=pbdir%nt-it+1
+     if(mod(it_inc,100)==0 .and. mype==0) write(*,*) 'it----',it_inc
+
+     !===============================================================================
+     !Part I: adjoint simulation from final time to the beginning
+     !===============================================================================
+     call step_adjoint(inv,pbdir,-1,acqui,mytime,it)
+     
+     !===============================================================================
+     !Part II: incident wavefield reconstruction using CARFS
+     !Pengliang Yang: slightly complex but efficient, forgive me please!!
+     !===============================================================================
+     if(pbdir%nc>0) then
+        !find the closesest checkpoint prior to current time level-it
+        !after searching cpit(ic) is the closest checkpoint location 
+        !prior or equal to current time level-it: it>=cpit(ic)
+        ic=pbdir%nc-1
+        do while(ic>=0 .and. it_inc<pbdir%cpit(ic))
+           ic=ic-1
+        enddo
+     endif
+
+     if(pbdir%nc>0 .and. it_inc==pbdir%cpit(ic)) then ! if it is checkpoint, read from memory
+        pbdir%vx1(:,:,:)=pbdir%cpvx1(:,:,:,ic)
+        pbdir%vy1(:,:,:)=pbdir%cpvy1(:,:,:,ic)
+        pbdir%vz1(:,:,:)=pbdir%cpvz1(:,:,:,ic)
+        pbdir%g1(:,:,:)=pbdir%cpg1(:,:,:,ic)
+        pbdir%q1(:,:,:)=pbdir%cpq1(:,:,:,ic)
+        pbdir%xig1(:,:,:,:)=pbdir%cpxig1(:,:,:,:,ic)
+        pbdir%xiq1(:,:,:,:)=pbdir%cpxiq1(:,:,:,:,ic)
+        
+        !at checkpoint,forward wavefield stored exactly,backward energy=forward energy
+        pbdir%eb(it_inc)=pbdir%ef(it_inc)
+     else! it is not checkpoint, try reverse propagation from boundary reading
+        !----------------------------------------------------------------------!
+        !reconstruct wavefield boundaries by DFT interpolation: flag v2b=.fasle.
+        !----------------------------------------------------------------------!
+        if(pbdir%ibnd==1 .or. pbdir%ibnd==2) call wavefield_bnd_interp(.false.,pbdir,it_inc)
+
+        call compute_partial_energy(pbdir,pbdir%eb(it_inc))
+     endif
+
+     !check the measure satisfying the tolerance or not
+     if(pbdir%nc>0 .and. abs(pbdir%ef(it_inc)-pbdir%eb(it_inc))>pbdir%tolerance*pbdir%ef(it_inc)) then 
+        !now, it is not checkpoint because checkpoints satisfy the tolerance
+        !it is a moment: it>cpit(ic)
+        !read the closest checkpoints into the wavefield state vector
+        pbdir%vx1(:,:,:)=pbdir%cpvx1(:,:,:,ic)
+        pbdir%vy1(:,:,:)=pbdir%cpvy1(:,:,:,ic)
+        pbdir%vz1(:,:,:)=pbdir%cpvz1(:,:,:,ic)
+        pbdir%g1(:,:,:)=pbdir%cpg1(:,:,:,ic)
+        pbdir%q1(:,:,:)=pbdir%cpq1(:,:,:,ic)
+        pbdir%xig1(:,:,:,:)=pbdir%cpxig1(:,:,:,:,ic)
+        pbdir%xiq1(:,:,:,:)=pbdir%cpxiq1(:,:,:,:,ic)
+        
+        !then evenly distribute idle checkpoints between cp(ic)%it+1:it
+        !the idle checkpoint are [ic:nc-1]
+        call checkpoint_relocate(pbdir%verb,pbdir%cpit,pbdir%nc,ic,it_inc)
+
+        !modeling from the closest checkpoint prior to current time level
+        j=1
+        do itt=pbdir%cpit(ic)+1,it_inc
+           !do forward timestepping, propa_mode=+1
+           call step_forward(pbdir,acqui,mytime,1,itt)
+
+           !store (nc-ic) snapshots into the idle checkpoints on the fly
+           !they may be used later
+           do while(ic+j<pbdir%nc.and.itt==pbdir%cpit(ic+j)) 
+              !it is possible that several checkpoints resides in the same position
+              pbdir%cpvx1(:,:,:,ic+j)=pbdir%vx1(:,:,:)
+              pbdir%cpvy1(:,:,:,ic+j)=pbdir%vy1(:,:,:)
+              pbdir%cpvz1(:,:,:,ic+j)=pbdir%vz1(:,:,:)
+              pbdir%cpg1(:,:,:,ic+j)=pbdir%g1(:,:,:)
+              pbdir%cpq1(:,:,:,ic+j)=pbdir%q1(:,:,:)
+              pbdir%cpxig1(:,:,:,:,ic+j)=pbdir%xig1(:,:,:,:)
+              pbdir%cpxiq1(:,:,:,:,ic+j)=pbdir%xiq1(:,:,:,:)
+              j=j+1
+           enddo
+        enddo
+
+        !the checkpoint computed wavefield is free of error
+        !thus, the energy is the same as forward simulation
+        pbdir%eb(it_inc)=pbdir%ef(it_inc)
+        !call compute_partial_energy(pbdir,pbdir%eb(it_inc))
+     endif
+     !===============================================================================
+     !note that the incident wavefield at [it_inc] has been prepared by CARFS in advance
+     !if its amplification error explodes, CARFS has replaced it with a good one by
+     !forward modeling; otherwise it is good for satisfying energy tolerance!!
+     !=============================================================================
+
+
+     !=============================================================================
+     !if it is checkpoint, tolerance always satisfied ef(it)=eb(it),
+     ! do reverse propagation without worrying about the boundary
+     !
+     !if not checkpoint while satisfying the tolerance,
+     ! continue reverse propagation (the boundary has already been interpolated)
+     !reverse propagation: propa_mod=-1
+     !============================================================================
+     !move incident wavefield at [it_inc] to [it_inc-1] by reverse propagation
+     call step_forward(pbdir,acqui,mytime,-1,it_inc)
+     
+     !===============================================================================
+     !Part III: building the gradient
+     !===============================================================================
+     !note that only non-zero at overlapped region for incident and adjoint
+     i1min=max(pbdir%i1min2(it),pbdir%i1min1(it_inc))
+     i1max=min(pbdir%i1max2(it),pbdir%i1max1(it_inc))
+     i2min=max(pbdir%i2min2(it),pbdir%i2min1(it_inc))
+     i2max=min(pbdir%i2max2(it),pbdir%i2max1(it_inc))
+     i3min=max(pbdir%i3min2(it),pbdir%i3min1(it_inc))
+     i3max=min(pbdir%i3max2(it),pbdir%i3max1(it_inc))
+     !a backup of previous step of incident wavefield injected for building gradient
+     call gradient(pbdir,inv,g1b,q1b,vx1b,vy1b,vz1b,i1min,i1max,i2min,i2max,i3min,i3max)
+     !after building the gradient, the previous-step incident wavefield will be updated
+  enddo
+\end{verbatim}
+The interested users are referred to \cite[section 5, Practiacal implementation issues]{Yang_2016_VTI} for more details on VTI viscoacoustic inversion.
+
+\bibliographystyle{apalike}
+\bibliography{/home/yangpe/SEISCOPE_ARTICLES/BIBLIO/biblioseiscope,/home/yangpe/SEISCOPE_ARTICLES/BIBLIO/bibliotmp}
+
+
+\end{document}
+

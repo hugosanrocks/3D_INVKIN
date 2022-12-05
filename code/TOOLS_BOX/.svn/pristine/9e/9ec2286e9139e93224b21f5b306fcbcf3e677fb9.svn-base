@@ -1,0 +1,45 @@
+!
+!!$  Copyright (C) 2016 University Joseph Fourier, Grencle (Pengliang Yang)
+!!$
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!---------------------------------------------------------------------------
+subroutine checkpoint_relocate(verb,cpit,nc,ic,it)!set c=nc-ic, it=nt-1
+  implicit none
+
+  logical::verb
+  integer::nc !total number of checkpoints
+  integer::ic !the closest checkpoint prior to current time level-it
+  integer::it !current time level
+  integer::cpit(0:nc-1) !position of checkpoints in time coordinate
+
+  integer::i,l,c,p(0:nc-ic-1)
+
+  c=nc-ic ! the number of idle checkpoints posterior to time level-it
+  if(ic==0) cpit(ic)=0 ! set the first checkpoint    
+  if(verb) write(0,'(2(A,I4))') "cp[",ic,"] store it=", cpit(ic)
+
+  l=it-cpit(ic)+1
+  if(l>2.and.c>1) then
+     call checkpoint_positioning(p,l,c) 
+     do i=1,c-1
+        if(p(i)>0) cpit(ic+i)=cpit(ic)+p(i)
+        if(verb) write(0,'(2(A,I4))') "cp[",ic+i,"] store it=", cpit(ic+i)
+     enddo
+  endif
+end subroutine checkpoint_relocate
+

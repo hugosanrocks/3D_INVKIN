@@ -1,0 +1,94 @@
+!!$  Copyright (C) 2015 Seiscope- University Grenoble Alpes (Pengliang Yang)
+!!$			ypl.2100@gmail.com; pengliang.yang@ujf-grenoble.fr
+!!$ References: 
+!!$[1] P. Yang and R. Brossier and L. Metivier and J. Virieux, Checkpointing
+!!$    assisted Reverse Forward Simulation: an optimal recomputation method for 
+!!$    FWI and RTM, Expanded Abstracts, 78$^{th}$ Annual EAGE Meeting (Vienna),
+!!$    2016
+!!$[2] Yang, P., Brossier, R., and Virieux, J. (2016b). Wavefield reconstruction
+!!$    from significantly decimated boundaries. Geophysics, 2016 page submitted.
+!!$[3] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$[4] Yang, P., Gao, J., and Wang, B. (2015). A graphics processing unit 
+!!$    implementation of time-domain full-waveform inversion. Geophysics, 
+!!$    80(3):F31–F39.
+!!$[5] Yang, P., Wang, B., and Gao, J. (2014b). Using the effective boundary 
+!!$    saving strategy in GPU-based RTM programming. In SEG technical program 
+!!$    expanded abstracts 2014. Society of Exploration Geophysicists.
+!------------------------------------------------------------------!
+! part iii: lagranage polynomial interpolation for boundary values
+!------------------------------------------------------------------!
+subroutine poly_interp(v2b,var,var0,i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q)
+  !lagrange polynomial interpolate the boundary elements
+  implicit none
+
+  logical::v2b !v to bourndary or reverse
+  integer::i1min,i1max,i2min,i2max,i3min,i3max,nt,mt,it,q
+  real::var(mt,i1min:i1max,i2min:i2max,i3min:i3max)
+  real::var0(i1min:i1max,i2min:i2max,i3min:i3max)
+
+  integer::r,i1,i2,i3,m,i,nob,id(q+1)
+  real::x(q+1) ! values used for interpolation
+  real::w(q+1) ! lagrange interpolation weights
+  r=nt/mt
+  nob=(q+1)/2
+
+  if(v2b) then !v to bourndary
+     !"it" originates from 1 rather than 0
+     if(mod(it-1,r)==r-1) then !only every r-step, store fourier coefficients
+        m=it/r
+        do i3=i3min,i3max
+           do i2=i2min,i2max
+              do i1=i1min,i1max
+                 var(m,i1,i2,i3)=var0(i1,i2,i3)
+             enddo
+           enddo
+        enddo
+     endif
+  else !boundary to v, this part is done at every backward step
+     m=(it-1)/r 
+     if(m-(nob-1)<1) then !the starting points
+        x=(/ (real(i),i=r,(q+1)*r,r)/)
+        id=(/(i,i=1,q+1)/)!tme level id id=1:nd+1
+     else if (m+q+1-nob>=mt) then !the ending points
+        x=(/(real(i),i=(mt-q)*r,mt*r,r)/)
+        id=(/(i,i=mt-q,mt)/)!tme level id id=mt-nd:mt
+     else !the points in between
+        x=(/(real(i),i=(m-(nob-1)+1)*r,(m+(q+1-nob)+1)*r,r)/)
+        !tme level id id=m-(nob-1)+1:m+(nd+1-nob)+1
+        id=(/(i,i=m-(nob-1)+1,m+(q+1-nob)+1)/)
+     endif
+
+     !compute lagrange interpolation weights
+     call compute_lagrange_weight(w,real(it),x,q)
+
+     !interpolate the boundaries according to computed weights
+     do i3=i3min,i3max
+        do i2=i2min,i2max
+           do i1=i1min,i1max
+              var0(i1,i2,i3)=sum(w*var(id,i1,i2,i3))
+           enddo
+        enddo
+     enddo
+  endif
+end subroutine poly_interp
+
+!---------------------------------------------------------------
+subroutine compute_lagrange_weight(w,xx,x,q)
+  implicit none
+  integer::q
+  real::w(q+1),x(q+1),xx,tmp
+
+  integer::i,j
+
+  do i=1,q+1
+     tmp=1.
+     do j=1,q+1
+        if(j.ne.i) then
+           tmp=tmp*(xx-x(j))/(x(i)-x(j))
+        endif
+     enddo
+     w(i)=tmp
+  enddo
+end subroutine compute_lagrange_weight

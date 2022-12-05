@@ -1,0 +1,858 @@
+module comm_engine_mod
+
+  use dd_common_mod
+  use mem_alloc_mod
+  use grid_mod
+  use mpi
+  use omp_lib
+  use zone_mod
+
+  implicit none
+
+  public :: init_mpi
+
+  !=========================================================
+  type comm_engine_type
+    character(len=20), private      :: name = 'comm_engine'
+
+    integer       :: nproc_world = 1
+    integer       :: myid_world  = 0
+
+    !-----------------------------------------------------
+    ! MPI intra-group communicator mpi_comm_0
+    ! for nb sub-domain (= npart) x ngroup communications
+    ! associated with myid_0 and nproc_0
+    !-----------------------------------------------------
+    integer       :: mpi_comm_0  = MPI_COMM_NULL
+    integer       :: nproc_0     = 1
+    integer       :: myid_0      = 0
+
+    !-----------------------------------------------------
+    ! MPI intra-group communicator mpi_comm_1
+    ! for sub-domain communications
+    ! associated with myid_1 and nproc_1
+    !-----------------------------------------------------
+    integer       :: mpi_comm_1  = MPI_COMM_NULL
+    integer       :: nproc_1     = 1
+    integer       :: myid_1      = 0
+
+    !-----------------------------------------------------
+    ! MPI inter-group communicator MPI_COMM_2
+    ! for communications between sub-domains of different group but of same rank
+    ! associated with myid_2 and nproc_2
+    !-----------------------------------------------------
+    integer       :: mpi_comm_2  = MPI_COMM_NULL
+    integer       :: nproc_2     = 1
+    integer       :: myid_2      = 0
+
+  contains
+
+    procedure, pass :: comm_engine_free_mem
+    procedure, pass :: end_mpi
+    procedure, pass :: create_mpi_communicators
+    procedure, pass :: create_mpi_types
+    procedure, pass :: print_info
+
+    ! Services dedicated to the communications of data 
+    ! linked to dedicated points distributed in the domain
+    !-----------------------------------------------------
+
+    procedure, pass :: comm_engine_scatter_points_global_zone_scalar_integer_data
+    procedure, pass :: comm_engine_scatter_points_global_zone_scalar_real_data
+    procedure, pass :: comm_engine_scatter_points_global_zone_vector_real_data
+    procedure, pass :: comm_engine_gather_points_global_zone_scalar_real_data
+    procedure, pass :: comm_engine_gather_points_global_zone_vector_real_data
+
+  end type comm_engine_type
+  !=========================================================
+
+  contains
+
+
+  subroutine init_mpi()
+    integer                                 :: thread_level_required = 0, thread_level_provided = 0, mpierr
+    character(len=25)                       :: thread_level_provided_str
+    logical                                 :: already_initialized
+    character(len=*),        parameter      :: proc_name = 'init_mpi'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    ! Check MPI not already initialized
+    call mpi_initialized(already_initialized, mpierr)
+    if (mpierr /= MPI_SUCCESS) then
+      write(error_message,*) proc_name, ' :: ERROR : mpi_initialized :', mpierr
+      call stop_mpi()
+    end if
+    !print *, proc_name, " initialized ==", already_initialized
+
+    ! openMP Threads information
+    !if (nthreads <= 0) then
+    !  nthreads = omp_get_num_threads()
+    !end if
+    !write(*,*) omp_get_num_procs(), omp_get_num_threads(), omp_get_thread_num(), omp_get_max_threads()
+
+    if (.not. already_initialized) then
+
+      if (nthreads <= 1) then
+
+        call mpi_init(mpierr)
+
+        ! mpi_init has the same effect as a call to mpi_init_thread with a required = MPI_THREAD_SINGLE
+        thread_level_provided_str = "MPI_THREAD_SINGLE"
+
+        if (mpierr /= MPI_SUCCESS) then
+          write(error_message,*) proc_name, ' :: ERROR : mpi_init :', mpierr
+          call stop_mpi()
+        end if
+
+      else
+
+        ! MPI_THREAD_SINGLE < MPI_THREAD_FUNNELED < MPI_THREAD_SERIALIZED < MPI_THREAD_MULTIPLE
+        thread_level_required = MPI_THREAD_MULTIPLE
+
+        call mpi_init_thread(thread_level_required, thread_level_provided, mpierr)
+
+        if (mpierr /= MPI_SUCCESS) then
+          write(error_message,*) proc_name, ' :: ERROR : mpi_init_thread :', mpierr
+          call stop_mpi()
+        end if
+
+        select case(thread_level_provided)
+        case(MPI_THREAD_SINGLE)
+          thread_level_provided_str = "MPI_THREAD_SINGLE"
+        case(MPI_THREAD_FUNNELED)
+          thread_level_provided_str = "MPI_THREAD_FUNNELED"
+        case(MPI_THREAD_SERIALIZED)
+          thread_level_provided_str = "MPI_THREAD_SERIALIZED"
+        case(MPI_THREAD_MULTIPLE)
+          thread_level_provided_str = "MPI_THREAD_MULTIPLE"
+        end select
+!         if ((myid_1 == 0) .and. (thread_level_required .ne. thread_level_provided)) then
+!           print *, proc_name, " :: WARNING : provided =", thread_level_provided_str, &
+!           &                              " < required =", thread_level_required_str
+!           !call mpi_finalize(mpierr)
+!         end if
+
+      end if
+
+    end if
+
+    call mpi_comm_size(MPI_COMM_WORLD, nproc_world, mpierr)
+    call mpi_comm_rank(MPI_COMM_WORLD, myid_world , mpierr)
+
+    !temporary affectation before communicator splitting for message printing while configuration reading
+    myid_0 = myid_world
+    myid_1 = myid_world
+    myid_2 = myid_world
+
+    if (myid_world == 0) then
+      write (*,*)
+      write (*,*) "MPI is initialized"
+      write (*,*) "Executable launched on :"
+      write (*,*) " - Nb processors            = ", nproc_world
+      !if (nthreads > 1) then
+      !  write (*,*) " - ", nthreads, " threads (MPI thread support level = ", thread_level_provided_str, ")"
+      !else
+      !  write (*,*) " - A single thread"
+      !end if
+      write (*,*) " - MPI thread support level = ", thread_level_provided_str
+      write (*,*)
+    end if
+
+  end subroutine init_mpi
+
+
+  subroutine comm_engine_free_mem(this)
+    class(comm_engine_type), intent(in out) :: this
+    character(len=*),        parameter      :: proc_name = 'comm_engine_free_mem'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+  end subroutine comm_engine_free_mem
+
+
+  subroutine end_mpi(this)
+    class(comm_engine_type), intent(in out) :: this
+    integer                                 :: mpierr
+    character(len=*),        parameter      :: proc_name = 'end_mpi'
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    call mpi_barrier(MPI_COMM_WORLD, mpierr)
+    if (mpierr < 0) then
+      write(error_message,*) proc_name, ' :: ERROR : mpi_barrier: ', mpierr
+      call stop_mpi()
+    end if
+
+    if (this%mpi_comm_0 /= MPI_COMM_NULL .and. this%mpi_comm_0 /= MPI_COMM_WORLD) then
+      call mpi_comm_free(this%mpi_comm_0, mpierr)
+      if (mpierr < 0) then
+        write(error_message,*) proc_name, ' :: ERROR : mpi_comm_free mpi_comm_0: ', mpierr
+        call stop_mpi()
+      end if
+    end if
+
+    if (this%mpi_comm_1 /= MPI_COMM_NULL) then
+      call mpi_comm_free(this%mpi_comm_1, mpierr)
+      if (mpierr < 0) then
+        write(error_message,*) proc_name, ' :: ERROR : mpi_comm_free mpi_comm_1: ', mpierr
+        call stop_mpi()
+      end if
+    end if
+
+    if (this%mpi_comm_2 /= MPI_COMM_NULL) then
+      call mpi_comm_free(this%mpi_comm_2, mpierr)
+      if (mpierr < 0) then
+        write(error_message,*) proc_name, ' :: ERROR : mpi_comm_free mpi_comm_2: ', mpierr
+        call stop_mpi()
+      end if
+    end if
+
+    call mpi_finalize(mpierr)
+    if (mpierr < 0) then
+      write(error_message,*) proc_name, ' :: ERROR : mpi_finalize: ', mpierr
+      call stop_mpi()
+    end if
+
+  end subroutine end_mpi
+
+
+  subroutine create_mpi_communicators(this, mpi_comm_parent)
+
+    !----------------------------------------------------------------------
+    !     split MPI processes according to 
+    !     - the nb of groups computed in parallel 
+    !     - and the number of sub-domains
+    !
+    !     Inside parent communicator = mpi_comm_0 (which can be MPI_COMM_WORLD)
+    ! 
+    !     - Create new MPI communicator     -> mpi_comm_1
+    !            new rank id                -> myid_1
+    !            new nb of proc in new comm -> nproc_1
+    !
+    !     - Create new MPI communicator     -> mpi_comm_2
+    !            new rank id                -> myid_2   
+    !            new nb of proc in new comm -> nproc_2
+    !----------------------------------------------------------------------
+
+    class(comm_engine_type), intent(in out) :: this
+    integer,                 intent(in)     :: mpi_comm_parent
+    integer                                 :: igroup, ipart, iproc, mpierr
+    integer, dimension(:),   allocatable    :: rank, color
+    character(len=*),        parameter      :: proc_name = 'create_mpi_communicators'
+    logical                                 :: exist
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    this%nproc_world = nproc_world
+    this%myid_world  = myid_world
+
+    mpi_comm_0       = mpi_comm_parent
+
+    call mpi_comm_size(mpi_comm_0, nproc_0, mpierr)
+    call mpi_comm_rank(mpi_comm_0, myid_0 , mpierr)
+
+    this%mpi_comm_0  = mpi_comm_0
+    this%nproc_0     = nproc_0
+    this%myid_0      = myid_0
+
+    ngroup           = nproc_0 / npart
+
+    ! allocate tables used in mpi_comm_split
+    call alloc_(color, 1, this%nproc_0, "color")
+    call alloc_(rank,  1, this%nproc_0, "rank")
+
+    !------------------
+    ! Create mpi_comm_1
+    !------------------
+    
+    ! loop on the nb of groups in parallel
+    iproc = 0
+    do igroup = 1, ngroup
+      ! loop on the nb of sub-domains
+      do ipart = 1, npart
+          iproc = iproc + 1
+          color(iproc) = igroup
+          rank (iproc) = ipart - 1
+      end do
+    end do
+
+    ! Try task placement for load balancing of RAM on each node
+    if (task_placement == 1) then
+      inquire(file = trim(adjustl(task_map_file)), exist = exist)
+      if (.not. exist) then
+        write(error_message,*) proc_name, " :: ERROR : task_map file not found : ", trim(adjustl(task_map_file))
+        call stop_mpi()
+      end if
+      open(unit_dd,file=trim(adjustl(task_map_file)))
+      do ipart = 1, npart
+        read(unit_dd,*) rank(ipart)
+      end do
+      close(unit_dd)
+      iproc = npart
+      do igroup = 2, ngroup
+        ! loop on the nb of sub-domains
+        do ipart = 1, npart
+          iproc = iproc + 1
+          rank(iproc) = rank(ipart)
+        end do
+      end do
+    end if
+
+    if (dd_debug_level > 1) then
+      write(*,*) 'color', color
+      write(*,*) 'rank ', rank
+    end if
+
+    ! split mpi_comm_0 into mpi_comm_1
+    call mpi_comm_split(mpi_comm_0, color(this%myid_0+1), rank(this%myid_0+1), this%mpi_comm_1, mpierr)
+
+    ! retrieve myid_1 and nproc_1 for communicator 1
+    call mpi_comm_rank( this%mpi_comm_1, this%myid_1,  mpierr )
+    call mpi_comm_size( this%mpi_comm_1, this%nproc_1, mpierr )
+
+    if (dd_debug_level > 0 .and. task_placement == 1) then
+      write(*,*) 'task placement:', myid_0, myid_1
+    end if
+
+    if (this%nproc_1 /= npart) then
+      write(error_message,*) proc_name, &
+      & ' :: ERROR : The total number of processes must be a multiple of the number of subdomains: ', this%nproc_0, npart
+      call stop_mpi()
+    end if
+
+    mpi_comm_1 = this%mpi_comm_1
+    myid_1     = this%myid_1
+    nproc_1    = this%nproc_1
+
+    !------------------
+    ! Create mpi_comm_2
+    !------------------
+
+    color = 0
+    rank  = 0
+    iproc = 0
+
+    ! loop on the nb of groups in parallel
+    do igroup = 1, ngroup
+
+      ! loop on the nb of sub-domains
+      do ipart = 1, npart
+
+        iproc = iproc + 1
+        color(iproc) = ipart
+        rank(iproc)  = igroup-1
+
+      end do
+    end do
+
+    ! split mpi_comm_0 into mpi_comm_2
+    call mpi_comm_split(mpi_comm_0, color(this%myid_0+1), rank(this%myid_0+1), this%mpi_comm_2, mpierr)
+
+    ! retrieve myid_2 and nproc_2 for communicator 2
+    call mpi_comm_rank( this%mpi_comm_2, this%myid_2,  mpierr )
+    call mpi_comm_size( this%mpi_comm_2, this%nproc_2, mpierr )
+
+    mpi_comm_2 = this%mpi_comm_2
+    myid_2     = this%myid_2
+    nproc_2    = this%nproc_2
+
+    if (this%nproc_2 /= ngroup) then
+      write(error_message,*) proc_name, ' :: ERROR : nproc_2 /= ngroup :', this%nproc_2, ngroup
+      call stop_mpi()
+    end if
+
+    call dealloc_(rank,  "rank")
+    call dealloc_(color, "color")
+
+    if (dd_debug_level > 1) then
+      write(*,*) ' nproc_world, nproc_0, nproc_1, nproc_2 ', this%nproc_world, this%nproc_0, this%nproc_1, this%nproc_2
+      write(*,*) ' myid_world,  myid_0,  myid_1,  myid_2  ', this%myid_world,  this%myid_0,  this%myid_1,  this%myid_2
+    end if
+
+  end subroutine create_mpi_communicators
+
+
+  subroutine create_mpi_types(this, grid)
+    class(comm_engine_type),  intent(in out) :: this
+    class(grid_type),         intent(in)     :: grid
+    character(len=50)                        :: proc_name
+    proc_name = trim(this%name) // '%create_mpi_types'
+    write(error_message,*) proc_name, ' :: ERROR : Virtual method invoked on :', trim(this%name)
+    call stop_mpi()
+  end subroutine create_mpi_types
+
+
+  subroutine print_info(this)
+    class(comm_engine_type), intent(in out) :: this
+    character(len=*),        parameter      :: proc_name = 'print_info'
+    write(*,*) ' Effective number of processes: '
+    write(*,*) ' - mpi_comm_world : ', this%nproc_world
+    write(*,*) ' - mpi_comm_0     : ', this%nproc_0
+    write(*,*) ' - mpi_comm_1     : ', this%nproc_1
+    write(*,*) ' - mpi_comm_2     : ', this%nproc_2
+    write(*,*) ' Number of threads: ', nthreads
+  end subroutine print_info
+
+
+  subroutine comm_engine_scatter_points_global_zone_scalar_integer_data(this, glob_zone, data_glob, loc_zone, data_loc)
+    class(comm_engine_type),            intent(in out) :: this
+    class(points_glob_zone_type),       intent(in out) :: glob_zone
+    integer, dimension(:), allocatable, intent(in)     :: data_glob
+    class(points_loc_zone_type),        intent(in)     :: loc_zone
+    integer, dimension(:), allocatable, intent(in out) :: data_loc
+
+    integer                                            :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+    integer                                            :: mpierr
+    integer, dimension(MPI_STATUS_SIZE)                :: mpistat = 0
+    character(len=*),                   parameter      :: proc_name = 'comm_engine_scatter_points_global_zone_scalar_integer_data'
+    integer,                            parameter      :: tag = 100
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    !--------------------------------------------------------------------
+    ! Master processor only : 
+    ! Compute the data to send to each processor
+    !--------------------------------------------------------------------
+    if (this%myid_1 == 0) then
+
+      if (.not. allocated(glob_zone%data_snd_si)) then
+        write(error_message,*) proc_name, ' :: ERROR : global zone data_snd_si array is not allocated'
+        call stop_mpi()
+      end if
+
+      ! Backward processing so that last computed data_snd array can be 
+      ! kept for master processor
+      do iproc = this%nproc_1-1, 0, -1
+
+        i1   = glob_zone%proc_npt_tab(iproc)
+        iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+        nsnd = iEnd - i1 + 1
+
+        if (nsnd > 0) then
+
+          glob_zone%data_snd_si = 0
+
+          do loc_ipt = 1, nsnd
+            glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+            glob_zone%data_snd_si(loc_ipt) = data_glob(glob_ipt)
+
+          end do ! ipt
+
+          if (iproc /= 0) then
+
+            call mpi_send(glob_zone%data_snd_si, nsnd, MPI_INTEGER, iproc, tag, this%mpi_comm_1, mpierr)
+
+          end if
+
+          if (dd_debug_level > 1) write(*,'(I8,2A,2(A,I8))') myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+        end if ! (nsnd > 0)
+
+      end do ! iproc
+
+    end if ! (this%myid_1 == 0)
+
+    npt_loc = loc_zone%npt_loc
+
+    if (npt_loc > 0) then
+
+      if (.not. allocated(data_loc)) then
+        call alloc_(data_loc, 1, npt_loc, "data_loc")
+      else
+        if (size(data_loc) /= npt_loc) then
+          call dealloc_(data_loc, "data_loc")
+          call alloc_(data_loc, 1, npt_loc, "data_loc")
+        end if
+      end if
+
+      !-----------------------------------------------------
+      ! All processors except master : 
+      ! Receive data_loc array 
+      !-----------------------------------------------------
+      if (this%myid_1 /= 0) then
+
+        call mpi_recv(data_loc, npt_loc, MPI_INTEGER, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+      else
+
+        data_loc(1:npt_loc) = glob_zone%data_snd_si(1:npt_loc)
+
+      end if ! (this%myid_1 == 0)
+
+      if (dd_debug_level > 1) write(*,'(I8,2A,A,I8)') myid_1, ':', proc_name, ' receive ', npt_loc
+
+    end if ! (npt_loc > 0)
+
+  end subroutine comm_engine_scatter_points_global_zone_scalar_integer_data
+
+
+  subroutine comm_engine_scatter_points_global_zone_scalar_real_data(this, glob_zone, data_glob, loc_zone, data_loc)
+    class(comm_engine_type),                intent(in out) :: this
+    class(points_glob_zone_type),           intent(in out) :: glob_zone
+    real, dimension(:), allocatable,        intent(in)     :: data_glob
+    class(points_loc_zone_type),            intent(in)     :: loc_zone
+    real, dimension(:), allocatable,        intent(in out) :: data_loc
+
+    integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+    integer                                                :: mpierr
+    integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+    character(len=*),                       parameter      :: proc_name = 'comm_engine_scatter_points_global_zone_scalar_real_data'
+    integer,                                parameter      :: tag = 100
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    !--------------------------------------------------------------------
+    ! Master processor only : 
+    ! Compute the data to send to each processor
+    !--------------------------------------------------------------------
+    if (this%myid_1 == 0) then
+
+      if (.not. allocated(glob_zone%data_snd_sr)) then
+        write(error_message,*) proc_name, ' :: ERROR : global zone data_snd_sr array is not allocated'
+        call stop_mpi()
+      end if
+
+      ! Backward processing so that last computed data_snd array can be 
+      ! kept for master processor
+      do iproc = this%nproc_1-1, 0, -1
+        i1   = glob_zone%proc_npt_tab(iproc)
+        iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+        nsnd = iEnd - i1 + 1
+
+        if (nsnd > 0) then
+
+          glob_zone%data_snd_sr = 0.
+
+          do loc_ipt = 1, nsnd
+            glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+            glob_zone%data_snd_sr(loc_ipt) = data_glob(glob_ipt)
+
+          end do ! ipt
+
+          if (iproc /= 0) then
+
+            call mpi_send(glob_zone%data_snd_sr, nsnd, MPI_REAL, iproc, tag, this%mpi_comm_1, mpierr)
+
+          end if
+
+          if (dd_debug_level > 1) write(*,'(I8,2A,2(A,I8))') myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+        end if ! (nsnd > 0)
+
+      end do ! iproc
+
+    end if ! (this%myid_1 == 0)
+
+    npt_loc = loc_zone%npt_loc
+
+    if (npt_loc > 0) then
+
+      if (.not. allocated(data_loc)) then
+        call alloc_(data_loc, 1, npt_loc, "data_loc")
+      else
+        if (size(data_loc) /= npt_loc) then
+          call dealloc_(data_loc, "data_loc")
+          call alloc_(data_loc, 1, npt_loc, "data_loc")
+        end if
+      end if
+
+      !-----------------------------------------------------
+      ! All processors except master : 
+      ! Receive data_loc array 
+      !-----------------------------------------------------
+      if (this%myid_1 /= 0) then
+
+        call mpi_recv(data_loc, npt_loc, MPI_REAL, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+      else
+
+        data_loc(1:npt_loc) = glob_zone%data_snd_sr(1:npt_loc)
+
+      end if ! (this%myid_1 == 0)
+
+      if (dd_debug_level > 1) write(*,'(I8,2A,A,I8)') myid_1, ':', proc_name, ' receive ', npt_loc
+
+    end if ! (npt_loc > 0)
+
+  end subroutine comm_engine_scatter_points_global_zone_scalar_real_data
+
+
+  subroutine comm_engine_scatter_points_global_zone_vector_real_data(this, vector_size, glob_zone, data_glob, loc_zone, data_loc)
+    class(comm_engine_type),                intent(in out) :: this
+    integer,                                intent(in)     :: vector_size
+    class(points_glob_zone_type),           intent(in out) :: glob_zone
+    real, dimension(:,:), allocatable,      intent(in)     :: data_glob
+    class(points_loc_zone_type),            intent(in)     :: loc_zone
+    real, dimension(:,:), allocatable,      intent(in out) :: data_loc
+
+    integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nsnd, npt_loc
+
+    integer                                                :: mpierr
+    integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+    character(len=*),                       parameter      :: proc_name = 'comm_engine_scatter_points_global_zone_vector_real_data'
+    integer,                                parameter      :: tag = 100
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (vector_size < 1) return
+
+    !--------------------------------------------------------------------
+    ! Master processor only : 
+    ! Compute the data to send to each processor
+    !--------------------------------------------------------------------
+    if (this%myid_1 == 0) then
+
+      if (allocated(glob_zone%data_snd_vr)) then
+        if (vector_size /= size(glob_zone%data_snd_vr, dim=1)) then
+          call dealloc_(glob_zone%data_snd_vr,                                            'data_snd_vr')
+          call   alloc_(glob_zone%data_snd_vr, 1, vector_size, 1, glob_zone%max_npt_proc, 'data_snd_vr')
+        else
+          glob_zone%data_snd_vr = 0.
+        end if
+      else
+          call   alloc_(glob_zone%data_snd_vr, 1, vector_size, 1, glob_zone%max_npt_proc, 'data_snd_vr')
+      end if
+
+      do iproc = this%nproc_1-1, 0, -1
+
+        i1   = glob_zone%proc_npt_tab(iproc)
+        iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+        nsnd = iEnd - i1 + 1
+
+        if (nsnd > 0) then
+
+          glob_zone%data_snd_vr = 0.
+
+          do loc_ipt = 1, nsnd
+            glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+
+            glob_zone%data_snd_vr(:,loc_ipt) = data_glob(:,glob_ipt)
+          end do ! ipt
+
+          if (iproc /= 0) then
+
+            call mpi_send(glob_zone%data_snd_vr, nsnd*vector_size, MPI_REAL, iproc, tag, this%mpi_comm_1, mpierr)
+
+          end if
+
+          if (dd_debug_level > 1) write(*,'(I8,2A,2(A,I8))') myid_1, ':', proc_name, ' send ', nsnd, ' to ', iproc
+
+        end if ! (nsnd > 0)
+
+      end do ! iproc
+
+    end if ! (this%myid_1 == 0)
+
+    npt_loc = loc_zone%npt_loc
+
+    if (npt_loc > 0) then
+
+      if (.not. allocated(data_loc)) then
+        call alloc_(data_loc, 1, vector_size, 1, npt_loc, "data_loc")
+      else
+        if (size(data_loc, dim=1) /= vector_size .or. size(data_loc, dim=2) /= npt_loc) then
+          call dealloc_(data_loc, "data_loc")
+          call alloc_(data_loc, 1, vector_size, 1, npt_loc, "data_loc")
+        end if
+      end if
+
+      !-----------------------------------------------------
+      ! All processors except master : 
+      ! Receive data_loc array 
+      !-----------------------------------------------------
+      if (this%myid_1 /= 0) then
+
+          call mpi_recv(data_loc, npt_loc*vector_size, MPI_REAL, 0, tag, this%mpi_comm_1, mpistat, mpierr)
+
+      else
+
+        data_loc(:,1:npt_loc) = glob_zone%data_snd_vr(:,1:npt_loc)
+
+      end if ! (this%myid_1 == 0)
+
+      if (dd_debug_level > 1) write(*,'(I8,2A,A,I8)') myid_1, ':', proc_name, ' recv ', npt_loc
+
+    end if ! (npt_loc > 0)
+
+  end subroutine comm_engine_scatter_points_global_zone_vector_real_data
+
+
+  subroutine comm_engine_gather_points_global_zone_scalar_real_data(this, glob_zone, data_glob, loc_zone, data_loc)
+    class(comm_engine_type),                intent(in out) :: this
+    class(points_glob_zone_type),           intent(in out) :: glob_zone
+    real, dimension(:), allocatable,        intent(in out) :: data_glob
+    class(points_loc_zone_type),            intent(in)     :: loc_zone
+    real, dimension(:), allocatable,        intent(in out) :: data_loc
+
+    integer                                                :: i1, iEnd, loc_ipt, glob_ipt, iproc, nrcv, npt_loc
+
+    integer                                                :: mpierr
+    integer, dimension(MPI_STATUS_SIZE)                    :: mpistat = 0
+    character(len=*),                            parameter :: proc_name = 'comm_engine_gather_points_global_zone_scalar_real_data'
+    integer,                                     parameter :: tag = 100
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    npt_loc = loc_zone%npt_loc
+
+    !-----------------------------------------------------
+    ! All processors except master : 
+    ! Send data_loc array 
+    !-----------------------------------------------------
+    if (this%myid_1 /= 0 .and. npt_loc > 0) then
+
+      call mpi_send(data_loc, npt_loc, MPI_REAL, 0, tag, this%mpi_comm_1, mpierr)
+
+    end if ! (myid_1 /= 0)
+
+    !--------------------------------------------------------------------
+    ! Master processor only : 
+    ! Receive data_loc array associated to each sub zone
+    ! and sort values following the point ranks in the global zone
+    !--------------------------------------------------------------------
+    if (this%myid_1 == 0) then
+
+      if (.not. allocated(data_glob)) then
+        write(error_message,*) proc_name, ' :: ERROR : global zone data array is not allocated'
+        call stop_mpi()
+      end if
+
+      do iproc = 0, this%nproc_1-1
+        i1   = glob_zone%proc_npt_tab(iproc)
+        iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+        nrcv = iEnd - i1 + 1
+
+        if (nrcv > 0) then
+
+          glob_zone%data_rcv_sr = 0.
+
+          if (iproc /= 0) then
+  
+            call mpi_recv(glob_zone%data_rcv_sr, nrcv, MPI_REAL, iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+
+          else
+
+            glob_zone%data_rcv_sr(1:nrcv) = data_loc(:)
+
+          end if ! (iproc /= 0)
+
+          do loc_ipt = 1, nrcv
+            glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+            data_glob(glob_ipt) = glob_zone%data_rcv_sr(loc_ipt)
+          end do ! ipt
+
+        end if ! (nrcv > 0)
+
+      end do ! iproc
+
+    end if ! myid_1 == 0
+
+  end subroutine comm_engine_gather_points_global_zone_scalar_real_data
+
+
+  subroutine comm_engine_gather_points_global_zone_vector_real_data(this, vector_size, do_sum, glob_zone, data_glob, &
+  &                                                                 loc_zone, data_loc)
+    class(comm_engine_type),                  intent(in out) :: this
+    integer,                                  intent(in)     :: vector_size
+    logical,                                  intent(in)     :: do_sum
+    class(points_glob_zone_type),             intent(in out) :: glob_zone
+    real, dimension(:,:), allocatable,        intent(in out) :: data_glob
+    class(points_loc_zone_type),              intent(in)     :: loc_zone
+    real, dimension(:,:), allocatable,        intent(in out) :: data_loc
+
+    integer                                                  :: i1, iEnd, loc_ipt, glob_ipt, iproc, nrcv, npt_loc
+
+    integer                                                  :: mpierr
+    integer, dimension(MPI_STATUS_SIZE)                      :: mpistat = 0
+    character(len=*),                              parameter :: proc_name = 'comm_engine_gather_points_global_zone_vector_real_data'
+    integer,                                       parameter :: tag = 100
+
+    if (dd_call_trace > 0) write(*,*) myid_1, ' : ', proc_name
+
+    if (vector_size < 1) return
+
+    npt_loc = loc_zone%npt_loc
+
+    !-----------------------------------------------------
+    ! All processors except master : 
+    ! Send data_loc array 
+    !-----------------------------------------------------
+    if (this%myid_1 /= 0 .and. npt_loc > 0) then
+
+      call mpi_send(data_loc, npt_loc*vector_size, MPI_REAL, 0, tag, this%mpi_comm_1, mpierr)
+
+    end if ! (myid_1 /= 0)
+
+    !--------------------------------------------------------------------
+    ! Master processor only : 
+    ! Receive data_loc array associated to each sub zone
+    ! and sort values following the point ranks in the global zone
+    !--------------------------------------------------------------------
+    if (this%myid_1 == 0) then
+
+      if (.not.allocated(data_glob)) then
+        write(error_message,*) proc_name, ' :: ERROR : global zone data array is not allocated'
+        call stop_mpi()
+      end if
+
+      if (allocated(glob_zone%data_rcv_vr)) then
+        if (vector_size /= size(glob_zone%data_rcv_vr, dim=1)) then
+          call dealloc_(glob_zone%data_rcv_vr,                                            'data_rcv_vr')
+          call   alloc_(glob_zone%data_rcv_vr, 1, vector_size, 1, glob_zone%max_npt_proc, 'data_rcv_vr')
+        else
+          glob_zone%data_rcv_vr = 0.
+        end if
+      else
+          call   alloc_(glob_zone%data_rcv_vr, 1, vector_size, 1, glob_zone%max_npt_proc, 'data_rcv_vr')
+      end if
+
+      do iproc = 0, this%nproc_1-1
+        i1   = glob_zone%proc_npt_tab(iproc)
+        iEnd = glob_zone%proc_npt_tab(iproc+1) - 1
+        nrcv = iEnd - i1 + 1
+
+        if (nrcv > 0) then
+
+          glob_zone%data_rcv_vr = 0.
+
+          if (iproc /= 0) then
+  
+            call mpi_recv(glob_zone%data_rcv_vr, nrcv*vector_size, MPI_REAL, iproc, tag, this%mpi_comm_1, mpistat, mpierr)
+
+          else
+
+            glob_zone%data_rcv_vr(:,1:nrcv) = data_loc(:,:)
+
+          end if ! (iproc /= 0)
+
+          if (do_sum) then
+
+            do loc_ipt = 1, nrcv
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+              data_glob(:,glob_ipt) = data_glob(:,glob_ipt) + glob_zone%data_rcv_vr(:,loc_ipt)
+            end do ! ipt
+
+          else
+
+            do loc_ipt = 1, nrcv
+              glob_ipt = glob_zone%proc_pt_tab(i1 + loc_ipt - 1)
+              data_glob(:,glob_ipt) = glob_zone%data_rcv_vr(:,loc_ipt)
+            end do ! ipt
+
+          end if
+
+        end if ! (nrcv > 0)
+
+      end do ! iproc
+
+    end if ! myid_1 == 0
+
+  end subroutine comm_engine_gather_points_global_zone_vector_real_data
+
+
+end module comm_engine_mod

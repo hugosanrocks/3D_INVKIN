@@ -1,0 +1,186 @@
+# Build domain decomposition library
+
+set(CMAKE_Fortran_MODULE_DIRECTORY ${CMAKE_BINARY_DIR}/src)
+
+################################################################
+# Define sources
+################################################################
+# Define sources in different variables 
+# to allow building of different libraries 
+# and distinguish modules from others to copy generated .mod files in ../lib
+
+set(COMMON_F90_SOURCES 
+  COMMON/dd_common.f90
+  COMMON/mem_alloc.f90
+  COMMON/zone.f90
+  COMMON/grid.f90
+  COMMON/comm_engine.f90
+)
+
+set(SGRID_F90_SOURCES 
+  SGRID/sg_points_zone.f90
+  SGRID/sgrid.f90
+  SGRID/sg_comm.f90
+)
+
+set(UGRID_UTILS_F90_SOURCES 
+  UGRID/UTILS/mesh_partition_struct.f90
+  UGRID/UTILS/mesh_partition.f90
+  UGRID/UTILS/mesh_readers.f90
+  UGRID/UTILS/mesh_writers.f90
+  UGRID/UTILS/mesh_utils.f90
+  UGRID/UTILS/mat_csr.f90
+  UGRID/UTILS/lu.f90
+)
+
+# Distinguish non module source files
+set(UGRID_UTILS_F90_NOMOD_SOURCES 
+  UGRID/UTILS/gll_library.f90
+)
+
+set(UGRID_HEXA_SEM_F90_SOURCES 
+  UGRID/HEXA_SEM/hexa_mesh_struct.f90
+  UGRID/HEXA_SEM/hexa_mesh_graphs.f90
+  UGRID/HEXA_SEM/hexa_mesh_partition.f90
+  UGRID/HEXA_SEM/hexa_mesh.f90
+  UGRID/HEXA_SEM/hexa_ref_dof.f90
+  UGRID/HEXA_SEM/hexa_glob_dof.f90
+  UGRID/HEXA_SEM/hexa_comm_struct.f90
+  UGRID/HEXA_SEM/hexa_comm.f90
+)
+
+set(UGRID_TETRA_DGM_F90_SOURCES 
+  UGRID/TETRA_DGM/tetra_mesh_graphs.f90
+  UGRID/TETRA_DGM/tetra_ref_dof.f90
+  UGRID/TETRA_DGM/tetra_glob_dof.f90
+  UGRID/TETRA_DGM/tetra_mesh_struct.f90
+  UGRID/TETRA_DGM/tetra_mesh.f90
+  UGRID/TETRA_DGM/tetra_comm_struct.f90
+  UGRID/TETRA_DGM/tetra_comm.f90
+  UGRID/TETRA_DGM/tetra_mesh_partition.f90
+)
+
+# Distinguish non module source files
+set(UGRID_TETRA_DGM_F90_NOMOD_SOURCES 
+  UGRID/TETRA_DGM/tetra_basis_function.f90
+)
+
+################################################################
+# Create lib${suffix} directory if nos existing
+################################################################
+
+# add_custom_target(build-time-make-directory ALL
+#     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_INSTALL_PREFIX}/lib${suffix})
+
+################################################################
+# Define generic (FDM+SEM+DGM) domain decomposition library
+################################################################
+
+add_library(
+  ${DD_LIB_NAME}_static STATIC
+  ${COMMON_F90_SOURCES}
+  ${SGRID_F90_SOURCES}
+  ${UGRID_UTILS_F90_SOURCES} ${UGRID_UTILS_F90_NOMOD_SOURCES}
+  ${UGRID_TETRA_DGM_F90_SOURCES} ${UGRID_TETRA_DGM_F90_NOMOD_SOURCES}
+  ${UGRID_HEXA_SEM_F90_SOURCES}
+)
+
+# add_library(
+#   ${DD_LIB_NAME}_shared SHARED
+#   ${COMMON_F90_SOURCES}
+#   ${SGRID_F90_SOURCES}
+#   ${UGRID_UTILS_F90_SOURCES} ${UGRID_UTILS_F90_NOMOD_SOURCES}
+#   ${UGRID_TETRA_DGM_F90_SOURCES} ${UGRID_TETRA_DGM_F90_NOMOD_SOURCES}
+#   ${UGRID_HEXA_SEM_F90_SOURCES}
+# )
+
+install(
+  TARGETS ${DD_LIB_NAME}_static #${DD_LIB_NAME}_shared
+  RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}/bin${suffix}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_PREFIX}/lib${suffix}
+)
+
+foreach(SrcFile ${COMMON_F90_SOURCES} ${SGRID_F90_SOURCES} ${UGRID_UTILS_F90_SOURCES} ${UGRID_HEXA_SEM_F90_SOURCES} ${UGRID_TETRA_DGM_F90_SOURCES})
+  get_filename_component(BaseName ${SrcFile} NAME_WE)
+  add_custom_command(
+    TARGET ${DD_LIB_NAME}_static POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${BaseName}_mod.mod ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.)
+endforeach()
+  
+################################################################
+# Define a FDM specific domain decomposition library
+################################################################
+
+set(DD_FDM ${DD_LIB_NAME}_FDM)
+
+add_library(
+  ${DD_FDM} STATIC
+  EXCLUDE_FROM_ALL
+  ${COMMON_F90_SOURCES}
+  ${SGRID_F90_SOURCES}
+)
+
+foreach(SrcFile ${COMMON_F90_SOURCES} ${SGRID_F90_SOURCES})
+  get_filename_component(BaseName ${SrcFile} NAME_WE)
+  add_custom_command(
+    TARGET ${DD_FDM} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${BaseName}_mod.mod ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.)
+endforeach()
+
+add_custom_command(
+  TARGET ${DD_FDM} POST_BUILD
+  COMMAND cmake -E copy ${CMAKE_Fortran_MODULE_DIRECTORY}/lib${DD_FDM}.a ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.
+)
+
+################################################################
+# Define a DGM specific domain decomposition library
+################################################################
+
+set(DD_DGM ${DD_LIB_NAME}_DGM)
+
+add_library(
+  ${DD_DGM} STATIC
+  EXCLUDE_FROM_ALL
+  ${COMMON_F90_SOURCES}
+  ${UGRID_UTILS_F90_SOURCES}     ${UGRID_UTILS_F90_NOMOD_SOURCES}
+  ${UGRID_TETRA_DGM_F90_SOURCES} ${UGRID_TETRA_DGM_F90_NOMOD_SOURCES}
+)
+
+foreach(SrcFile ${COMMON_F90_SOURCES} ${UGRID_UTILS_F90_SOURCES} ${UGRID_TETRA_DGM_F90_SOURCES})
+  get_filename_component(BaseName ${SrcFile} NAME_WE)
+  add_custom_command(
+    TARGET ${DD_DGM} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${BaseName}_mod.mod ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.)
+endforeach()
+
+add_custom_command(
+  TARGET ${DD_DGM} POST_BUILD
+  COMMAND cmake -E copy ${CMAKE_Fortran_MODULE_DIRECTORY}/lib${DD_DGM}.a ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.
+)
+
+################################################################
+# Define a SEM specific domain decomposition library
+################################################################
+
+set(DD_SEM ${DD_LIB_NAME}_SEM)
+
+add_library(
+  ${DD_SEM} STATIC
+  EXCLUDE_FROM_ALL
+  ${COMMON_F90_SOURCES}
+  ${UGRID_UTILS_F90_SOURCES}    ${UGRID_UTILS_F90_NOMOD_SOURCES}
+  ${UGRID_HEXA_SEM_F90_SOURCES}
+)
+
+foreach(SrcFile ${COMMON_F90_SOURCES} ${UGRID_UTILS_F90_SOURCES} ${UGRID_HEXA_SEM_F90_SOURCES})
+  get_filename_component(BaseName ${SrcFile} NAME_WE)
+  add_custom_command(
+    TARGET ${DD_SEM} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${BaseName}_mod.mod ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.)
+endforeach()
+
+add_custom_command(
+  TARGET ${DD_SEM} POST_BUILD
+  COMMAND cmake -E copy ${CMAKE_Fortran_MODULE_DIRECTORY}/lib${DD_SEM}.a ${CMAKE_INSTALL_PREFIX}/lib${suffix}/.
+)

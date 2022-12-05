@@ -1,0 +1,397 @@
+\documentclass[a4paper,twoside,final,onecolumn,11pt,openright]{article}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\graphicspath{{Fig/}}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{hyperref}
+\usepackage{framed}
+\usepackage[lined,linesnumbered,ruled]{algorithm2e}
+
+%--------------------fonts available---------------------------------------
+\usepackage[T1]{fontenc}
+%\usepackage{newcent}
+%\usepackage[sc]{mathpazo}
+%\usepackage{times}
+%\usepackage{mathptmx}
+%--------------------------------------------------------------------------
+
+\usepackage{fancyhdr}         
+\usepackage[latin1]{inputenc} 
+\usepackage[T1]{fontenc}
+\usepackage[left=2.5 cm,top=3cm,right=2.5cm,bottom=3cm]{geometry}
+
+\DeclareMathAlphabet{\mathsl}{OT1}{cmss}{m}{sl}
+\renewcommand{\floatpagefraction}{1.0}
+\renewcommand{\topfraction}{1.0}
+\renewcommand{\bottomfraction}{0.0}
+\renewcommand{\textfraction}{0.0}
+
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{3}
+\setcounter{totalnumber}{4}
+\def \mathbb #1{{\cal #1}}
+
+\newcommand{\entetepaire}{SEISCOPE Project}
+\newcommand{\enteteimpaire}{CARFS Manual}
+
+\fancypagestyle{monstyle}{
+\fancyhf{}
+\fancyhead[LE]{\entetepaire}
+\fancyhead[RO]{\enteteimpaire}
+\fancyfoot[CE,CO]{\thepage}}
+\pagestyle{monstyle}
+\makeatletter
+\renewcommand{\verbatim@font}{\small\ttfamily}
+\makeatother
+
+
+\begin{document}
+
+%--------------------------------------------------------------------------------------------
+\begin{titlepage}
+
+\title{A user's guide to SEISCOPE INTERPOLATION toolbox}
+
+\author{{\Large{Pengliang Yang}} \\
+{\it{pengliang.yang@univ-grenoble-alpes.fr}}}
+
+\maketitle
+
+{\large{\bf{\centerline{http://seiscope2.osug.fr/}}}} 
+\begin{figure}[ht!]
+\begin{center}
+\includegraphics[width=12 cm]{logo.pdf}
+\end{center}
+\label{figlogo}
+\end{figure}
+
+{\centerline{\it{Seismic imaging of complex structures}}}
+{\centerline{\it{from multicomponent global offset data by full waveform inversion}}}
+{\centerline{\it{from multiparameter imaging to rock physics properties}}}
+
+\begin{abstract}
+
+In reverse time migration and full waveform inversion applications, one need to access both source and receivers wavefield simultaneously, which is computationally and memory intensive. Due to slow disk reading with huge volume of data, computation-based wavefield reconstruction methods such as checkpointing strategy and wavefield reconstruction by reverse propagation are preferred to achieve efficient implementation in this key step. Compared with checkpointing, reverse propagation is usually more efficient while suffering a stringent memory bottleneck for 3D large scale imaging applications. The heavy boundary storage can be dramatically reduced up to one or two order of magnitude, based on the temporal sampling determined by Nyquist principle, rather than the more restrictive relation from the Courant-Friedrichs-Lewy (CFL) condition. The SEISCOPE \textsf{INTERPOLATION} toolbox implements three boundary interpolation techniques, namely the discrete Fourier transform interpolation, the Kaiser windowed sinc interpolation and Lagrange polynomial interpolation. The three interpolation methods, in conjunction with different computational efficiency depending on the global (Fourier) basis or local (windowed sinc and polynomial) basis, allow us to accurately reconstruct the boundary elements without significant loss of information, making the in-core memory saving of the boundaries practically feasible in 3D large scale imaging applications.
+
+\end{abstract}
+
+{\bf Keywords}: Wavefield reconstruction; Interpolation; Nyquist sampling theorem; Courant-Friedrichs-Lewy (CFL) condition; Discrete Fourier transform; Kaiser window; Lagrange polynomial
+         
+\medskip
+
+\end{titlepage}
+
+%--------------------------------------------------------------------------------------------
+
+
+\newpage
+
+\section*{Legal statement}
+\small
+\begin{verbatim}
+Copyright 2008-2011 SEISCOPE project, All rights reserved.
+Copyright 2013-2015 SEISCOPEII project, All rights reserved.
+
+Redistribution and use in source and binary forms, with or
+without modification, are permitted provided that the following
+conditions are met:
+
+    *  Redistributions of source code must retain the above copyright
+       notice, this list of conditions and the following disclaimer.
+    *  Redistributions in binary form must reproduce the above
+       copyright notice, this list of conditions and the following
+       disclaimer in the documentation and/or other materials provided
+       with the distribution.
+    *  All redistributions of the source code or binary form must
+       be done in agreement of the SEISCOPE diffusion policy for 
+       restricted access softwares or with specific written permission. 
+    *  Neither the name of the SEISCOPE project nor the names of
+       its contributors may be used to endorse or promote products
+       derived from this software without specific prior written permission.
+
+Warranty Disclaimer:
+THIS SOFTWARE IS PROVIDED BY THE SEISCOPE PROJECT AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+SEISCOPE PROJECT OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+
+Acknowledgements:
+TOYxDAC_TIME and other SEISCOPE project's codes have been developed 
+in the framework of SEISCOPE and SEISCOPE 2 consortium, and we thank
+the sponsors of these projects
+\end{verbatim}
+\normalsize
+
+\cleardoublepage
+\section*{Acknowledgments}
+CARFS and other SEISCOPE project's codes have been developed in the framework of SEISCOPE and SEISCOPE II consortium. 
+
+Many thanks to SEISCOPE II sponsors supporting the second phase of the SEISCOPE consortium (\url{ http://seiscope2.osug.fr}) devoted to high resolution seismic imaging using full waveforms: BP, CGG, Chevron, ExxonMobil, 
+JGI, Petrobras, Saudi Aramco, Shell, Schlumberger, Sinopec, Statoil, Total and Woodside.
+
+Access to the high performance computing facilities of the CIMENT center (University Grenoble Alpes) and the SIGAMM center (University of Nice-Sophia Antipolis, Nice) in addition to the national centers from GENCI-CINES and GENCI-IDRIS (046091 and 082280 grants) provided the required computer resources of most of this work.
+
+\cleardoublepage
+\tableofcontents
+\newpage
+\clearpage
+
+\cleardoublepage
+
+
+\section{Introduction}
+
+Many seismic imaging and inversion techniques such as reverse time migration (RTM) and full waveform inversion (FWI) are usually computationally and memory intensive. For 3D implementation of such techniques, one significant issue is the imaging-condition of RTM and the gradient-building step of FWI: both of them require to access the forward wavefield backward in time while computing the adjoint/receiver wavefield. Three main strategies can be used to perform this step: (1) reading the stored forward wavefield from disk involving significant I/O's, (2)  remodeling the forward wavefield using checkpoints from stored state to needed state \citep{Griewank_2000_ALG,Symes_2007_RTM,Anderson_2012_TCM} or (3) inferring the forward field backward in time from the final snapshots and the stored boundaries via reverse propagation assuming a reversible wave equation \citep{Clapp_2008_RTM,Dussaud_2008_CSR,Brossier_2014_TFF}. Among these techniques, wavefield reconstruction by reverse propagation appears to be quite efficient approach, however, suffering a stringent memory bottleneck for 3D large scale imaging applications.
+
+The heavy boundary storage can be dramatically reduced up to one or two order of magnitude, based on the temporal sampling determined by Nyquist principle, rather than the more restrictive relation from the Courant-Friedrichs-Lewy (CFL) condition. 
+
+The SEISCOPE \textsf{INTERPOLATION} toolbox implements three boundary interpolation techniques, namely the discrete Fourier transform interpolation, the Kaiser windowed sinc interpolation and Lagrange polynomial interpolation. The three interpolation methods, in conjunction with different computational efficiency depending on the global (Fourier) basis or local (windowed sinc and polynomial) basis, allow us to accurately reconstruct the boundary elements without significant loss of information, making the in-core memory saving of the boundaries practically feasible in 3D large scale imaging applications.
+
+\section{Methodology}\label{theory_section}
+
+\subsection{Boundary value saving: relaxing the memory bottleneck thanks to Nyquist}
+
+While the numerical simulations done both forward and backward in time have to satisfy the CFL stability limit, as well as the knowledge of the boundary values acting as Dirichlet conditions, the storage of the boundary values could be downsampled up to Nyquist. Assuming an interpolation technique can be implemented to synthesis the missing boundary values from the downsampled version of the signal, a significant memory saving can be achieved. This saving follows the ratio $r$ between time-step from Nyquist and the one from CFL 
+\begin{equation}\label{eq:ratio}
+r=\left(\frac{0.5}{f_{\max}}\right)/\left(  \frac{c\; v_{\min} }{d\;v_{\max}\; f_{\max}} \right)=\frac{0.5\;d\; v_{\max}}{c\; v_{\min}}.
+\end{equation}
+If we consider a 3D case with $4^{th}$ order staggered-FD scheme in space and $2^{nd}$ order FD leap-frog scheme in time, we have $c\approx 0.49487$ and $d\approx5$ points per wavelength. That leads to memory reduction of factor 5 in homogeneous acoustic media, factor 10 in heterogeneous acoustic media with $ v_{\max} = 2 \times v_{\min}$ and factor 50 in heterogeneous elastic media with $ v_{P\max} = 10 \times v_{S\min}$. More details on \eqref{eq:ratio} can be found in \citet{Yang_2016_WRB}.
+
+
+\subsection{Boundary interpolation methods}\label{sec:bndinterp}
+
+In this study, we present three boundary interpolation techniques, namely the \emph{discrete Fourier transform (DFT) interpolation}, \emph{Kaiser windowed sinc interpolation} and \emph{Lagrange polynomial interpolation}. Assume the boundary are decimated during $N$ steps forward simulation with factor $r=N/M$. The reconstruction via DFT interpolation for wavefield boundaries $u(\mathbf{x},t)$ utilizing the global Fourier basis can be implemented on the fly by folding steps
+\begin{equation}
+  \tilde{u}(\mathbf{x},k)=\sum_{m=0}^{M-1} u(\mathbf{x},t'_{m})e^{-j\frac{2\pi k}{M} m}=\sum_{m=0}^{M-1} u(\mathbf{x},t_{mr})e^{-j\frac{2\pi k}{M} m}, k=0,1,\ldots,\lfloor M/2\rfloor+1
+ \end{equation}
+involving $O(N^2/r^2)$ flops of computation in the forward simulation and unfolding steps 
+\begin{equation}
+u(\mathbf{x},t_n)=\begin{cases}
+\frac{1}{M}\left(\tilde{u}(\mathbf{x},0)+2\Re\{\sum_{k=1}^{\frac{M-1}{2}}\tilde{u}(\mathbf{x},k)e^{j\frac{2\pi kn}{N}}\}\right)& \mbox{for odd}\; M\\
+\frac{1}{M}\left(\tilde{u}(\mathbf{x},0)+2\Re\{\sum_{k=1}^{\frac{M}{2}-1}\tilde{u}(\mathbf{x},k)e^{j\frac{2\pi kn}{N}}\}
+ +\tilde{u}(\mathbf{x},\frac{M}{2})\cos(\frac{\pi n}{r}) \right)& \mbox{for even}\; M\\
+ \end{cases}
+\end{equation}
+involving $O(N^2/r)$ flops of computation in backward reconstruction. Compared with the DFT interpolation, the boundary reconstruction methods using Kaiser windowed sinc interpolation and Lagrange polynomial interpolation are much more efficient  because the decimated boundary values are stored directly without any computation and the missing values are interpolated with $O(N)$ flops according to local basis functions (the Lagrange polynomial $\ell(t_n)$ or sinc function $h(t_n)$ modulated by Kaiser window $w(t_n)$ within the support $W$)
+\begin{equation}
+ u(\mathbf{x},t_n)=\sum_{i\in W} u(\mathbf{x},t'_i)\ell_i(t_n) \quad \mbox{or} \quad  u(\mathbf{x},t_n)=\sum_{i\in W} u(\mathbf{x},t'_i) w(t_n-t'_i)h(t_n-t'_i).
+\end{equation}
+They are excellent alternatives to DFT interpolation algorithm, to alleviate the computational complexity without significant sacrifice of wavefield reconstruction quality. These interpolation methods allow us to greatly decimate the boundary  without significant loss of information, and accurately reconstruct the boundary elements in between the samples, making the in-core memory saving of the boundaries practically feasible in 3D large scale imaging applications.
+
+\subsection{A rough estimation for memory reduction}
+
+In order to illustrate the achievable memory saving, let us consider a 3D model of size $nx\times ny \times nz$. Allowing for minimum boundary saving burden using  $2J$-th order staggered grid finite difference modeling for $N$ time steps, $2J-1$ layers for saving single state variable   of the cube are required \citep{Yang_2014_RTM,Yang_2014_SEG,Nguyen_2015_ASS}. Thus one time step requires a storage along the boundary of $ S= 2(2J-1)(nx\times ny +nx\times nz+ny\times nz)$.
+
+Assuming single precision (one real value needs 4 bytes) in the computation of wave propagation, the original time domain wavefield reconstruction scheme needs $ N\times S \times 4 \text{(Bytes)}$
+memory consumption without any additional computational efforts because the saved boundaries are directly stuffed in their corresponding locations in backward reconstruction. The proposed DFT interpolation algorithm for wavefield reconstruction with a downsampling factor $r$ involves $ \frac{N}{r}\times S\times \frac{1}{2} \times 8 \mbox{(Bytes)}$ to store the Fourier coefficients (one complex-valued coefficient needs 8 bytes while only positive frequencies are saved) of the boundary elements during folding procedure. The local-based Kaiser windowed sinc interpolation and Lagrange polynomial requires the same amount of memory for the same $r$ value, as real value of time-domain signal are stored instead of complex-value Fourier coefficient for real frequencies only.
+
+Considering again an example with staggered-grid FD $O(\Delta x^4, \Delta t^2)$ and $nx=ny=nz=300$, $N=4000$, $2J=4$, the original wavefield reconstruction scheme using boundaries stored at every time step would leads to a memory requirement of $N\; S\; 4/1024^3= 24.14  \mbox{(GB)}$. For a realistic acoustic model with $v_{\max}/v_{\min}\ge 2$, the downsampling factor will be larger than 10 and the memory consumption drops to $ 24.14/r<2.42  \mbox{(GB)}$. In elastic media, the velocity contrast would be much higher in realistic media: $v_{\max}/v_{\min}> 10$. For the same set-up, the memory consumption drops lower than $0.48  \mbox{(GB)}$. The proposed method is therefore quite valuable when the velocity model becomes more complex with high velocity contrasts.
+
+
+\subsection{Tradeoff between complexity and interpolation accuracy}
+
+According to the equations shown in \eqref{sec:bndinterp}, it is easy to see that the DFT/sinc interpolation employs global Fourier basis as the interpolating basis while the other two methods utilize the local basis functions, namely the Kaiser windowed sinc function and the Lagrange polynomial within a specific window. Due to the use of global Fourier basis, the  DFT interpolation exhibits better accuracy of the reconstructed wavefield, than Kaiser windowed sinc and Lagrange polynomial, but the three are able to reach acceptable error level for imaging purposes. The global-base DFT approach is however more computationally intensive as it scales to $O(N^2)$ for each stored value and $N$ time steps simulation during the folding and unfolding steps. The local-base approaches, the  Kaiser windowed sinc and Lagrange polynomial interpolation methods, scales to $O(N)$ for each stored value during the unfolding step while being free of extra-computation during the forward simulation. 
+
+
+%------------------------------------------------------------------------
+\section{Running with INTERPOLATION}
+
+
+\subsection{Package structure}
+
+The \texttt{INTERPOLATION} package contains several directories and files that are  described bellow:
+\begin{itemize}
+  \item \texttt{doc} directory that contains this manual.
+  \item \texttt{include} directory that contains several files included during compilation. The user shouldn't have to modify this files.
+  \item \texttt{src} directory that contains the source files of \texttt{INTETERPOLATION} written in Fortran language. 
+  \item \texttt{lib} directory that contains library to be linked by the user in their application.
+  \item \texttt{demo} directory that numerical examples.
+  \item \texttt{LEGAL\_STATEMENT} file that contains the licensing statement of the code, under a FreeBSD-like license, but with restrictions for diffusion.
+  \item \texttt{Installation\_Instructions} that contains basics information on how to install and run the demos.
+\end{itemize}
+
+
+\subsection{Compilation/installation}
+
+For compilation of INTERPOLATION, Fortran compilers are required for compilation. INTERPOLATION have passed testing with \texttt{gfortran} and Intel \texttt{ifort}. Before compiling, the users have to specify the environment variables and compilers in the following.
+
+\begin{framed}
+\begin{verbatim}
+# for the visualization of the demos
+SHELL = /bin/sh
+RSFSRC_PATH = $(RSFSRC)
+RSFROOT_PATH = $(RSFROOT)
+
+# fortran compiling settings
+FC		= gfortran
+MPIFC  	= mpif90
+FLAGS	= -O3 -g -ffixed-line-length-none
+
+#build a library for linking
+AR	= ar
+ARFUNCT	= cruv
+\end{verbatim}
+\end{framed}
+For the convenience of visualization after running the demos, one may install Madagascar or Seismic Unix (SU). A good strategy is configuring your machine using environment variables
+\begin{itemize}
+  \item \texttt{RSFSRC\_PATH}: the path of Madagascar source files. The users do not need to specify it if using SU for visualization of the computational outcome.
+  \item \texttt{RSFROOT\_PATH}: the path of Madagascar executable files. The users do not need to specify it if using SU for visualization of the computational outcome.
+  \item \texttt{FC}: fortran compiler, can be \texttt{gfortran}, \texttt{ifort}, etc.
+  \item \texttt{MPIFC}: MPI fortran compiler, can be \texttt{mpif90}, \texttt{mpiifort}, etc.
+  \item \texttt{FLAGS}: compiling flags.
+  \item \texttt{AR}: to build the library for linking by the user.
+  \item \texttt{ARFUNCT}: to build the library for linking by the user.
+\end{itemize}
+
+The main part of \texttt{INTERPOLATION} is located in \texttt{src}. A \texttt{Makefile} allows to compile the source. Once the \texttt{Makefile.inc} is filled, the user can compile the code with a simple make command \texttt{make} in their terminal to compile  \texttt{INTERPOLATION} source file to build the libraries for future usage.
+
+%----------------------------------------------------------------------------------------
+\subsection{Run the demos}
+
+In \texttt{INTERPOLATION/demo}, there exist a \texttt{readme.txt} file to guide the user on how to run many reproducible examples on how to use DFT interpolation, Kaiser windowed sinc interpolation, and Lagrange polynomial interpolation in 1-D, 2-D and 3-D settings. To reproduce th example, the users need to go into the subdirectories 
+\begin{itemize}
+ \item \texttt{test\_{dft\_1d}}
+ \item \texttt{test\_{dft\_2d}}
+ \item \texttt{test\_{dft\_3d}}
+ \item \texttt{test\_{ksinc\_1d}}
+ \item \texttt{test\_{ksinc\_2d}}
+ \item \texttt{test\_{ksinc\_3d}}
+ \item \texttt{test\_{poly\_1d}}
+ \item \texttt{test\_{poly\_2d}}
+ \item \texttt{test\_{poly\_3d}}
+\end{itemize}
+and then type in your terminal:
+\begin{enumerate}
+  \item \texttt{make}
+  \item \texttt{./test.x}
+  \item \texttt{scons view}
+\end{enumerate}
+After \texttt{make}, Makefile will be executed to generate a executable \texttt{text.x}. The user can then perform the computation by typing \texttt{./test.x}, yielding the resulting binary data. These data will be displayed nicely using \texttt{scons view} if Madagascar is well installed. To remove all the intermediate files, the users may type in their terminal:
+\begin{enumerate}
+  \item \texttt{scons -c}
+  \item \texttt{make clean}
+\end{enumerate}
+
+We illustrate only DFT interpolation examples for 1-D, 2-D, 3-D in the following. The users can test Kaiser windowed sinc interpolation and Lagrange polynomail interpolation in the same way. Let us go to \texttt{test\_dft\_1d} through \texttt{ cd demo/test\_dft\_1d}. The we need to \texttt{make} to generate an executable \texttt{test.x}. By typing \texttt{./test.x} in the terminal, the computation will be carried out to generate a sinusoidal  signal and then interpolate its decimated version. The error between the exact sine \texttt{exact.bin} and the interpolated signal \texttt{interpolated.bin} will be output as a binary data \texttt{error.bin}. By running \texttt{scons view}, Madagascar can give us a nice visualization of what we did, as shown in Figure \ref{dft1d}. The user may display the result by SU, as shown in Figure \ref{dft1dsu}. As you see, the DFT interpolation can produce accurate interpolation result since the error is  5 orders magnitude smaller than the true signal. We may remove these  test results by \texttt{scons -c} and \texttt{make clean}. A 2-D test result by following the above instructions are given Figure \ref{dft2d}. A randomly chosen trace confirms the well agreement of backward reconstruction and forward simulation, using DFT interpolation as shown in \ref{trcomparison}. A 3-D validation can also be obtained in Figure \ref{dft3d}.
+
+\begin{figure}
+\centering
+ \includegraphics[width=\textwidth]{dft1d}
+ \caption{The true sinusoidal signal, the interpolated signal and the interpolation error using DFT interpolation algorithm: plotted by Madagascar}\label{dft1d}
+\end{figure}
+
+\begin{figure}
+\centering
+ \includegraphics[width=0.8\textwidth]{dft1dsu}
+ \caption{ The true sinusoidal signal, the interpolated signal and the interpolation error using DFT interpolation algorithm: plotted by SU}\label{dft1dsu}
+\end{figure}
+
+\begin{figure}
+\centering
+ \includegraphics[width=0.9\textwidth]{dft2d}
+ \caption{2-D DFT interpolation}\label{dft2d}
+\end{figure}
+
+\begin{figure}
+\centering
+ \includegraphics[width=0.8\textwidth]{trcomparison}
+ \caption{The trace comparison at a randomly chosen location in the 2-D wavefield}\label{trcomparison}
+\end{figure}
+\begin{figure}
+\centering
+ \includegraphics[width=0.9\textwidth]{dft3d}
+ \caption{3-D DFT interpolation}\label{dft3d}
+\end{figure}
+
+
+\subsection{Use INTERPOLATION in your code}
+
+Two different suggestions are recommended to use SEISCOPE \texttt{INTERPOLATION} toolbox:
+\begin{itemize}
+ \item use \texttt{make} to generate SEISCOPE \texttt{INTERPOLATION} library in \texttt{INTERPOLATION/lib}, and then link it with your codes for your own compiling. The users need to include the path
+ \texttt{INTERPOLATION/lib} and add the flag \texttt{-lSEISCOPE\_INTERP} prior to compile it with their own codes.
+ \item copy the \texttt{Fortran} source files in \texttt{INTERPOLATION/src} into your own directory for compiling while avoid environment variable configuration. These source files are \texttt{dft\_interp.f90}, \texttt{ksinc\_interp.f90}, \texttt{poly\_interp.f90}.
+\end{itemize}
+
+Both ways are easy to conduct. The key for successfully usage is based on knowing what the toolbox did and what is the users' responsibility. The users has to do the following things in their own code:
+\begin{itemize}
+ \item Allocate the variables for storing the boundary elements. Note that to use DFT interpolation, the user needs to allocate complex-valued array, while to use Kaiser windowed sinc interpolation and Lagrange polynomial interpolationo, the user needs to allocate real-valued array.
+ \item Specify the starting and ending index of each fraces of a 3-D wavefield volume: \texttt{i1min},\texttt{i1max}, \texttt{i2min}, \texttt{i2max}, \texttt{i3min}, \texttt{i3max};
+ \item Invoke the subroutines supplied by the toolbox at each time step in forward modeling with a flag \texttt{v2b=.true.}, and in backward reconstruction with a flag \texttt{v2b=.false.}. Here \texttt{v2b} means particle velocity $\mathbf{v}$ to boundary variables. 
+\end{itemize}
+It is important to have a good understanding of above things from a practical example. Let us illustrate it using \texttt{INTERPOLATION/demo/test\_dft\_3d}. The forward modeling should include boundary decimation and storing by specifying \texttt{v2b=.true.}:
+\begin{framed}
+\begin{verbatim}
+  !forward modeling
+  do it=1,nt
+     call add_sources(p, dt, wlt(it), sz, sx, sy, nzpad, nxpad, nypad)
+     call step_forward_v(p, vz, vx, vy, rho, dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call apply_sponge3d(vz,bb,nz,nx,ny,nb)
+     call apply_sponge3d(vx,bb,nz,nx,ny,nb)
+     call step_forward_p(p, vz, vx, vy, kappa, dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call apply_sponge3d(p,bb,nz,nx,ny,nb)
+     !---------------------------------------------------------------!
+     !do decimation with flag v2b=.true. when invoking the subroutine
+     !---------------------------------------------------------------!
+     call dft_interp(.true.,bvzt,vz(-1+nb:1+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nb,1+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvzb,vz(-1+nz+nb:1+nz+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nz+nb,1+nz+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvxl,vx(1+nb:nz+nb,-1+nb:1+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nb,1+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvxr,vx(1+nb:nz+nb,-1+nx+nb:1+nx+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nx+nb,1+nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.true.,bvyf,vy(1+nb:nz+nb,1+nb:nx+nb,-1+nb:1+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+nb,1+nb,nt,mt,it)
+     call dft_interp(.true.,bvyr,vy(1+nb:nz+nb,1+nb:nx+nb,-1+ny+nb:1+ny+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+ny+nb,1+ny+nb,nt,mt,it)
+  enddo
+\end{verbatim}
+\end{framed}
+The backward reconstruction from the decimated boundary can be done by simplying setting \texttt{v2b=.true.}.
+\begin{framed}
+\begin{verbatim} 
+  !backward reconstruction
+  do it=nt,1,-1     
+     !---------------------------------------------------------------!
+     !do interpolation with flag v2b=.false. when invoking the subroutine
+     !---------------------------------------------------------------!
+     call dft_interp(.false.,bvzt,vz(-1+nb:1+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nb,1+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvzb,vz(-1+nz+nb:1+nz+nb,1+nb:nx+nb,1+nb:ny+nb),&
+          -1+nz+nb,1+nz+nb,1+nb,nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvxl,vx(1+nb:nz+nb,-1+nb:1+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nb,1+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvxr,vx(1+nb:nz+nb,-1+nx+nb:1+nx+nb,1+nb:ny+nb),&
+          1+nb,nz+nb,-1+nx+nb,1+nx+nb,1+nb,ny+nb,nt,mt,it)
+     call dft_interp(.false.,bvyf,vy(1+nb:nz+nb,1+nb:nx+nb,-1+nb:1+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+nb,1+nb,nt,mt,it)
+     call dft_interp(.false.,bvyr,vy(1+nb:nz+nb,1+nb:nx+nb,-1+ny+nb:1+ny+nb),&
+          1+nb,nz+nb,1+nb,nx+nb,-1+ny+nb,1+ny+nb,nt,mt,it)
+          
+     call step_forward_p(p, vz, vx, vy, kappa, -dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call step_forward_v(p, vz, vx, vy, rho, -dt, idz, idx, idy, nzpad, nxpad, nypad)
+     call add_sources(p, -dt, wlt(it), sz, sx, sy, nzpad, nxpad, nypad)
+  enddo
+\end{verbatim}
+\end{framed}
+The key is figuring out the correct values for the computing limits: \texttt{i1min},\texttt{i1max}, \texttt{i2min}, \texttt{i2max}, \texttt{i3min}, \texttt{i3max}. These limits depends on your finite different (FD) stencil using single state variable storage approach:  only storing $2J-1$ lines on each side/face of the particle velocity $\mathbf{v}=(v_x,v_y,v_z)$ is adequate for perfect reconstruction using $2J$-th order staggered grid FD stencil, no matter you are in acoustic, elastic, viscoacoustic and viscoelastic regime \citep{Yang_2014_SEG,Yang_2014_RTM,Nguyen_2015_ASS,Yang_2016_WRB}. In 2nd order wave equation, you may only need $J$ layers for $2J$-th order FD \citep{Dussaud_2008_CSR}.
+
+
+\bibliographystyle{apalike}
+\bibliography{/home/yangpe/SEISCOPE_ARTICLES/BIBLIO/biblioseiscope,/home/yangpe/SEISCOPE_ARTICLES/BIBLIO/bibliotmp}
+
+
+\end{document}
+

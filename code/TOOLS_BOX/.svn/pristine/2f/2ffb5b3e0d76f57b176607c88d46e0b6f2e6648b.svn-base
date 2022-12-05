@@ -1,0 +1,116 @@
+
+subroutine get_nr(u,fname,ns,nr)
+
+  implicit none
+
+  integer :: u,ns,nr
+  CHARACTER*(*) :: fname
+  INTEGER(KIND=8) :: SIZE,FSIZE
+  integer(KIND=8) :: size_one_trace
+
+  !step 1 : get the size in bytes of the file
+  SIZE = FSIZE(U,FNAME)
+!write(*,*)'SIZE',SIZE
+  !step2 : compute the size of one trace
+  size_one_trace =  (60+ns)
+
+  !step3 : compute the number of trace
+  nr = SIZE/size_one_trace
+
+end subroutine get_nr
+
+!function adapted  from http://www.tek-tips.com/viewthread.cfm?qid=1559798
+!to be able to find the size of a binary file from Fortran using only 
+!standard Fortran call, assuming non-standard call like GNU FSTAT is not available
+
+INTEGER*8 FUNCTION FSIZE(U,FNAME)
+  IMPLICIT NONE
+  CHARACTER*(*) FNAME
+  INTEGER U, IOS
+  INTEGER(kind=4) T
+  INTEGER*8 MAXLEN, START,ENDING, I
+
+  !C       Compile with 8 byte integers as default
+  !C       if you want to specify a larger MAXLEN
+  !C       than 2**32 - 1:
+  MAXLEN = 4294967295
+
+  !C       Open with record length 1:
+!  write(*,*)u
+  OPEN(U, FILE=FNAME, STATUS='OLD', ACCESS='DIRECT', RECL=4)
+
+  !C       Binary search for file end.
+  !C       If we read fine, we're below file end,
+  !C       if we get an error, we're above file end.
+
+  START = 0
+  ENDING = MAXLEN
+
+10 IF (ENDING - START .LE. 1) GOTO 30
+  I = (START + ENDING)/2
+  READ(U,REC=I,ERR=20,IOSTAT=IOS) T
+  !C       We read without error, so FSIZE .GE. I
+  START = I
+  GOTO 10
+
+20 ENDING = I
+  GOTO 10
+
+  !C       Found the position of the last byte of the file
+30 FSIZE = START
+
+  CLOSE(U)
+  RETURN
+
+END FUNCTION FSIZE
+
+!ORIGNINAL FUNCTION
+!TEST ON ERRORS WERE NOT GENERIC....
+!!$
+!!$    INTEGER*8 FUNCTION FSIZE(U,FNAME)
+!!$        IMPLICIT NONE
+!!$        CHARACTER*(*) FNAME
+!!$        INTEGER U, IOS
+!!$        BYTE T
+!!$        INTEGER*8 MAXLEN, START,ENDING, I
+!!$
+!!$C       Compile with 8 byte integers as default
+!!$C       if you want to specify a larger MAXLEN
+!!$C       than 2**32 - 1:
+!!$        MAXLEN = 4294967295
+!!$
+!!$C       Open with record length 1:
+!!$        OPEN(U, FILE=FNAME, STATUS='OLD', ACCESS='DIRECT',
+!!$     +  FORM='UNFORMATTED', RECL=1)
+!!$
+!!$C       Binary search for file end.
+!!$C       If we read fine, we're below file end,
+!!$C       if we get an error, we're above file end.
+!!$
+!!$        START = 0
+!!$        ENDING = MAXLEN
+!!$
+!!$  10    IF (ENDING - START .LE. 1) GOTO 30
+!!$        I = (START + ENDING)/2
+!!$        READ(U,REC=I,ERR=20,IOSTAT=IOS) T
+!!$C       We read without error, so FSIZE .GE. I
+!!$        START = I
+!!$        GOTO 10
+!!$
+!!$C       Error encounted
+!!$  20    IF (IOS .NE. 3) GOTO 99
+!!$C       IOSTAT is 3, so EOF encountered, and FSIZE .LT. I
+!!$        ENDING = I
+!!$        GOTO 10
+!!$
+!!$C       Found the position of the last byte of the file
+!!$  30    FSIZE = START
+!!$
+!!$        CLOSE(U)
+!!$        RETURN
+!!$C       Encounted another error than EOF:
+!!$  99    FSIZE = -1
+!!$        CLOSE(U)
+!!$        RETURN
+!!$      END
+!!$

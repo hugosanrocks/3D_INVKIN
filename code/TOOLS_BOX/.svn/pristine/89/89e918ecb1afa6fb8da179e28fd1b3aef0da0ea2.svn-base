@@ -1,0 +1,35 @@
+!!$ Copyright (C) 2016-2018 Seiscope Consortim, All rights reseved.
+!!$ Author: Pengliang Yang - Univ. Grenoble Alpes
+!!$ E-mail: pengliang.yang@univ-grenoble-alpes.fr
+!!$=====================================================================
+!!$ References: 
+!!$[1] P. Yang, R. Brossier and J. Virieux, Wavefield reconstruction from
+!!$    significantly decimated boundaries, Geophysics, Vol. 80, No. 5 (2016)
+!!$    T197-T209
+!!$[2] Yang, P., Gao, J., and Wang, B. (2014a). RTM using effective boundary 
+!!$    saving: A staggered grid GPU implementation. Computers & Geosciences,
+!!$    68:64–72.
+!!$=====================================================================
+!compute weights of the kaiser window
+real function kwsinc(x,l,r)
+  implicit none
+  integer::l	!half window length of kaiser window
+  integer:: r   !subsampling rate
+  real::x  	!actual shift, x=real(n-i*r)
+
+  !table for optimal b in 0-order bessel function
+  real::tab(10)=[1.24,2.94,4.53,6.31,7.91,9.42,10.95,12.53,14.09,14.18]
+
+  real::bessel_i0
+  real:: b 	!parameter of kaiser window
+  real:: a  	!intermediate variable
+
+  b=tab(l) 	!optimal b according to kaiser window length
+  kwsinc=0.
+  a=x/real(l*r)
+  if(abs(a)<1.) then
+     kwsinc=bessel_i0(b*sqrt(1.-a*a))/bessel_i0(b)
+     a=3.14159265359*x/real(r)
+     if(abs(a)>1.e-7)  kwsinc=kwsinc*sin(a)/a
+  endif
+end function kwsinc

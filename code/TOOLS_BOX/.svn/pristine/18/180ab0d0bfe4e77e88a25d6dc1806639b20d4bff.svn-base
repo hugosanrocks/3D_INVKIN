@@ -1,0 +1,19 @@
+#Makefile for CARP method
+include ../../Makefile.config
+
+COMMON_SRC = ../../src/common
+SRC= $(COMMON_SRC)/gmbva.f90 $(COMMON_SRC)/lsq.f90
+OBJ = $(SRC:.f90=.o) 
+TAR = test.x
+
+LIBR = -L ../../lib -lSEISCOPE_CARFS $(LIB) -fopenmp
+
+$(TAR): $(OBJ) test_carfs.f90
+	$(FC) $(INC) -o $@ $^ $(LIBR)
+
+%.o : %.f90
+	$(FC) $(INC) -c -o $@ $< $(LIBR)
+
+clean:
+	rm -rf Fig test.x *.o *.bin *.mod *~ *.ps *.pdf iterate_CG.dat
+	rm -rf *.o $(COMMON_SRC)/*.o $(COMMON_SRC)/*.mod

@@ -1,0 +1,125 @@
+module mesh_utils_mod
+
+  use dd_common_mod
+
+  implicit none
+
+  contains
+
+  function tetrahedron_volume(coor)
+    real(kind=FP), dimension(3,4), intent(in)  :: coor
+    real(kind=FP)                              :: det1, det2, det3, det4
+    real(kind=FP)                              :: tetrahedron_volume
+    ! Suppose 4 points ABCD, defining a tetrahedron, the associated coordinates stored in coor in the same order than ABCD
+    ! The function computes (AB cross_product AC) dot_product AD
+    ! which is equivalent to compute the following determinant
+    !
+    !      |  1  1  1  1 |
+    !      | xA xB xC xD |
+    ! D0 = | yA yB yC yD |
+    !      | zA zB zC ZD |
+    !
+    ! The result is equivalent to the (signed) volume of the parallelepiped defined by the three vectors given AB, AC, AD
+    
+    det1 =   coor(1,2) * (coor(2,3) * coor(3,4) - coor(3,3) * coor(2,4)) &
+    &      - coor(1,3) * (coor(2,2) * coor(3,4) - coor(3,2) * coor(2,4)) &
+    &      + coor(1,4) * (coor(2,2) * coor(3,3) - coor(3,2) * coor(2,3)) 
+    det2 =   coor(1,1) * (coor(2,3) * coor(3,4) - coor(3,3) * coor(2,4)) &
+    &      - coor(1,3) * (coor(2,1) * coor(3,4) - coor(3,1) * coor(2,4)) &
+    &      + coor(1,4) * (coor(2,1) * coor(3,3) - coor(3,1) * coor(2,3)) 
+    det3 =   coor(1,1) * (coor(2,2) * coor(3,4) - coor(3,2) * coor(2,4)) &
+    &      - coor(1,2) * (coor(2,1) * coor(3,4) - coor(3,1) * coor(2,4)) &
+    &      + coor(1,4) * (coor(2,1) * coor(3,2) - coor(3,1) * coor(2,2)) 
+    det4 =   coor(1,1) * (coor(2,2) * coor(3,3) - coor(3,2) * coor(2,3)) &
+    &      - coor(1,2) * (coor(2,1) * coor(3,3) - coor(3,1) * coor(2,3)) &
+    &      + coor(1,3) * (coor(2,1) * coor(3,2) - coor(3,1) * coor(2,2)) 
+
+    tetrahedron_volume = (det1 - det2 + det3 - det4) / 6._FP
+
+  end function tetrahedron_volume
+
+
+  function hexahedron_volume(coor_hexa, ie)
+    real(kind=FP), dimension(3,8), intent(in)  :: coor_hexa
+    integer,                       intent(in)  :: ie
+    real(kind=FP), dimension(3,4)              :: coor_tetra
+    real(kind=FP)                              :: vol_tetra
+    real(kind=FP)                              :: hexahedron_volume
+    ! Divide hexahedron into five tetrahedra and sum the volumes of each ones
+    hexahedron_volume = 0._FP
+
+    ! Tetra composed of vertices 2574
+    coor_tetra(:,1)   = coor_hexa(:,2)
+    coor_tetra(:,2)   = coor_hexa(:,5)
+    coor_tetra(:,3)   = coor_hexa(:,7)
+    coor_tetra(:,4)   = coor_hexa(:,4)
+    vol_tetra         = tetrahedron_volume(coor_tetra)
+    if (vol_tetra < 0._FP) then
+      write(*,*) 'hexa 2574 not well ordered', ie, vol_tetra
+      write(*,*) 'coor_hexa =', coor_hexa
+    end if
+    hexahedron_volume = hexahedron_volume + vol_tetra
+
+    ! Tetra composed of vertices 2541
+    coor_tetra(:,1)   = coor_hexa(:,2)
+    coor_tetra(:,2)   = coor_hexa(:,5)
+    coor_tetra(:,3)   = coor_hexa(:,4)
+    coor_tetra(:,4)   = coor_hexa(:,1)
+    vol_tetra         = tetrahedron_volume(coor_tetra)
+    if (vol_tetra < 0._FP) then
+      write(*,*) 'hexa 2541 not well ordered', ie, vol_tetra
+      write(*,*) 'coor_hexa =', coor_hexa
+    end if
+    hexahedron_volume = hexahedron_volume + vol_tetra
+
+    ! Tetra composed of vertices 6572
+    coor_tetra(:,1)   = coor_hexa(:,6)
+    coor_tetra(:,2)   = coor_hexa(:,5)
+    coor_tetra(:,3)   = coor_hexa(:,7)
+    coor_tetra(:,4)   = coor_hexa(:,2)
+    vol_tetra         = tetrahedron_volume(coor_tetra)
+    if (vol_tetra < 0._FP) then
+      write(*,*) 'hexa 6572 not well ordered', ie, vol_tetra
+      write(*,*) 'coor_hexa =', coor_hexa
+    end if
+    hexahedron_volume = hexahedron_volume + vol_tetra
+
+    ! Tetra composed of vertices 2473
+    coor_tetra(:,1)   = coor_hexa(:,2)
+    coor_tetra(:,2)   = coor_hexa(:,4)
+    coor_tetra(:,3)   = coor_hexa(:,7)
+    coor_tetra(:,4)   = coor_hexa(:,3)
+    vol_tetra         = tetrahedron_volume(coor_tetra)
+    if (vol_tetra < 0._FP) then
+      write(*,*) 'hexa 2473 not well ordered', ie, vol_tetra
+      write(*,*) 'coor_hexa =', coor_hexa
+    end if
+    hexahedron_volume = hexahedron_volume + vol_tetra
+
+    ! Tetra composed of vertices 5874
+    coor_tetra(:,1)   = coor_hexa(:,5)
+    coor_tetra(:,2)   = coor_hexa(:,8)
+    coor_tetra(:,3)   = coor_hexa(:,7)
+    coor_tetra(:,4)   = coor_hexa(:,4)
+    vol_tetra         = tetrahedron_volume(coor_tetra)
+    if (vol_tetra < 0._FP) then
+      write(*,*) 'hexa 5874 not well ordered', ie, vol_tetra
+      write(*,*) 'coor_hexa =', coor_hexa
+    end if
+    hexahedron_volume = hexahedron_volume + vol_tetra
+
+  end function hexahedron_volume
+
+  real(kind=FP) function triangle_surface (coor)
+    real(kind=FP), dimension(3,3),    intent(in) :: coor
+    real(kind=FP)                                :: det1, det2, det3
+
+    det1 = (coor(2,2) - coor(2,1)) * (coor(3,3) - coor(3,1)) - (coor(2,3) - coor(2,1)) * (coor(3,2) - coor(3,1))
+    det2 = (coor(1,2) - coor(1,1)) * (coor(3,3) - coor(3,1)) - (coor(1,3) - coor(1,1)) * (coor(3,2) - coor(3,1))
+    det3 = (coor(1,2) - coor(1,1)) * (coor(2,3) - coor(2,1)) - (coor(1,3) - coor(1,1)) * (coor(2,2) - coor(2,1))
+
+    triangle_surface = 0.5_FP * (det1 - det2 + det3)
+
+  end function triangle_surface
+
+end module mesh_utils_mod

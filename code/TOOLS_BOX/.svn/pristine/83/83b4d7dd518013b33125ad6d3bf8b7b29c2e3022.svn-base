@@ -1,0 +1,23 @@
+rm *.ps
+
+option="n1=301 width=4 height=4 d1=3.125 d2=3.125 d1num=1000 d2num=1500 legend=1 lstyle=vertright lwidth=0.2 lheight=4  titlesize=18 wrgb=1.0,0,0 grgb=1.0,1.0,1.0 brgb=0,0,1.0 bps=12 threecolor=1"
+
+psimage<forw_kt1.bin $option label1='x1 (m)' label2='x2 (m)' clip=1e-5 lbeg=-1e-5 lend=1e-5 ldnum=5e-6 title='(a) forward: n=500' >forw_kt1.ps
+display forw_kt1.ps &
+psimage<forw_kt2.bin $option label1='x1 (m)' label2='x2 (m)' clip=1e-5 lbeg=-1e-5 lend=1e-5 ldnum=5e-6 title='(b) forward: n=800' >forw_kt2.ps
+display forw_kt2.ps &
+psmerge in=forw_kt1.ps translate=0,0 in=forw_kt2.ps translate=6,0 > gather1.ps
+#display gather1.ps&
+
+#DFT
+psimage<err_kt1.bin $option label1='x1 (m)' label2='x2 (m)' clip=1e-8 lbeg=-1e-8 lend=1e-8 ldnum=5e-9 title='(c) error: n=500'  >err_kt1.ps
+display err_kt1.ps &
+psimage<err_kt2.bin $option label1='x1 (m)' label2='x2 (m)' clip=1e-8 lbeg=-1e-8 lend=1e-8 ldnum=5e-9 title='(d) error: n=800'  >err_kt2.ps
+display err_kt2.ps &
+psmerge in=err_kt1.ps translate=0,0 in=err_kt2.ps translate=6,0 > gather2.ps
+#display gather2.ps&
+
+
+psmerge in=gather1.ps translate=0,0 in=gather2.ps translate=0,-5.5 >rec.ps
+display rec.ps&
+epstopdf rec.ps

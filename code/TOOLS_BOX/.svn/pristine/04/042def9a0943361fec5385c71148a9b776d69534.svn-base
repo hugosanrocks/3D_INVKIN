@@ -1,0 +1,120 @@
+
+subroutine add_pressure_ricker_source(Am, Fm, time, np)
+
+  use global_parameters_mod
+  implicit none
+  real(kind=FP)                              :: stf, Am, Fm, time
+  integer                                    :: iele, isrc, i, np
+  
+  call wavelet_ricker(stf, Am, Fm, time )
+
+  isrc=1
+  iele =  iel_src(isrc) 
+
+  do i = 1, np
+     stress_rhs(1,i,iele) = stress_rhs(1,i,iele) +  src_weig(i,isrc) * stf
+  end do
+
+end subroutine add_pressure_ricker_source
+
+!----------------------------------------------------------------------------
+
+subroutine add_stress_ricker_source(Am, Fm, time, np)
+
+  use global_parameters_mod
+  implicit none
+  real(kind=FP)                              :: stf, Am, Fm, time
+  integer                                    :: iele, isrc, i, np
+  
+  call wavelet_ricker(stf, Am, Fm, time )
+
+  isrc=1
+  iele =  iel_src(isrc) 
+ 
+  do i = 1, np
+     stress_rhs(1,i,iele) = stress_rhs(1,i,iele) +  src_weig(i,isrc) * stf
+     stress_rhs(2,i,iele) = stress_rhs(2,i,iele) +  src_weig(i,isrc) * stf
+     stress_rhs(3,i,iele) = stress_rhs(3,i,iele) +  src_weig(i,isrc) * stf
+  end do
+  
+end subroutine add_stress_ricker_source
+
+!-------------------------------------------------------------------------
+
+subroutine wavelet_ricker(stf, Am, Fm, t )
+
+  use global_parameters_mod
+  implicit none
+  
+  real(kind=FP)  :: stf, Am, Fm, t
+  real(kind=FP)  :: t0,tp
+  real(kind=FP)  :: pi=3.141592653589793
+  
+  ! shift in time
+  t0 = -3._fp * sqrt(1.5_fp) / (pi*Fm)
+  tp = t + t0
+
+  tp = (pi * Fm * tp)
+  stf = Am *(1._fp - 2._fp * tp **2 ) * exp (- tp**2)
+   
+ 
+end subroutine wavelet_ricker
+
+!----------------------------------------------------------------------
+
+subroutine initialise_source_arrays()
+
+  use global_parameters_mod
+  implicit none
+  integer idof_local
+  allocate(src_weig(ndof_local, acqui%nsrc))
+  allocate(iel_src(acqui%nsrc))
+
+  open(IOUT_STF,file='stf_used.txt')
+
+  src_weig(:,:) = acqui%src_weig(:,:)
+  iel_src(:) =  acqui%iel_src(:)
+  
+  !! DEBUG
+!!$  open(666,file='coef_src.txt')
+!!$  write(666,'(4f30.10)') coorV(:, EtoV(1,acqui%iel_src(1))),0.
+!!$  write(666,'(4f30.10)') coorV(:, EtoV(2,acqui%iel_src(1))),0.
+!!$  write(666,'(4f30.10)') coorV(:, EtoV(3,acqui%iel_src(1))),0.
+!!$  write(666,'(4f30.10)') coorV(:, EtoV(4,acqui%iel_src(1))),0.
+  do idof_local=1,ndof_local
+     idof = Etodof_adj(acqui%iel_src(1)) + idof_local - 1
+!!$     write(666,'(f30.20, 1x, 3f30.10)')  acqui%src_weig(idof_local,1), coordof(1,idof),coordof(2,idof),coordof(3,idof)
+  end do
+!!$  write(666,'(4f30.10)')  acqui%src_coor(1,1), acqui%src_coor(2,1), acqui%src_coor(3,1),0.
+!!$  close(666)
+!!$  write(*,*) 
+!!$  write(*,*)  EtoV(:,acqui%iel_src(1))
+end subroutine initialise_source_arrays
+!----------------------------------------------------
+subroutine write_stf(Am, Fm, t)
+
+  use global_parameters_mod
+  implicit none 
+  real(kind=fp), intent(in) :: Am, Fm, t
+  real(kind=fp)             :: stf
+
+  call  wavelet_ricker(stf, Am, Fm, current_time )
+  write(IOUT_STF,*) current_time, stf
+
+end subroutine write_stf
+!-------------------------------------- debug -------
+
+subroutine  extrac_source_element_to_check
+  use global_parameters_mod
+  implicit none
+  integer idof_local
+
+  do idof_local=1,ndof_local
+     idof = Etodof_adj(acqui%iel_src(1)) + idof_local - 1
+     write(666,'(2f30.20, 1x, 3f30.10)')  stress_rhs(1,idof_local,acqui%iel_src(1)),acqui%src_weig(idof_local,1), &
+     &coordof(1,idof),coordof(2,idof),coordof(3,idof)
+  end do
+
+  read(*,*) idof_local
+
+end subroutine extrac_source_element_to_check

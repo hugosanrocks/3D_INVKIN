@@ -1,0 +1,14 @@
+#MASTER Makefile for the TOOLBOX
+include Makefile.inc
+
+all : compile
+
+
+compile : 
+	cd SU_IO ; $(MAKE)
+	cd OPTIMIZATION ; $(MAKE) lib
+
+clean :	
+	cd SU_IO/src ; $(MAKE) clean
+	cd OPTIMIZATION ; $(MAKE) clean
+
