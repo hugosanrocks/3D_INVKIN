@@ -1,0 +1,11 @@
+#ifdef DOUBLE_PRECISION
+#  define MYFLOAT REAL(kind=8)
+#  define MYCOMPL COMPLEX(kind=8)
+#  define MPI_MYFLOAT MPI_DOUBLE_PRECISION
+#  define MPI_MYCOMPL MPI_DOUBLE_COMPLEX
+#else
+#  define MYFLOAT REAL(kind=4)
+#  define MYCOMPL COMPLEX(kind=4)
+#  define MPI_MYFLOAT MPI_REAL
+#  define MPI_MYCOMPL MPI_COMPLEX
+#endif

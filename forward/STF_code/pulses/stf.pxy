@@ -1,0 +1,23 @@
+output stf.ps
+
+ frame on
+frame grid
+
+xlim 4 0 15.0
+ xlim 4 0 2.5
+ xlim 4
+ylim 4
+
+xlab Time (s)
+
+ mode 1 0.0 0.0014
+
+ylab Slip-Rate (m/s)
+file slip-rate
+read
+plot 2.3 6.5
+
+ylab Slip (m)
+file slip
+read
+plot 0 -5.0

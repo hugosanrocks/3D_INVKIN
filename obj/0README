@@ -1,0 +1,57 @@
+
+====================================================
+	   3D_INVKIN makefile details
+====================================================
+
+3D Kinematic Inversion of seismic sources 28/12/2017
+
+A successful compilation can be done by running:
+chmod + compile.sh
+./compile.sh
+
+To compile all the objects refered to the 3D_INVKIN:
+
+make [option]           Inside this directory ../obj/
+
+options:
+
+
+PREPROC_GEODG		Compiles only the codes used
+			to prepare the pseudo Green's
+			function bank (traction on the
+			fault).
+
+FORWARD			Compiles only the codes used
+			to run a forward modeling
+			(synthetic seismograms).
+
+IN3DVKIN                Compiles only the main code 
+                        to invert the seismic source.
+
+HESSIAN                 Compiles the codes related to
+                        the estimation of the Hessian
+                        matrix.
+
+SENSITIVITY             Compiles the codes related to
+                        a sensitivity analysis carry out
+                        through several gradient estimations
+
+all			Complies all options
+			mentioned aboce.
+
+clean			Removes all the objects
+			from this directory.
+
+The binary files are located inside ../bin/
+
+Check ../run/ to see an example of a finite source
+inversion. The files preprocess.sh forward.sh
+and inversion.sh are scripts with the necessary 
+commands to prepare the pseudo Green's functions,
+estimate synthetic seismograms and run a kinamtic
+source inversion process, respectively.
+
+Contact: hugo.sanchez-reyes@univ-grenoble-alpes.fr
+
+
+

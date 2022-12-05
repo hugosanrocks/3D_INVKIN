@@ -1,0 +1,149 @@
+
+
+     ! Regularization terms controling the rake angle
+     ! using unitary vectors.
+
+      subroutine rake_uni(green_mesh)
+
+      implicit none
+      INCLUDE 'green.h'
+!     optim type strcuture
+      TYPE (mesh) :: green_mesh
+
+      ! Arrays to save rake angle and rake angle prior
+      real, dimension(:), allocatable :: angle_r, angle_p, angle_q, ang_vx, ang_vy
+      integer, dimension(:), allocatable :: ind
+      real :: stk, dip, modu
+      integer i, j, k, cont, n, ini, fin, ii
+      integer :: iunit, ii, cont2
+      real,dimension(:),allocatable :: serie
+      real pi2, cost_ang, trigg, maxtrace, coef
+      real pi/3.1415926535897932/
+      pi2 = pi * 2.
+
+        trigg = 0.1    !Trigger to measure angle and cost
+        print *, ' Measuring the rake angle'
+ 
+        !samples, subfaults
+        !Arrays to store the rake angles
+        allocate(angle_r(green_mesh%interp_i*2*green_mesh%msub))
+        allocate(angle_q(green_mesh%interp_i*2*green_mesh%msub))
+        allocate(angle_p(green_mesh%interp_i*2*green_mesh%msub))
+        allocate(ang_vx(green_mesh%interp_i*green_mesh%msub))
+        allocate(ang_vy(green_mesh%interp_i*green_mesh%msub))
+        allocate(ind(green_mesh%interp_i*green_mesh%msub))
+        allocate(serie(green_mesh%interp_i))
+
+        n = green_mesh%interp_i
+        angle_r(:) = 0.
+        angle_p(:) = 0.
+        angle_q(:) = 0.
+        ang_vx(:) = 0.
+
+        ini = 1
+        fin = green_mesh%interp_i
+
+        iunit=32
+        open(iunit,file='angle.out',status='unknown')
+
+
+        if (green_mesh%rake_opt .eq. 1) then
+        call model_d(green_mesh%model,green_mesh%model2, &
+  &                  green_mesh%interp_i,green_mesh%msub,&
+  &                  green_mesh%slipm,green_mesh%dir_i,&
+  &                  green_mesh%vnorm_i)
+        endif
+
+        green_mesh%rake_p(:) = 0.
+
+        cont2 = 0
+        !Arrange slip rate model in 1D vector
+        j = 1
+        do i=1,green_mesh%msub
+          !Select one subfault at each time
+          cont=1+(i-1)*green_mesh%interp_i*2
+            do k=1,green_mesh%interp_i
+              stk = green_mesh%model2(cont)
+              dip = green_mesh%model2(cont+green_mesh%interp_i)
+              modu = sqrt(stk**2. + dip**2.)              
+              angle_r(cont) = stk / modu
+              angle_r(cont+green_mesh%interp_i) = dip / modu
+              angle_p(cont) = green_mesh%vslip2(green_mesh%vnorm_i(i),1)
+              angle_p(cont+green_mesh%interp_i) = green_mesh%vslip2(green_mesh%vnorm_i(i),2)
+              if (modu .gt. trigg) then
+               ind(j) = 1
+               angle_q(cont) = angle_r(cont) - angle_p(cont)
+               angle_q(cont+green_mesh%interp_i) = angle_r(cont+green_mesh%interp_i) - angle_p(cont+green_mesh%interp_i)
+               green_mesh%rake_p(cont) = (angle_q(cont) * ((dip**2./(modu**3.)))) + &
+  &                                      (angle_q(cont+green_mesh%interp_i)*(((-1.*dip*stk)/(modu**3.))))
+               green_mesh%rake_p(cont+green_mesh%Interp_i) = (angle_q(cont) * (((-1.*dip*stk)/(modu**3.)))) + &
+  &                                      (angle_q(cont+green_mesh%interp_i) * ((stk**2./(modu**3.))))
+               !Interprete the angle
+               if (dip .gt. 0.) then
+                 if (stk .gt. 0.) then
+                  ang_vx(j) = (pi - atan(dip/stk))
+                 elseif (stk .lt. 0.) then
+                  ang_vx(j) =  (atan(-1.*dip/stk))
+                 endif
+               elseif (dip .lt. 0.) then
+                 if (stk .gt. 0.) then
+                   ang_vx(j) = (pi + atan(-1.*dip/stk))
+                 elseif (stk .lt. 0.) then
+                   ang_vx(j) = (pi*2. - atan(dip/stk))
+                 endif
+               elseif ((dip .eq. 0.) .and. (stk .eq. 0.)) then
+                   if (j .eq. 1) then
+                      ang_vx(j) = 0.
+                   else
+                      ang_vx(j) = ang_vx(j-1)
+                   endif
+               endif
+               !Write results
+!               write(iunit,*) angle_r(cont), angle_r(cont+green_mesh%interp_i), j, ang_vx(j)*180./pi
+              else
+               ind(j) = 0
+              endif
+              write(iunit,*) j, modu, ind(j), ang_vx(j)*180./pi
+!             write(iunit,*) angle_q(cont), angle_q(cont+green_mesh%interp_i)
+              j = j + 1
+              cont = cont + 1
+            enddo
+        enddo
+        close(iunit)
+
+        k = 1
+        cost_ang = 0.
+        do i=1,green_mesh%msub
+          do j=1,green_mesh%interp_i*2
+            cost_ang = cost_ang + angle_q(k)**2.
+            k = k + 1
+           enddo
+        enddo
+        cost_ang = cost_ang / 2.
+        print *, 'cost_ang', cost_ang, 'costa', green_mesh%costa
+!        green_mesh%coef = green_mesh%costa*0.5 / (cost_ang)
+        green_mesh%coef = 0.
+!        green_mesh%coef = 0.0001
+ 
+        if (green_mesh%coef .gt. 1.) then
+         green_mesh%coef = 1.
+        endif
+
+ !       if (cost_ang .lt. 22.) then
+ !        green_mesh%coef2 = green_mesh%coef
+ !       endif
+
+ !       if (green_mesh%costa .lt. 1.09e-03) then
+ !        green_mesh%coef = green_mesh%coef2
+ !       endif
+
+        print *, green_mesh%coef, 'coef'
+
+        green_mesh%costa = green_mesh%costa + green_mesh%coef * cost_ang
+        print *, green_mesh%costa, 'costa+ang'
+
+        deallocate(ind)
+        deallocate(ang_vx,ang_vy)
+        deallocate(angle_r,angle_p,angle_q)
+      endsubroutine rake_uni
+

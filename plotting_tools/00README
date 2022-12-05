@@ -1,0 +1,15 @@
+In this directory you will find
+tools for plotting seismograms
+and slip-rate spatio-temporal 
+histories.
+
+Summary:
+
+1: plot_seismograms.sh     call all the necessary to plot many seismograms
+ 1.1: plot_seismos_all.sh  sub-command from 1
+ 1.2: makeplot.m           prepares time series of seismograms to be plotted
+
+2: snaps_sliprate.sh       plots snapshots of sliprate in a table of
+                           2x4. You must have files table_xx.ascii to
+                           create contours with GMT.
+

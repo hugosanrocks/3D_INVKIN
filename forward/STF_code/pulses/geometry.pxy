@@ -1,0 +1,18 @@
+output geometry.ps
+
+frame grid
+
+ xlim 8 0 300
+xlim 7 -200 250
+ylim 0.8 -50 0
+
+xlab Distance (km)
+ylab Distance (km)
+
+affine 1.0 -200 -1.0 0 
+symb 2 0.07
+
+file coord2D.dat
+read
+
+plot 1.0 4.5

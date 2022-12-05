@@ -1,0 +1,268 @@
+!--------------------------------------------------------------------------!
+!            Subroutine initialize                                      
+!
+!    Allocation of arrays which length does not change regarding the 
+!    type of inversion used.
+!--------------------------------------------------------------------------!
+!    Hugo S. Sanchez Reyes 20/05/2018
+!    Universite de Grenoble 1 "Joseph Fourier"
+!    Supervisors: J. Tago, V.M. Cruz-Atienza, V. Hjorleifsdottir, J. Virieux
+!---------------------------------------------------------------------------!
+
+      subroutine initialize(green_mesh)
+
+!----------------------Definition of variables--------------------------------------!
+      !COMMON VARIABLES
+      implicit none
+      !Define all the variables needed to read stresses
+      ! and calculate the tractions associated "Green's
+      ! functions", variables in include/green.h
+      INCLUDE 'green.h'
+      TYPE (mesh) :: green_mesh
+     
+      !Change debug = .false. not to write output files
+      green_mesh%debug = .false. 
+!-----------------------------------------------------------------------------------!
+
+      !number of stations times components
+      green_mesh%stcomp=green_mesh%nsta*green_mesh%ncomp
+
+      !if iregular mesh is used opt_mesh = 3
+      if ( green_mesh%opt_mesh .lt. 3 ) then
+         !nothing to be done
+      elseif ( green_mesh%opt_mesh .eq. 3 ) then
+         !msub (nodes) = number of nodes
+         green_mesh%msub = green_mesh%nnodes
+      endif
+
+
+      !1 Fault coordinates (x,y,z)
+      allocate(green_mesh%fault(green_mesh%msub,3))
+      !2 Distances between nodes
+      allocate(green_mesh%distcorr(green_mesh%msub,green_mesh%msub))
+      !3 array for observed seismograms
+      allocate(green_mesh%obs(green_mesh%lenobs,green_mesh%stcomp))
+      !4 matrix to store weights for recordings
+      allocate(green_mesh%cd(green_mesh%stcomp,green_mesh%stcomp))
+      !5 matrix penalizing edges
+      allocate(green_mesh%ce(green_mesh%msub,green_mesh%msub))
+      !6 matrices needed for penalizing rupture time
+      allocate(green_mesh%ct(green_mesh%slipsam,green_mesh%slipsam))
+      !7 vector for expected rupture times
+      allocate(green_mesh%rtimes(green_mesh%msub))
+      !8 vector for time samples of rupture times
+      allocate(green_mesh%rsamp(green_mesh%msub))
+
+      !9 1D array used for filtering observations if required
+      allocate(green_mesh%tseries(green_mesh%lenobs))
+
+      !10 Array for inverting different time-space windows if required
+      allocate(green_mesh%samwin(green_mesh%stcomp,green_mesh%wininv))
+      !11 array for time samples at each station for a given instant
+      allocate(green_mesh%synsam(green_mesh%nsta))
+      !12 array for node ID and time windows
+      allocate(green_mesh%idsub(green_mesh%msub))
+      !13 time window at each node
+      allocate(green_mesh%win(green_mesh%msub,12))
+
+      !14 matrix used for 2D laplacian filter
+      allocate(green_mesh%la(green_mesh%msub,green_mesh%msub)) 
+
+      !15
+      !LAPLACIAN FILTER IN SPACE 2D
+      !correlation distances lx, lz, lt
+      !local angles phi, theta
+      allocate(green_mesh%vector_in(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%vector_out(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%lx(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%lz(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%lt(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%phi(green_mesh%nsdip,green_mesh%nsstk))
+      allocate(green_mesh%theta(green_mesh%nsdip,green_mesh%nsstk))
+    
+      !If triangular mesh is used
+      if ( green_mesh%opt_mesh .eq. 3 ) then
+        ! Tractionvector from reference grid
+        ! 16 From reference grid traction vectors
+        allocate(green_mesh%tractionvec_ref(green_mesh%trac_i,&
+  &              green_mesh%stcomp*green_mesh%ncomp* &
+  &              green_mesh%nsstk*green_mesh%nsdip))
+        ! 17 For triangular grid traction vectors
+        allocate(green_mesh%tractionvec(green_mesh%trac_i,&
+  &              green_mesh%stcomp*green_mesh%ncomp* &
+  &              green_mesh%nnodes))
+        ! 18 corners of triangles
+        allocate(green_mesh%corners(3,3*green_mesh%nnodes))
+        ! 19 node coordinates
+        allocate(green_mesh%nodes_coor(2,green_mesh%nnodes))
+        ! 20 vector of mesh along strike
+        allocate(green_mesh%stk_coor(green_mesh%nnodes))
+        ! 21 vector of mesh along dip
+        allocate(green_mesh%dip_coor(green_mesh%nnodes))
+        ! 22 vector of mesh along strike reference
+        allocate(green_mesh%stk_ref(green_mesh%msub))
+        ! 23 vector of mesh along dip reference
+        allocate(green_mesh%dip_ref(green_mesh%msub))
+        ! 24 gauss points
+        allocate(green_mesh%xw(green_mesh%siz_gauss,3))
+      else
+        ! For cartesian regular grid
+        ! 25 traction vectors
+        allocate(green_mesh%tractionvec(green_mesh%trac_i,&
+  &            green_mesh%stcomp*green_mesh%ncomp*green_mesh%msub))
+      endif
+
+      ! 26 Initialize residual arrays
+      allocate(green_mesh%res(green_mesh%lenobs,green_mesh%stcomp))
+      green_mesh%interpadj_i = green_mesh%interp_i
+
+
+      end subroutine initialize
+
+
+
+
+      subroutine write_debug(green_mesh)
+
+      !COMMON VARIABLES
+      implicit none
+      ! Define all the GLOBAL variables
+      INCLUDE 'green.h'
+      TYPE (mesh) :: green_mesh
+
+      integer iunit
+
+      iunit = 25
+      open(iunit,file=green_mesh%out//'debug_data.ascii',status='unknown')
+
+      IF (green_mesh%debug_i .eq. 1) then
+      GO TO 111
+      ELSEIF (green_mesh%debug_i .eq. 3) then
+      GO TO 333
+      ENDIF
+
+ 111   write(iunit,*) green_mesh%rt, green_mesh%ot
+       write(iunit,*) green_mesh%nsta, green_mesh%ncomp, green_mesh%msub
+       write(iunit,*) green_mesh%simsam, green_mesh%simt, green_mesh%simdt
+       write(iunit,*) green_mesh%interp_i
+       write(iunit,*) 'Focal mechanism', green_mesh%stk, green_mesh%dip, green_mesh%rak
+       write(iunit,*) 'Fault area', green_mesh%lenstk,'X',green_mesh%lendip,'km2'
+       write(iunit,*) 'Subfault area', green_mesh%stk_s,'X',green_mesh%dip_s,'km2'
+       write(iunit,*) 'No. of subfault', green_mesh%msub
+       write(iunit,*) 'Seismic Moment', green_mesh%moment
+       write(iunit,*) 'Slip rate samples and slipdt', &
+  &                   green_mesh%slipsam, green_mesh%slipdt
+       close(iunit)
+      GO TO 999
+
+ 333  write(iunit,*) 'Normal vector', green_mesh%vnorm
+      write(iunit,*) 'Slip vector', green_mesh%vslip
+      write(iunit,*) 'Strike vector', green_mesh%vstk
+      close(iunit)
+      GO TO 999
+
+ 999  return
+      end subroutine write_debug
+
+
+      subroutine destroy_arrays(green_mesh)
+
+      !COMMON VARIABLES
+      implicit none
+      ! Define all the GLOBAL variables
+      INCLUDE 'green.h'
+      TYPE (mesh) :: green_mesh
+
+      deallocate(green_mesh%fault)       !1
+      deallocate(green_mesh%distcorr)
+      deallocate(green_mesh%tractionvec) !8
+      deallocate(green_mesh%obs)         !12
+      deallocate(green_mesh%ce)
+      deallocate(green_mesh%ct)          !13,14,15,16
+      deallocate(green_mesh%rtimes)      !17
+      deallocate(green_mesh%rsamp)       !18
+      deallocate(green_mesh%tseries)
+      deallocate(green_mesh%samwin)
+      deallocate(green_mesh%synsam)
+      deallocate(green_mesh%win)
+      deallocate(green_mesh%idsub)
+
+      !Hypocenter and Laplacian penalty
+      !deallocate(green_mesh%diag2)        !19
+      deallocate(green_mesh%la)
+
+      !Other arrays for penalizig tests
+      deallocate(green_mesh%cd) !,green_mesh%cm)
+
+
+      !Variables form initwin
+      deallocate(green_mesh%tottrac)
+      deallocate(green_mesh%syn)         !9
+      deallocate(green_mesh%slipmod)     !2
+      deallocate(green_mesh%model)       !3
+      deallocate(green_mesh%model2)      !4
+      deallocate(green_mesh%grad2)       !5
+      deallocate(green_mesh%slipr)       !6
+      deallocate(green_mesh%slip)        !7
+      deallocate(green_mesh%gradad)      !10
+      deallocate(green_mesh%slipr2)      !11
+      deallocate(green_mesh%modelp)
+      !deallocate(green_mesh%model2p)
+      deallocate(green_mesh%diag)        !19
+      deallocate(green_mesh%model1)
+      deallocate(green_mesh%grad1)
+
+      !From initialadj
+      !deallocate(green_mesh%cost)
+      deallocate(green_mesh%res)
+      !deallocate(green_mesh%precon)
+      !deallocate(green_mesh%q_dw)
+
+      !Laplacian filter
+      deallocate(green_mesh%lx,green_mesh%lz,green_mesh%phi)
+!      deallocate(green_mesh%phi,green_mesh%theta)
+      deallocate(green_mesh%vector_in,green_mesh%vector_out)
+
+      deallocate(green_mesh%filter,green_mesh%resfil)
+
+
+      !Arrays of variable focal mechanism
+      deallocate(green_mesh%rake_i)
+      deallocate(green_mesh%vnorm)
+      deallocate(green_mesh%vstk)
+      deallocate(green_mesh%vdip)
+      deallocate(green_mesh%vslip)
+      deallocate(green_mesh%vslip2)
+      deallocate(green_mesh%slipm)
+      deallocate(green_mesh%vnorm_i)
+      deallocate(green_mesh%rake_lim)
+
+
+      deallocate(green_mesh%samp4win)
+
+      !deallocate(green_mesh%tseries_in,green_mesh%tseries_out)
+
+      !deallocate(green_mesh%win)
+
+      !Frequency domain arrays
+!      deallocate(green_mesh%resif)
+!      deallocate(green_mesh%tracad)
+!      deallocate(green_mesh%tracf,green_mesh%slipf)
+
+      !deallocate(green_mesh%nodes)!,green_mesh%stk_coor)
+      if ( green_mesh%opt_mesh .eq. 3 ) then
+       deallocate(green_mesh%values)!,green_mesh%dip_coor)
+       deallocate(green_mesh%xw)
+       deallocate(green_mesh%nodes)
+       deallocate(green_mesh%nodes_coor)
+       deallocate(green_mesh%corners)
+       deallocate(green_mesh%dip_ref)
+       deallocate(green_mesh%stk_ref)
+       deallocate(green_mesh%dip_coor)
+       deallocate(green_mesh%stk_coor)
+      else
+
+      endif
+
+
+      end subroutine destroy_arrays

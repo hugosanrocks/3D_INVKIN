@@ -1,0 +1,40 @@
+     ***************
+     Source Geometry
+     ***************
+
+1                       ! Number of Faults
+2                       ! Reference Axis (1=X , 2=Y , 3=Z)
+100000 100000         	! Nucleation Coordinates (m)
+
+     **************
+     Fault Number 1
+     **************
+
+1               	! Number of joined segments
+15000 20000 12000      	! xf0 yf0 zf0 (fault origin, m)
+380000               	! Length in reference direction (m)
+352 150000  90        	! Segment angle (0-360), length (m), rake (deg)
+
+     **************
+     Fault Number 2
+     **************
+
+3               	! Number of joined segments
+20000 20000 12000      	! xf0 yf0 zf0 (fault origin, m)
+380000               	! Length in reference direction (m)
+370  55000  90        	! Segment angle (0-360), length (m), rake (deg)
+330  80000  90        	! Segment angle (0-360), length (m), rake (deg)
+0  100000  90        	! Segment angle (0-360), length (m), rake (deg)
+
+     **************
+     Fault Number 3
+     **************
+
+5               	! Number of joined segments
+2000 5000 4000       	! xf0 yf0 zf0 (fault origin, m)
+5000               	! Length in reference direction (m)
+45  8000  27       	! Segment angle (0-360), length (m), rake (deg)
+15  2000  27       	! Segment angle (0-360), length (m), rake (deg)
+30  2000  27       	! Segment angle (0-360), length (m), rake (deg)
+45  2000  27       	! Segment angle (0-360), length (m), rake (deg)
+60  2000  27       	! Segment angle (0-360), length (m), rake (deg)
