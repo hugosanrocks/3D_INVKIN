@@ -1,10 +1,10 @@
 # GMT 6 Session common arguments shelf
 BEGIN GMT 6.4.0
-B	5:Time (s):/S
+B	0::.Station #001:Time (s):/S
 J	X
-JX	X2/6
-R	0.0/35.0/0/43
+JX	X8/1.5
+R	//-/
 X	r2.2
-Y	1
+Y	6
 @L	339
 END
