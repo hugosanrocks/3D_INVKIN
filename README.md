@@ -60,11 +60,15 @@ Then, go to the correct path and compile everything and build the libraries:
 
 Go to the correct path and configure all the files before the compilation. 
 
-`$cd code/other_tools/fftw-3.3.10/`\n
-`$chmod +x configure`\n
-`$./configure --enable-single --enable-shared`\n
-`$sudo make`\n
-`$sudo make install`\n
+`$cd code/other_tools/fftw-3.3.10/`
+
+`$chmod +x configure`
+
+`$./configure --enable-single --enable-shared`
+
+`$sudo make`
+
+`$sudo make install`
 
 More information about the installation can be found at the FFTW3 official website. It is needed to copile fftw3 with the option `--enable-single` to be compatigle with 3D_INVKIN.
 
