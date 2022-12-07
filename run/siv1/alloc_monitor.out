@@ -54,3 +54,30 @@
  51%pmodel1 allo
  52%pmodel2 allo
  53%values  allo
+ 66%twin    allo
+ 27%tottrac deal
+ 28%syn     deal
+ 29%slipmod deal
+ 30%model3d deal
+ 31%modelin deal
+ 32%model2d deal
+ 33%grad2d  deal
+ 34%model1d deal
+ 35%grad1   deal
+ 36%gradad1 deal
+ 37/8target deal
+ 39%tracint deal
+ 40%slipr   deal
+ 41%slip    deal
+ 42%gradad2 deal
+ 43%slipr2  deal
+ 44%modelp  deal
+ 45%diag    deal
+ 46%rup     deal
+ 47%q_up    deal
+ 48%filter  deal
+ 49%resfil  deal
+ 50%rake_p  deal
+ 51%pmodel1 deal
+ 52%pmodel2 deal
+ 53%values  deal

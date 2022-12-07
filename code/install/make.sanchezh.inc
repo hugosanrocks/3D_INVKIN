@@ -6,7 +6,7 @@
 LTOOLS_BOX = /home/sanchezh/Tools/3D_INVKIN/code/other_tools/TOOLS_BOX/trunk
 
 # FFT Dir and libraries
-fftw_DIR = /home/sanchezh/Tools/3D_INVKIN/code/other_tools
+fftw_DIR = /home/sanchezh/Tools/3D_INVKIN/code/other_tools/fftw-3.3.10
 LFFT = $(fftw_DIR)/fftw-3.3.10
 FFTW3 = $(LFFT) -lfftw3f
 
