@@ -42,6 +42,15 @@ Please follow the next steps in order to correctly compile the OPTIMIZATION and 
 
 ## OPTIMIZATION TOOLS_BOX:
 
+First, modify the file `Makefile.inc` in such a way that ifort and icc are the default compiler options. This file is located at `code/other_tools/TOOLS_BOX/trunk/Makefile.inc`
+
+Then, go to the correct path and compile everything and build the libraries:
+
 `$cd code/other_tools/TOOLS_BOX/trunk/OPTIMIZATION/`
+`$make`
+`$make lib`
+
+## FFTW3
+
 
 
