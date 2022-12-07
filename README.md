@@ -5,7 +5,38 @@ This repository contains the main code to perform a kinematic inversion model fo
 The following list presents the subdirectories of this repository
 
 * [code](https://github.com/hugosanrocks/3D_INVKIN/tree/main/code):
-
+  + adjoint
+  + bin
+  + covariance/
+  + delaunay/
+  + filtro/
+  + forward/
+  + general/
+  + hessian/
+  + include/
+  + install/
+  + inversion/
+  + obj/
+  + other_tools
+  + plotting_tools/
+  + preprocess/
+  + prior/
+  + sensitivity/
+  + uncertain/
+  + windows/
 * [run](https://github.com/hugosanrocks/3D_INVKIN/tree/main/run):
   + [siv1](https://github.com/hugosanrocks/3D_INVKIN/tree/main/run/siv1)
+
+## Installation
+
+### Requirements:
+
+This version of 3D_INVKIN requires to be compiled with ifort and the main code has to be linked to the intel MKL library. It is suggested to download and install the latest ifort version using the free OneAPI interl distribution of ifort and MKL. You can use the following links to install this tools once you have your free intel account.
+
+* ifort: 
+* MKL: 
+
+Once you have installed the ifort compiler and the MKL library, you will have to compile the OPTIMIZATION libray from [SEISCOPE](https://seiscope2.osug.fr/SEISCOPE-OPTIMIZATION-TOOLBOX) and the FFT library [FFTW3](https://www.fftw.org/download.html). A version of these two libraries is already provided inside the main repository 3D_INVKIN under the subdirectory [code>other_tools](https://github.com/hugosanrocks/3D_INVKIN/tree/main/code/other_tools).
+
+
 
