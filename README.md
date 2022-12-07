@@ -4,6 +4,8 @@ This repository contains the main code to perform a kinematic inversion model fo
 
 The following list presents the subdirectories of this repository
 
-code:
+* [code](https://github.com/hugosanrocks/3D_INVKIN/tree/main/code):
 
-run:
+* [run](https://github.com/hugosanrocks/3D_INVKIN/tree/main/run):
+  + [siv1](https://github.com/hugosanrocks/3D_INVKIN/tree/main/run/siv1)
+
