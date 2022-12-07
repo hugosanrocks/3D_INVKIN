@@ -7,17 +7,15 @@ LTOOLS_BOX = /home/sanchezh/Tools/3D_INVKIN/code/other_tools/TOOLS_BOX/trunk
 
 # FFT Dir and libraries
 fftw_DIR = /home/sanchezh/Tools/3D_INVKIN/code/other_tools/fftw-3.3.10
-LFFT = $(fftw_DIR)/fftw-3.3.10
+LFFT = $(fftw_DIR)
 FFTW3 = $(LFFT) -lfftw3f
 
 
-##OPTIMIZATION LIBRARIES INVERSION
-
+# OPTIMIZATION LIBRARIES INVERSION
 LPSTD = $(LTOOLS_BOX)/OPTIMIZATION/lib -lPSTD
 LPLBFGS = $(LTOOLS_BOX)/OPTIMIZATION/lib -lPLBFGS
 LLBFGS = $(LTOOLS_BOX)/OPTIMIZATION/lib -lLBFGS
 LPNLCG = $(LTOOLS_BOX)/OPTIMIZATION/lib -lPNLCG
-
 IOPTIM  = $(LTOOLS_BOX)/OPTIMIZATION/COMMON/include
 
 #
@@ -34,14 +32,12 @@ CC_OPTION= -O3
 #
 # compilers
 #
-#F77=gfortran
-#F90=gfortran
-#CC=gcc
 F77=ifort
 F90=ifort
 CC=icc
-
-
+#F77=gfortran
+#F90=gfortran
+#CC=gcc
 
 # libs fft and inversion
 LIBS = -L $(LPSTD) -L $(LPLBFGS) -L $(LLBFGS) -L $(LPNLCG)

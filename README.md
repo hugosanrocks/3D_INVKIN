@@ -77,5 +77,28 @@ More information about the installation can be found at the FFTW3 official websi
 
 ### Install 3D_INVKIN
 
+The most important thing to do in order to successfully compile 3D_INVKIN is to correctly set the paths for all the libraries. To do that, please modify or create your own `make.user.inc` file. Some examples are available at the location `code/install/`. Remember that the compiler options have to be set to "ifort".
+
+Once you have correctly set the paths, 3D_INVKIN has to be compiled:
+
+`$cd code/obj/`
+
+`$make all`
+
+Other partial options of compilation are available:
+
+`$make PREPROCESS`: builds bin/PREPROCESS code that is used to prepared the Green's function bank.
+
+`$make FORWARD`: builds bin/FORWARD code that only estimates synthetic seismograms given a source model and the Green's function bank.
+
+`$make INV3DKIN`: builds bin/INV3DKIN code that performs the kinematic inversion. Forward and inverse problem are performed given the observations, inversion options and Green function bank.
+
+`$make HESSIAN`: builds bin/HESSIAN code that can be used to build an approximation of the Hessian (not fully tested).
+
+`$make SENSITIVITY`: builds bin/SENSITIVITY which can be used for sensitivity analysis (under construction still)
+
+`$make objs`: builds objectcs and modules
+
+`$make clean`: cleans all the binary files
 
 
