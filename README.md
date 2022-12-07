@@ -53,7 +53,9 @@ First, modify the file `Makefile.inc` in such a way that ifort and icc are the d
 Then, go to the correct path and compile everything and build the libraries:
 
 `$cd code/other_tools/TOOLS_BOX/trunk/OPTIMIZATION/`
+
 `$make`
+
 `$make lib`
 
 #### FFTW3
@@ -62,16 +64,11 @@ Go to the correct path and configure all the files before the compilation.
 
 `$cd code/other_tools/fftw-3.3.10/`
 
-
 `$chmod +x configure`
-
 
 `$./configure --enable-single --enable-shared`
 
-
 `$sudo make`
-
-
 
 `$sudo make install`
 
