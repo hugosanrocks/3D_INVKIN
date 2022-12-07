@@ -42,6 +42,6 @@ Please follow the next steps in order to correctly compile the OPTIMIZATION and 
 
 ## OPTIMIZATION TOOLS_BOX:
 
-" $cd code/other_tools/TOOLS_BOX/trunk/OPTIMIZATION/
+`$cd code/other_tools/TOOLS_BOX/trunk/OPTIMIZATION/`
 
 
