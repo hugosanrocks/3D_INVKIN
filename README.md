@@ -60,13 +60,10 @@ Then, go to the correct path and compile everything and build the libraries:
 
 Go to the correct path and configure all the files before the compilation. 
 
-`$cd code/other_tools/fftw-3.3.10/`
-
-`$chmod +x configure`
-
-`$./configure --enable-single --enable-shared`
-
-`$sudo make`
+`$cd code/other_tools/fftw-3.3.10/`<\n>
+`$chmod +x configure`<\n>
+`$./configure --enable-single --enable-shared`<\n>
+`$sudo make`<\n>
 
 `$sudo make install`
 
