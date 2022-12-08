@@ -94,7 +94,7 @@ That's all, now you have an environment with GMT 6 installed. To use it, activat
 
 `conda activate gmtenv`
 
-##### CWP binary installation
+##### CWP Installation
 
 First, download the CWP version that you want:
 
