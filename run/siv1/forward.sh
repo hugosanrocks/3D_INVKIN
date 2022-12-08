@@ -4,7 +4,6 @@
 source paths.sh
 HOST=$(echo $HOSTNAME) 
 echo $HOST
-ist=ist-oar
 
 #======================================#
 #prepare files according to options    #
@@ -44,7 +43,7 @@ $BIN_DIR/FORWARD
 #hugo-PC
 #$PLOT_DIR/plot_single_traces.sh
 #ist-oar Cluster
-$PLOT_DIR/plot_single_traces_istoar.sh
+#$PLOT_DIR/plot_single_traces_istoar.sh
 
 
 #Plot syn vs obs all traces together
@@ -52,7 +51,7 @@ octave $PLOT_DIR/makeplot_siv.m
 #hugo-PC
 #$PLOT_DIR/plot_seismograms_siv.sh
 #ist-oar Cluster
-$PLOT_DIR/plot_seismograms_siv_istoar.sh
+#$PLOT_DIR/plot_seismograms_siv_istoar.sh
 
 
 #INPUTS:
@@ -70,23 +69,23 @@ optgrid=1      #1=regular, 2=iregular
 
 
 #Plot slip-rate snapshots
-#cd post/
-#octave out2sliprate.m <<!
-#$option
-#$node2see
-#!
+cd post/
+octave out2sliprate.m <<!
+$option
+$node2see
+!
 
-#file="opt_grid.dat"
-#cat <<EOM >$file
-#$optgrid
-#$finaltime
-#$dt
-#EOM
+file="opt_grid.dat"
+cat <<EOM >$file
+$optgrid
+$finaltime
+$dt
+EOM
 
 
-#matlab -nodisplay -nosplash < plot_snaps.m
-#./plot_snaps.sh $CWP_DIR
-#cd ../
+octave  plot_snaps.m
+./plot_snaps.sh $CWP_DIR
+cd ../
 
 #Plot comparison of final slip
 cd post/

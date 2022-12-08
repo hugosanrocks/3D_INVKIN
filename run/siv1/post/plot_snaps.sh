@@ -1,4 +1,4 @@
-cwp_dir=~/Desktop/cwp/bin
+cwp_dir=$CWPROOT/bin
 
 
 #cwp_dir=$1
@@ -25,9 +25,8 @@ epips=epi.ps
 #samples along dip and strike
 #ny=171  #dip
 #nx=351  #strike
-ny=155
-nx=340
-
+ny=171
+nx=351
 #maximum value for sliprate
 maxslip=1.2
 #maximum value for weights

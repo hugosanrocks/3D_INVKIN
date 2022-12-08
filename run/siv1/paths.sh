@@ -7,7 +7,7 @@
 MAIN_PATH=/home/sanchezh/Tools/3D_INVKIN/code
 export BIN_DIR=$MAIN_PATH/bin
 export PLOT_DIR=$MAIN_PATH/plotting_tools
-#export CWP_DIR=~/Desktop/cwp/bin
+export CWP_DIR=$CWPROOT/bin
 
 
 # ist-oar Cluster
