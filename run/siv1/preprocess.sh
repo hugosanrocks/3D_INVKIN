@@ -1,5 +1,5 @@
 
-BIN_DIR=~/svn/3D_INVKIN/3D_INVKIN/branches/predict_prior/bin
+source paths.sh
 
 #run preprocess
 $BIN_DIR/PREPROCESS

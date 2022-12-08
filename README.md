@@ -102,3 +102,18 @@ Other partial options of compilation are available:
 `$make clean`: cleans all the binary files
 
 
+## Example (SIV1)
+
+
+Due to the large size of the files corresponding to the Green functions, it is necessary to downlothese files from another site besides GitHub. The preprocessed Green function bank can be downloaded from the following link:
+
+SIV1 Preprocessed Green's function bank: [Download](https://www.dropbox.com/scl/fo/6kno3ar6ukxu1y6oc2b7i/h?dl=0&rlkey=cbdlfv5sbv0gxu2a6s9wkum9z)
+
+It is necessary to download the file `TRACT_time.bin` and place it inside the directory `run/siv1/dat`.
+
+Once the Green's function bank is placed in the correct directory, the scripts forward.sh and inversion.sh can be used to perform a forward modeling or a kinematic inversion.
+
+NEXT STEPS TO RUN PROGRESSIVE INVERSIONS WILL BE SOON UPLOADED.
+
+
+
