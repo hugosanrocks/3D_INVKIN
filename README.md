@@ -72,8 +72,69 @@ Go to the correct path and configure all the files before the compilation.
 
 `$sudo make install`
 
-
 More information about the installation can be found at the FFTW3 official website. It is needed to copile fftw3 with the option `--enable-single` to be compatigle with 3D_INVKIN.
+
+#### Plotting tools
+
+The post processing steps after performing a direct forward modeling or a kinematic source inversion are performed using [GMT](https://www.generic-mapping-tools.org/) (Generic Mapping Tools) and [CWP](https://wiki.seismic-unix.org/start) (Seismic Unix SU). Please be sure to have install GMT and CWP in order to run the plotting tools inside the `code/plotting_tools`. Here below you will find some steps that you can follow to install GMT 6.4 and CWP
+
+##### GMT 6.4 Installation
+
+The following are steps to install GMT 6.4 under a conda (Anaconda 3) environment.
+
+First, define the channels where to look for available software:
+
+`conda config --prepend channels conda-forge`
+
+Now, create a conda environment with all the required software:
+
+`conda create --name gmtenv python=3.9 numpy pandas xarray netcdf4 packaging gmt`
+
+That's all, now you have an environment with GMT 6 installed. To use it, activate the environment:
+
+`conda activate gmtenv`
+
+##### CWP binary installation
+
+First, download the CWP version that you want:
+
+[CWP Download site](https://nextcloud.seismic-unix.org/index.php/s/LZpzc8jMzbWG9BZ)
+
+Once downloaded, you can follow the instructions given [here](https://wiki.seismic-unix.org/sudoc:su_installation) to correctly install CWP on your precise system. The next are generic steps that can help you to rapidly install CWP if you are on Ubuntu 20.04.
+
+Create the directory for installation and give user permissions:
+
+`$sudo mkdir /usr/local/cwp`
+
+`$sudo chown USERNAME /usr/local/cwp`
+
+Include the next lines inside your `.bashrc` file:
+
+`# CWP`
+
+`export CWPROOT=/usr/local/cwp`
+
+`# set the PATH variable`
+
+`export PATH=$PATH:$CWPROOT/bin`
+
+Source the new `.bashrc` file
+
+`source ~/.bashrc`
+
+Go to the installation folder and untar the downloaded files
+
+`$cd /usr/local/cwp`
+
+`$tar -xvf Downloads/cwp_su_all_44R26.tgz`
+
+Configure the installation files and compile everything
+
+`$cp configs/Makefile.config_Linux_Ubuntu_20.04 /usr/local/cwp/src/Makefile.config`
+
+`$make install`
+
+
 
 ### Install 3D_INVKIN
 
