@@ -43,7 +43,7 @@ $BIN_DIR/FORWARD
 #hugo-PC
 #$PLOT_DIR/plot_single_traces.sh
 #ist-oar Cluster
-#$PLOT_DIR/plot_single_traces_istoar.sh
+$PLOT_DIR/plot_single_traces_istoar.sh
 
 
 #Plot syn vs obs all traces together
@@ -51,7 +51,7 @@ octave $PLOT_DIR/makeplot_siv.m
 #hugo-PC
 #$PLOT_DIR/plot_seismograms_siv.sh
 #ist-oar Cluster
-#$PLOT_DIR/plot_seismograms_siv_istoar.sh
+$PLOT_DIR/plot_seismograms_siv_istoar.sh
 
 
 #INPUTS:
@@ -89,7 +89,6 @@ cd ../
 
 #Plot comparison of final slip
 cd post/
-#matlab -nodisplay -nosplash < sliprate_integration.m
-#./compare_slip.sh $CWP_DIR
-
+octave < sliprate_integration.m
+./compare_slip_forward.sh $CWP_DIR
 

@@ -123,35 +123,37 @@ labelsiz=40
        width=$wid height=$hei  \
        lbeg=$min lend=$max ldnum=$dcol units="Cumulative slip (m)" \
        wclip=$min bclip=$max legend=1 lstyle=horibottom \
-       lheight=0.4 lwidth=12 lx=1.7 ly=--0.6 \
+       lheight=0.4 lwidth=12 lx=9.0 ly=--0.6 \
        label1="" label2="" \
        labelsize=45 >$fileout
    $cwp_dir/psmerge \
    in=$fileout translate=0,0 \
-   in=$epips translate=0.0,0.0 >$fileout1
+   in=$epips translate=0.0,0.0 \
+   in=$label1 translate=1.5,0.65 >$fileout1
 
 #2 subplot
-#  filein=$(printf "file_%01i.bin" 2)
-#  fileout=$(printf "surface%01i.ps" 2)
-#  fileout2=$(printf "surface_%01i.ps" 2)
-#  $cwp_dir/psimage <$filein \
-#       n1=$ny n2=$nx \
-#       d1=$dy d2=$dx d1num=$dytic \
-#       d2num=10 \
-#       whls=0.7,0.5,1 bhls=0,0.3,1.1 \
-#       width=$wid height=$hei  \
-#       lbeg=$minw lend=$maxw ldnum=$dcolw units="Total weight" \
-#       wclip=$minw bclip=$maxw lstyle=vertright \
-#       lheight=4.5 lwidth=0.4 lx=10.8 ly=1.5 \
-#       labelsize=45 >$fileout
-#   $cwp_dir/psmerge \
-#   in=$fileout translate=0,0 \
-#   in=epi2.ps translate=0.0,0.0 \
-#   in=$label2 translate=1.5,0.65 >$fileout2
+  filein=$(printf "file_%01i.bin" 2)
+  fileout=$(printf "surface%01i.ps" 2)
+  fileout2=$(printf "surface_%01i.ps" 2)
+  $cwp_dir/psimage <$filein \
+       n1=$ny n2=$nx \
+       d1=$dy d2=$dx d1num=$dytic \
+       d2num=10 \
+       whls=0.7,0.5,1 bhls=0,0.3,1.1 \
+       width=$wid height=$hei  \
+       lbeg=$minw lend=$maxw ldnum=$dcolw units="Total weight" \
+       wclip=$minw bclip=$maxw lstyle=vertright \
+       lheight=4.5 lwidth=0.4 lx=10.8 ly=1.5 \
+       labelsize=45 >$fileout
+   $cwp_dir/psmerge \
+   in=$fileout translate=0,0 \
+   in=epi2.ps translate=0.0,0.0 \
+   in=$label2 translate=1.5,0.65 >$fileout2
 
 
 #for slides
-   $cwp_dir/psmerge in=$fileout1 translate=0,0  >$outfile
+   $cwp_dir/psmerge in=$fileout1 translate=0,0 \
+	            in=$fileout2 translate=15,0 > $outfile
 
 #clean all ps files
 #rm *.ps line*bin

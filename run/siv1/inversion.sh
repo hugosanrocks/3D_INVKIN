@@ -1,9 +1,7 @@
 #rm fort.*
 
 #modify paths
-BIN_DIR=~/svn/3D_INVKIN/3D_INVKIN/branches/predict_prior/bin
-PLOT_DIR=~/svn/3D_INVKIN/3D_INVKIN/branches/predict_prior/plotting_tools
-CWP_DIR=~/Desktop/cwp/bin
+source paths.sh
 
 #remove output files and graphics
 #rm out/*
@@ -12,7 +10,7 @@ CWP_DIR=~/Desktop/cwp/bin
 #INPUTS:
 #inversion options
 sis_pis=1      #1=SIS         , 2=PIS
-option=2       #1=1D inversion, 2=2D inversion
+option=1       #1=1D inversion, 2=2D inversion
 
 #Variables to post process results and plot
 node2see=422   #node to plot time history
@@ -46,14 +44,14 @@ else
 fi
 
 #Run inversion
-$BIN_DIR/INV3DKIN
+#$BIN_DIR/INV3DKIN
 
 #Plot syn vs obs single traces
-$PLOT_DIR/plot_single_traces.sh
+#$PLOT_DIR/plot_single_traces_istoar.sh
 
 #Plot syn vs obs all traces together
-octave $PLOT_DIR/makeplot_siv.m
-$PLOT_DIR/plot_seismograms_siv.sh
+#octave $PLOT_DIR/makeplot_siv.m
+#$PLOT_DIR/plot_seismograms_siv_istoar.sh
 
 #Plot slip-rate snapshots
 cd post/
@@ -70,13 +68,13 @@ $dt
 EOM
 
 
-matlab -nodisplay -nosplash < plot_snaps.m
+octave < plot_snaps.m
 ./plot_snaps.sh $CWP_DIR
 cd ../
 
 #Plot comparison of final slip
 cd post/
-matlab -nodisplay -nosplash < sliprate_integration.m
+octave < sliprate_integration.m
 ./compare_slip.sh $CWP_DIR
 
 
