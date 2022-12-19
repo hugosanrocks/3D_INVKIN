@@ -28,7 +28,6 @@
  15%laplaci allo
  25%tractio allo
  26%res     allo
- 66%twin    allo
  27%tottrac allo
  28%syn     allo
  29%slipmod allo
@@ -55,23 +54,7 @@
  51%pmodel1 allo
  52%pmodel2 allo
  53%values  allo
- 1 %fault   deal
- 2 %distcoo deal
- 3 %obst    deal
- 4 %cd      deal
- 5 %ce      deal
- 6 %ct      deal
- 7 %rtimes  deal
- 8 %rsamp   deal
- 9 %tseries deal
- 10%samwin  deal
- 11%synsam  deal
- 12%idsub   deal
- 13%win     deal
- 14%la      deal
- 15%laplaci deal
- 25%tractio deal
- 26%res     deal
+ 66%twin    allo
  27%tottrac deal
  28%syn     deal
  29%slipmod deal
@@ -98,16 +81,3 @@
  51%pmodel1 deal
  52%pmodel2 deal
  53%values  deal
- 54%rake_i  deal
- 55%vnorm   deal
- 56%vstk    deal
- 57%vdip    deal
- 58%vslip   deal
- 59%vslip2  deal
- 60%slipm   deal
- 61%vnorm_i deal
- 62%rake_li deal
- 63%stk_i   deal
- 64%dip_i   deal
- 65%samp4wi deal
- 66%twin    deal
