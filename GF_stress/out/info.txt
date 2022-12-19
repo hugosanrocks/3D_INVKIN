@@ -1,0 +1,10 @@
+Number of frequencies:
+1025
+Number of rows:
+6000
+Number of columns:
+2050
+Number of Fault points(receibers):
+400
+Number of Stations (sources):
+15
