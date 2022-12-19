@@ -1,0 +1,124 @@
+IBEM
+
+DONE
+
+2013-02-    : cambio del nombre de varias variables para pegar a sus nombres verdaderos
+2013-02-    : correcion de los calculos de los contornos, derivadas, longitud ...
+2013-02-    : se calcula una vez un contorno, con malla fina por una frecuencia 10 veces la mas alta,
+.             con la tecnica de dr constante y
+.             por cada frecuencia se busca en esta malla los puntos en las posiciones "r" requeridos (mucho mas rapido)
+2013-02-    : determinacion de la region a la cual pertenece un punto
+2013-02-    : reorganisacion de las etapas de calculo:
+.             1) data input con interfase matlab
+.             2) calculo contornos 
+.             3) matriz A
+.             4) vector fuente B
+.             5) resolucion, (varios metodos probados)
+.             6) calculo solucion espectral con integracion del campo diffractado y adicion con campo incidente
+.             7) inversion en w
+.             8) dibujo
+2013-02-    : la contribucion de un elemento sobre un punto de colocacion se calcula directamente cuando la distancia
+.             entre los dos es grande sino se occupa una integracion gaussiana
+.             el orden de integracion es libre 
+2013-02-    : la contribucion de un elemento sobre su punto de colocacion se calcula con una integracion fina,
+.             la expression analitica presenta fallas con respecto a la parte imaginaria cuando hay atenuacion
+2013-03-    : IBEM SH ok con incidencia de ondas planas et fuentes puntuales (check con conf de MB)
+2013-03-    : receptores en 2D
+2013-03-    : calculo de imagen, y construcion de animacion
+2013-03-    : IBEM SH ok con incidencia de ondas planas inhomogeneas
+.             a mejorar, se necessita una concentracion de phi alta sobre un eje vertical, 
+.             mientras se puede occupar un numero de punto por longitud de onda muy alto
+2013-05-    : IBEM P-SV ok con incidencia de ondas planas et fuentes puntuales (check con conf de JCM)
+2013-05-    : los signos entre las ecuaciones son aclarados,
+.             el signo de la matriz A es positivo cuando el medio es el background y negativo sino
+.             el signo del vector fuente B es de signo opuesto (negativo cuando el medio es el background y positivo sino)
+.             tambien se aclara el signo por las tracciones en el punto de colocacion (signo1):
+.             todas las normales son calculados solamente por los puntos de colocacion, y no a cada uno de los puntos
+.             todas apuntan hacia z>0               
+2013-05-    : IBEM multi region ok pero cada region puede estar en contacto solamente con el background 
+.             se occupa una variable intermediara para precisar las caracteristicas de los puntos de colocacion 
+.             (medios en contactos, posicion de un medio sobre otro, posicion(x,z,r), normales, ...
+2013-05-    : mejora de la interface de dibujo de los resultados, 
+.             (todos juntos, cada receptor por separados, con o sin su espectro)
+2013-06-    : attenuacion con model Q o Kelvin-Voigt
+2013-06-    : contornos finos calculados con y=f(x), con x muy fino, se abandona el avance con dr constante, (mas rapido)
+2013-07-02  : recalculo de los contornos cuando hay multiples regiones en contacto
+.             la ultima region se lleva la frontera, la otra se adapta a la ultima si sobrepuesta
+2013-07-25  : multi regiones en contactos ok para SH
+2013-07-26  : semi espacio con rugosidad
+2013-07-26  : update calculo de las posiciones de los receptores en la superficie
+2013-07-27  : full space ok
+2013-07-28  : se reorganisa los contornos para unificarlos cuando corresponden a unas fronteras contiguas entre 2 mismos medios 
+2013-07-28  : 2 medios iguales en contacto, se quita la frontera, y se juntan los puntos de colocacion al medio de indice mas bajo
+.             la pertenencia de los receptores, fuentes se actualiza 
+.             y el indice de medio recordado es el mas pequeno de los indices de medios iguales
+2013-08-01  : se calcula mejor las intercesiones de los contornos, evitando de tomar en cuenta puntos de puro contacto
+.             se olvida la rugosidad intermedia cuando hay intercesiones
+2013-08-08  : cuando un contorno es partido es varios medios por otros contornos, se definen nuevos medio de propriedades similares
+.             pero con contornos diferentes al fin de integrar las fuentes virtuales sobre un solo contorno cerrado
+2013-08-13  : multi regiones en contactos ok para SH/PSV
+2013-08-16  : descomposicion de las funciones de hankel para separar las ondas P/S/ y evanescentes
+2013-08-19  : pequenos cambios para permitir el calculo paralelo, muy eficiente :)
+2013-09-04  : cuando una fuente puntual real es muy cercana a un contorno, no se habia tomado en cuenta los efectos de integracion sobre los elementos
+.             y eso inducia divergencias numericas, por lo cual agregue Gij_PSV_r_small_FP/Tij_PSV_r_small_FP y G22_SH_r_small_FP/T22_SH_r_small_FP 
+.             Es importante cuando uno pone una fuente en la superficie como cuando uno busca a calcular correctamente 
+.             la parte imaginaria de la funcion de Green en el trabajo que presento JCM en Cancun.
+.             El argumento es que la discretizacion no tendria que afectar el resultado de manera drastica: 
+.             si la fuente real cae sobre el punto de colocacion entonces la respuesta es muy distinta 
+.             a la que se obtiene con una discretizacion con una fuente lejos del punto de colocacion
+2013-09-04  : cuando una fuente puntual real es muy cercana a un contorno, no se habia tomado en cuenta los efectos de integracion sobre los elementos
+.             y eso inducia divergencias numericas, por lo cual agregue Gij_PSV_r_small_FP/Tij_PSV_r_small_FP y G22_SH_r_small_FP/T22_SH_r_small_FP 
+.             Es importante cuando uno pone una fuente en la superficie como cuando uno busca a calcular correctamente 
+.             la parte imaginaria de la funcion de Green en el trabajo que presento JCM en Cancun.
+2013-10->12 : toma en cuenta estratos infinitos
+2014-01-27  : prueba de velocidad con interpolacion de las funciones de Bessel/Hankel, no hay ningun interes en interpolar,
+.             la evaluacion de las funciones de B/H es muy rapido.
+2014-02     : integracion analitica cuando xsi==x (contribucion de una fuente virtual sobre su mismo elemento) en caso P-SV
+2014-03->05 : integracion del calculo de la funcion de Green con DWN en el IBEM
+.             incidencia de OP o con fuentes puntuales, caso PSV y SH validado con IBEM-multi
+2014-03->05 : integracion del calculo de la funcion de Green con DWN sin IBEM para multi-estratos
+2014-05-19  : se agrego elementos semi-placa, de un lado es una placa infinita, del otro es un contorno cerado similar al los contornos usuales
+2014-05-19  : correcion del 2013-08-16, la decomposition en onde P/SV/SH homogenes et inhomogenes est corrigee, prend en compte l integration champ proche 
+.             et la projection des ondes de surface ds le repere de chaque element
+.             les fonctions de green sont exprimees ds le ref normal de l IBEM grace aux g 
+.             alors que la decomposition des fonction de Hankel est ds le repere associe aux elements,
+.             ce qui permet prendre en compte la longueur de la source facilement par convolution en kx
+2014-07->09 : calculo de las curvas de dispersion con metodo de la matriz global y de Haskell
+2014-07->09 : calculo rapido de la parte imaginaria de la funcion de Green con equipartition incluiendo modo de dispersion
+2014-09-11  : se abandona el calculo de la fuente puntual con varias ondas planas cf. anterior, se abandona kxk kz en la interfase, las ondas inhomogeneas se tratan con el tipo de onda Rayleigh, y se agrega Love
+2014-09-11  : arranque IBEM 3D y consolidacion de la interface grafica del programa, correcion de multiple recurencias de cmd en rafraichi
+.             cambios en dibujo para tomar en cuenta 3D y consolidacion
+2014-10-01  : correcion de la descomposicion del campo incidente en UPh USh UIh y UPt USt cuando la fuente es puntual
+2014-10     : IBEM 3D, cada geometria es axi simetrica
+2014-11     : DWN 3D axi simetrico
+2014-11     : IBEM-DWN 3D
+2015-01     : Se cambia la definicion de un solido vacio, solo se considera rho == 0.
+.             Eso permite tomar en cuenta medios fluidos (beta==0)
+2015-09     : Interfaz para pantallas pequeñas. Receptores en las fronteras 2D. Animación P-SV actualizada (malla y contornos deformables).
+2015-10     : Esfuerzos P-SV.
+2015-12     : IBEM 3D con geometría arbitraria cargada desde archivos STL o lista de archivos STL.
+              Incidencia de ondas planas. Animacion en 3D. comando batch para correr varios modelos en el cluster
+2016-01     : Archivos de geometría desde curvas de nivel.
+
+
+TO DO
+Create a matlab toolbox
+Deshechar las variables auxiliares
+
+2013-08-    : elementos de placa, a mejorar la integracion con los otros elementos notablemente interseciones, y acabar angulo de placa (normales ...)
+element avec des bord verticaux, necessite developer les vecteur normaux c=1 ou 2 en fct de droite gauche
+faire sortie contrainte /deformation
+regler pb avec multi source (ninc) dans vector_fuente et para.xzs(iinc)
+rajouter les champs UPh USh UIh et UPt USt pour le DWN comme ds le cas SH (PSV et 3D)
+Autre
+
+calculer E_P E_S au niveau d'un recepteur
+corriger les commentaires ds campo_ref_PSV_OPHYI(_SE) cf 3D
+inversion de la matrice ADWN ds le cas 2D 
+
+
+fluide PSV faire source OP; y esfuerzos
+pour la FP prendre en compte quand la source reelle est proche d un element
+verifier les sorties P sigma pour toutes les simu
+
+pb ds trapeze qd base plus grande que largeur, imposer un check

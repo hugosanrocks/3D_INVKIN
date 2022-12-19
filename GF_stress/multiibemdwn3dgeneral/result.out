@@ -1,0 +1,599 @@
+
+                            < M A T L A B (R) >
+                  Copyright 1984-2016 The MathWorks, Inc.
+                   R2016a (9.0.0.341360) 64-bit (glnxa64)
+                             February 11, 2016
+
+ 
+To get started, type one of these: helpwin, helpdesk, or demo.
+For product information, visit www.mathworks.com.
+ 
+
+	Academic License
+
+>> >> >> >> at: /data/cycle/sanchezh/multiibemdwn3dgeneral
+1) Inicializar variables ... done
+2) Usar modelo de velocidades del archivo ...done
+3) Usar receptores indicados en archivo ...done
+4) Usar fuentes indicadas en archivo ...done
+refrescando imagen
+Starting parallel pool (parpool) using the 'local' profile ... connected to 4 workers.
+Preparacion integracion de Gauss
+Medio de en el que est� cada fuente:
+     1     1     1
+
+Identificacion de las propiedades de los receptores
+omega_i = 0.024547
+tmax de interes = 127.9844
+Calculo de los espectros en paralelo ...
+Resultados uw sw para (en frecuencia) guardados en archivo
+/data/cycle/sanchezh/out/gen3D_FP_xs60_zs0_npplo6_DWN_20220505T181519.mat
+Inversion de los espectros
+nf = 2048
+df = 0.0078049
+dt = 0.01564
+tmx= 128.1094
+Guardando los resultados ...
+calcul time: 22 m, 29.292 s
+5) Escribiendo archivos binarios
+File ../out/sxx-x.bin variable size:
+         648        2050
+
+File ../out/syy-x.bin variable size:
+         648        2050
+
+File ../out/szz-x.bin variable size:
+         648        2050
+
+File ../out/sxy-x.bin variable size:
+         648        2050
+
+File ../out/sxz-x.bin variable size:
+         648        2050
+
+File ../out/syz-x.bin variable size:
+         648        2050
+
+done saving tensors for direction 1
+File ../out/sxx-y.bin variable size:
+         648        2050
+
+File ../out/syy-y.bin variable size:
+         648        2050
+
+File ../out/szz-y.bin variable size:
+         648        2050
+
+File ../out/sxy-y.bin variable size:
+         648        2050
+
+File ../out/sxz-y.bin variable size:
+         648        2050
+
+File ../out/syz-y.bin variable size:
+         648        2050
+
+done saving tensors for direction 2
+File ../out/sxx-z.bin variable size:
+         648        2050
+
+File ../out/syy-z.bin variable size:
+         648        2050
+
+File ../out/szz-z.bin variable size:
+         648        2050
+
+File ../out/sxy-z.bin variable size:
+         648        2050
+
+File ../out/sxz-z.bin variable size:
+         648        2050
+
+File ../out/syz-z.bin variable size:
+         648        2050
+
+done saving tensors for direction 3
+done
+
+res = 
+
+       uw: [4-D double]
+       sw: [4-D double]
+      utc: [4-D double]
+      stc: [4-D double]
+     name: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs0_npplo6_DWN_20220505...'
+    cont1: []
+
+
+para = 
+
+                       meth_PS: 0
+                       zeropad: 8192
+                     siDesktop: 1
+                        nomrep: '/data/cycle/sanchezh/out'
+                           bar: [1x1 UIControl]
+                           dim: 4
+                          nmed: 1
+                       nsubmed: 5
+                        chggeo: 0
+                       DWNkmax: 22.8370
+                     DWNnbptkx: 2000
+                           pol: 1
+                        fuente: 2
+                          ninc: 3
+                        strinc: [21x2 char]
+                            xs: [3x1 double]
+                            ys: [3x1 double]
+                            zs: [3x1 double]
+                           gam: [1x21 double]
+                           phi: [1x21 double]
+                     tipo_onda: 1
+                          spct: 0
+                         pulso: [1x1 struct]
+                           rec: [1x1 struct]
+                        recpos: 3
+                        chgrec: 0
+                      chgnrecx: 0
+                        sortie: [1x1 struct]
+                         npplo: 6
+                          fmax: 8
+                            nf: 2048
+                       DWNomei: 0.0245
+                   compression: 20
+                     densitept: 5
+                         b_dib: [1x2 struct]
+                          film: [1x1 struct]
+                    nomcarpeta: '/data/cycle/sanchezh/multiibemdwn3dgeneral'
+                     rafraichi: 0
+                          cont: [1x2 struct]
+                           reg: [1x1 struct]
+                           geo: 3
+                          name: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs...'
+                       nametmp: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs...'
+                       espyinv: 1
+    GraficarCadaDiscretizacion: 1
+                      cubature: [7x3 double]
+                      gaussian: [1x1 struct]
+                    cubatureex: [7x3 double]
+                       gaussex: [1x1 struct]
+                          phir: [1x21 double]
+                           fij: [21x3 double]
+                       nkmaxKW: 10000
+                        redraw: 1
+                          tmax: 127.9844
+                   tmaxinteres: 127.9844
+                         DWNxl: 1000
+                   usingparfor: 1
+                          gamr: [1x21 double]
+                            df: 0.0078
+                           xzs: [3x1 double]
+
+>> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> 
+                            < M A T L A B (R) >
+                  Copyright 1984-2016 The MathWorks, Inc.
+                   R2016a (9.0.0.341360) 64-bit (glnxa64)
+                             February 11, 2016
+
+ 
+To get started, type one of these: helpwin, helpdesk, or demo.
+For product information, visit www.mathworks.com.
+ 
+
+	Academic License
+
+>> >> >> >> at: /data/cycle/sanchezh/multiibemdwn3dgeneral
+1) Inicializar variables ... done
+2) Usar modelo de velocidades del archivo ...done
+3) Usar receptores indicados en archivo ...done
+4) Usar fuentes indicadas en archivo ...done
+refrescando imagen
+Starting parallel pool (parpool) using the 'local' profile ... connected to 4 workers.
+Preparacion integracion de Gauss
+Medio de en el que est� cada fuente:
+  Columns 1 through 13
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 14 through 26
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 27 through 39
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 40 through 52
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 53 through 65
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 66 through 78
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 79 through 91
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 92 through 104
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 105 through 117
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 118 through 120
+
+     1     1     1
+
+Identificacion de las propiedades de los receptores
+omega_i = 0.024547
+tmax de interes = 127.9844
+Calculo de los espectros en paralelo ...
+[Warning: Variable 'uw' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 519)
+  In batch_runFromFiles (line 104)] 
+[Warning: Variable 'sw' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 519)
+  In batch_runFromFiles (line 104)] 
+Resultados uw sw para (en frecuencia) guardados en archivo
+/data/cycle/sanchezh/out/gen3D_FP_xs60_zs0_npplo6_DWN_20220603T155426.mat
+Inversion de los espectros
+nf = 2048
+df = 0.0078049
+dt = 0.01564
+tmx= 128.1094
+Guardando los resultados ...
+[Warning: Variable 'utc' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 556)
+  In batch_runFromFiles (line 104)] 
+[Warning: Variable 'stc' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 556)
+  In batch_runFromFiles (line 104)] 
+calcul time: 17 h, 29 m, 41.9722 s
+5) Escribiendo archivos binarios
+File ../out/sxx-x.bin variable size:
+       25920        2050
+
+File ../out/syy-x.bin variable size:
+       25920        2050
+
+File ../out/szz-x.bin variable size:
+       25920        2050
+
+File ../out/sxy-x.bin variable size:
+       25920        2050
+
+File ../out/sxz-x.bin variable size:
+       25920        2050
+
+File ../out/syz-x.bin variable size:
+       25920        2050
+
+done saving tensors for direction 1
+File ../out/sxx-y.bin variable size:
+       25920        2050
+
+File ../out/syy-y.bin variable size:
+       25920        2050
+
+File ../out/szz-y.bin variable size:
+       25920        2050
+
+File ../out/sxy-y.bin variable size:
+       25920        2050
+
+File ../out/sxz-y.bin variable size:
+       25920        2050
+
+File ../out/syz-y.bin variable size:
+       25920        2050
+
+done saving tensors for direction 2
+File ../out/sxx-z.bin variable size:
+       25920        2050
+
+File ../out/syy-z.bin variable size:
+       25920        2050
+
+File ../out/szz-z.bin variable size:
+       25920        2050
+
+File ../out/sxy-z.bin variable size:
+       25920        2050
+
+File ../out/sxz-z.bin variable size:
+       25920        2050
+
+File ../out/syz-z.bin variable size:
+       25920        2050
+
+done saving tensors for direction 3
+done
+
+res = 
+
+       uw: [4-D double]
+       sw: [4-D double]
+      utc: [4-D double]
+      stc: [4-D double]
+     name: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs0_npplo6_DWN_20220603...'
+    cont1: []
+
+
+para = 
+
+                       meth_PS: 0
+                       zeropad: 8192
+                     siDesktop: 1
+                        nomrep: '/data/cycle/sanchezh/out'
+                           bar: [1x1 UIControl]
+                           dim: 4
+                          nmed: 1
+                       nsubmed: 5
+                        chggeo: 0
+                       DWNkmax: 22.8370
+                     DWNnbptkx: 2000
+                           pol: 1
+                        fuente: 2
+                          ninc: 120
+                        strinc: [21x2 char]
+                            xs: [120x1 double]
+                            ys: [120x1 double]
+                            zs: [120x1 double]
+                           gam: [1x120 double]
+                           phi: [1x120 double]
+                     tipo_onda: 1
+                          spct: 0
+                         pulso: [1x1 struct]
+                           rec: [1x1 struct]
+                        recpos: 3
+                        chgrec: 0
+                      chgnrecx: 0
+                        sortie: [1x1 struct]
+                         npplo: 6
+                          fmax: 8
+                            nf: 2048
+                       DWNomei: 0.0245
+                   compression: 20
+                     densitept: 5
+                         b_dib: [1x2 struct]
+                          film: [1x1 struct]
+                    nomcarpeta: '/data/cycle/sanchezh/multiibemdwn3dgeneral'
+                     rafraichi: 0
+                          cont: [1x2 struct]
+                           reg: [1x1 struct]
+                           geo: 3
+                          name: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs...'
+                       nametmp: '/data/cycle/sanchezh/out/gen3D_FP_xs60_zs...'
+                       espyinv: 1
+    GraficarCadaDiscretizacion: 1
+                      cubature: [7x3 double]
+                      gaussian: [1x1 struct]
+                    cubatureex: [7x3 double]
+                       gaussex: [1x1 struct]
+                          phir: [1x120 double]
+                           fij: [120x3 double]
+                       nkmaxKW: 10000
+                        redraw: 1
+                          tmax: 127.9844
+                   tmaxinteres: 127.9844
+                         DWNxl: 1000
+                   usingparfor: 1
+                          gamr: [1x120 double]
+                            df: 0.0078
+                           xzs: [120x1 double]
+
+>> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> 
+                            < M A T L A B (R) >
+                  Copyright 1984-2016 The MathWorks, Inc.
+                   R2016a (9.0.0.341360) 64-bit (glnxa64)
+                             February 11, 2016
+
+ 
+To get started, type one of these: helpwin, helpdesk, or demo.
+For product information, visit www.mathworks.com.
+ 
+
+	Academic License
+
+>> >> >> >> at: /data/cycle/sanchezh/multiibemdwn3dgeneral
+1) Inicializar variables ... done
+2) Usar modelo de velocidades del archivo ...done
+3) Usar receptores indicados en archivo ...done
+4) Usar fuentes indicadas en archivo ...done
+refrescando imagen
+Starting parallel pool (parpool) using the 'local' profile ... connected to 4 workers.
+Preparacion integracion de Gauss
+Medio de en el que est� cada fuente:
+  Columns 1 through 13
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 14 through 26
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 27 through 39
+
+     1     1     1     1     1     1     1     1     1     1     1     1     1
+
+  Columns 40 through 45
+
+     1     1     1     1     1     1
+
+Identificacion de las propiedades de los receptores
+omega_i = 0.024547
+tmax de interes = 127.9844
+Calculo de los espectros en paralelo ...
+Resultados uw sw para (en frecuencia) guardados en archivo
+/data/cycle/sanchezh/out/gen3D_FP_xs475.3458_zs0_npplo6_DWN_20220627T140759.mat
+Inversion de los espectros
+nf = 2048
+df = 0.0078049
+dt = 0.01564
+tmx= 128.1094
+Guardando los resultados ...
+[Warning: Variable 'utc' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 556)
+  In batch_runFromFiles (line 104)] 
+[Warning: Variable 'stc' cannot be saved to a MAT-file whose version is older
+than 7.3.
+To save this variable, use the -v7.3 switch.
+Skipping...] 
+[> In calculo (line 556)
+  In batch_runFromFiles (line 104)] 
+calcul time: 4 h, 17 m, 16.7351 s
+5) Escribiendo archivos binarios
+File ../out/sxx-x.bin variable size:
+        6000        2050
+
+File ../out/syy-x.bin variable size:
+        6000        2050
+
+File ../out/szz-x.bin variable size:
+        6000        2050
+
+File ../out/sxy-x.bin variable size:
+        6000        2050
+
+File ../out/sxz-x.bin variable size:
+        6000        2050
+
+File ../out/syz-x.bin variable size:
+        6000        2050
+
+done saving tensors for direction 1
+File ../out/sxx-y.bin variable size:
+        6000        2050
+
+File ../out/syy-y.bin variable size:
+        6000        2050
+
+File ../out/szz-y.bin variable size:
+        6000        2050
+
+File ../out/sxy-y.bin variable size:
+        6000        2050
+
+File ../out/sxz-y.bin variable size:
+        6000        2050
+
+File ../out/syz-y.bin variable size:
+        6000        2050
+
+done saving tensors for direction 2
+File ../out/sxx-z.bin variable size:
+        6000        2050
+
+File ../out/syy-z.bin variable size:
+        6000        2050
+
+File ../out/szz-z.bin variable size:
+        6000        2050
+
+File ../out/sxy-z.bin variable size:
+        6000        2050
+
+File ../out/sxz-z.bin variable size:
+        6000        2050
+
+File ../out/syz-z.bin variable size:
+        6000        2050
+
+done saving tensors for direction 3
+done
+
+res = 
+
+       uw: [4-D double]
+       sw: [4-D double]
+      utc: [4-D double]
+      stc: [4-D double]
+     name: '/data/cycle/sanchezh/out/gen3D_FP_xs475.3458_zs0_npplo6_DWN_20...'
+    cont1: []
+
+
+para = 
+
+                       meth_PS: 0
+                       zeropad: 8192
+                     siDesktop: 1
+                        nomrep: '/data/cycle/sanchezh/out'
+                           bar: [1x1 UIControl]
+                           dim: 4
+                          nmed: 1
+                       nsubmed: 2
+                        chggeo: 0
+                       DWNkmax: 22.8370
+                     DWNnbptkx: 2000
+                           pol: 1
+                        fuente: 2
+                          ninc: 45
+                        strinc: [21x2 char]
+                            xs: [45x1 double]
+                            ys: [45x1 double]
+                            zs: [45x1 double]
+                           gam: [1x45 double]
+                           phi: [1x45 double]
+                     tipo_onda: 1
+                          spct: 0
+                         pulso: [1x1 struct]
+                           rec: [1x1 struct]
+                        recpos: 3
+                        chgrec: 0
+                      chgnrecx: 0
+                        sortie: [1x1 struct]
+                         npplo: 6
+                          fmax: 8
+                            nf: 2048
+                       DWNomei: 0.0245
+                   compression: 20
+                     densitept: 5
+                         b_dib: [1x2 struct]
+                          film: [1x1 struct]
+                    nomcarpeta: '/data/cycle/sanchezh/multiibemdwn3dgeneral'
+                     rafraichi: 0
+                          cont: [1x2 struct]
+                           reg: [1x1 struct]
+                           geo: 3
+                          name: '/data/cycle/sanchezh/out/gen3D_FP_xs475.3...'
+                       nametmp: '/data/cycle/sanchezh/out/gen3D_FP_xs475.3...'
+                       espyinv: 1
+    GraficarCadaDiscretizacion: 1
+                      cubature: [7x3 double]
+                      gaussian: [1x1 struct]
+                    cubatureex: [7x3 double]
+                       gaussex: [1x1 struct]
+                          phir: [1x45 double]
+                           fij: [45x3 double]
+                       nkmaxKW: 10000
+                        redraw: 1
+                          tmax: 127.9844
+                   tmaxinteres: 127.9844
+                         DWNxl: 1000
+                   usingparfor: 1
+                          gamr: [1x45 double]
+                            df: 0.0078
+                           xzs: [45x1 double]
+
+>> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> >> 
