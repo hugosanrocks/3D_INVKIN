@@ -7,6 +7,7 @@ This repository contains the main code to perform a kinematic inversion model fo
 
 The following list presents the subdirectories of this repository
 
+* [GF_stress](https://github.com/hugosanrocks/3D_INVKIN/tree/main/GF_stress): Matlab code used to compute (previous to any forward or inverse modeling) the pseudo Green's functions. This code computes the six independent components of the stress tensor at every receiver location given three different uni-axial forces (fx, fy, fz). The input files must be inside `GF_stress/ins` folder, while the output files are written inside `GF_stress/out` folder. The main code is inside `GF_stress/multiibemdwn3dgeneral`
 * [code](https://github.com/hugosanrocks/3D_INVKIN/tree/main/code):
   + adjoint
   + bin
